@@ -1,0 +1,119 @@
+{
+    "broker": {
+        "name": "mstock",
+        "api_key": "",
+        "secret": "",
+        "client_code": "",
+        "password": "",
+        "connection_status": "not_connected",
+        "last_login": null
+    },
+    "market": {
+        "name": "india_nse",
+        "timezone": "Asia/Kolkata",
+        "currency": "INR",
+        "currency_symbol": "₹",
+        "open_time": "09:15",
+        "close_time": "15:30"
+    },
+    "capital": {
+        "total_capital": 50000,
+        "starting_capital": 50000,
+        "max_per_stock_type": "percentage",
+        "max_per_stock_value": 10,
+        "max_per_stock_fixed_amount": 5000,
+        "daily_loss_limit_pct": 10,
+        "max_simultaneous_positions": 10,
+        "capital_recycling": {
+            "enabled": true,
+            "compound_profits": true
+        }
+    },
+    "notifications": {
+        "email": {
+            "enabled": false,
+            "smtp_server": "smtp.gmail.com",
+            "smtp_port": 587,
+            "sender_email": "",
+            "sender_password": "",
+            "recipient_email": "",
+            "notify_on": {
+                "trade_executed": true,
+                "profit_target_hit": true,
+                "stop_loss_hit": true,
+                "daily_loss_limit_reached": true,
+                "catastrophic_stop_hit": true,
+                "bot_started": true,
+                "bot_stopped": true,
+                "errors": true
+            }
+        },
+        "telegram": {
+            "enabled": false,
+            "bot_token": "",
+            "chat_id": "",
+            "notify_on": {
+                "trade_executed": true,
+                "profit_target_hit": true,
+                "stop_loss_hit": true,
+                "high_confluence_signal": true,
+                "daily_summary": true,
+                "regime_change": true,
+                "catastrophic_stop_hit": true,
+                "bot_started": true,
+                "bot_stopped": true,
+                "errors": true
+            }
+        }
+    },
+    "risk_controls": {
+        "default_use_stop_loss": true,
+        "default_stop_loss_pct": 5,
+        "default_use_profit_target": true,
+        "default_profit_target_pct": 10,
+        "default_use_trailing_stop": false,
+        "default_trailing_stop_pct": 3,
+        "catastrophic_stop_enabled": true,
+        "catastrophic_stop_pct": 20,
+        "hold_quality_stocks": true,
+        "quality_stock_hold_days": 60,
+        "quality_criteria": {
+            "min_confluence_score": 75,
+            "min_promoter_holding_pct": 50,
+            "min_roe_pct": 15,
+            "max_debt_to_equity": 1.0
+        }
+    },
+    "strategies": {
+        "rsi_mean_reversion": {
+            "name": "RSI Mean Reversion",
+            "enabled": true,
+            "timeframe": "15T",
+            "buy_rsi_threshold": 35,
+            "sell_rsi_threshold": 65,
+            "use_stop_loss": true,
+            "stop_loss_pct": 5,
+            "use_profit_target": true,
+            "profit_target_pct": 10,
+            "never_sell_at_loss": false,
+            "never_sell_at_loss_warning_shown": false
+        },
+        "qglp_filter": {
+            "name": "QGLP Quality Filter",
+            "enabled": false,
+            "use_stop_loss": false,
+            "stop_loss_pct": 10,
+            "use_profit_target": true,
+            "profit_target_pct": 20,
+            "never_sell_at_loss": true,
+            "never_sell_at_loss_warning_shown": false,
+            "min_holding_days": 90
+        }
+    },
+    "app_settings": {
+        "paper_trading_mode": true,
+        "auto_start_on_market_open": false,
+        "log_level": "INFO",
+        "show_warnings": true
+    }
+}

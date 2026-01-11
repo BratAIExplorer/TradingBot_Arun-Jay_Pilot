@@ -885,12 +885,34 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         buy_rsi = sym_config["Buy RSI"]
         sell_rsi = sym_config["Sell RSI"]
         profit_pct = sym_config["Profit Target %"]
-        qty = sym_config["Quantity"]
-
+        config_qty = int(sym_config.get("Quantity", 0))
+        
+        # Get current price first (needed for quantity calculation)
         current_close = float(market_data.get("last_price", np.nan)) if market_data else np.nan
         if not np.isfinite(current_close):
             log_ok(f"⚠️ {symbol}:{exchange}: no valid LTP ({current_close})")
             return
+        
+        # Dual-mode quantity logic
+        if config_qty > 0:
+            # Fixed quantity mode: Use exact quantity from CSV
+            qty = config_qty
+        else:
+            # Dynamic quantity mode: Calculate from capital %
+            if settings:
+                total_capital = settings.get("capital.total_capital", 50000)
+                per_trade_pct = settings.get("capital.per_trade_pct", 10.0)
+                per_trade_amount = total_capital * (per_trade_pct / 100)
+                
+                # Calculate quantity based on current price
+                qty = int(per_trade_amount / current_close)
+                
+                # Ensure minimum quantity of 1
+                qty = max(1, qty)
+            else:
+                # Fallback if settings not available
+                qty = 1
+                log_ok(f"⚠️ Settings unavailable for {symbol}, using qty=1")
 
         timeframe_map = {
             "1T": "1m",

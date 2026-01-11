@@ -43,12 +43,14 @@ class SettingsGUI:
         self.tabview.add("Broker")
         self.tabview.add("Capital")
         self.tabview.add("Risk Controls")
+        self.tabview.add("Notifications")
         self.tabview.add("Stocks")
         
         # Build each tab
         self.build_broker_tab()
         self.build_capital_tab()
         self.build_risk_tab()
+        self.build_notifications_tab()
         self.build_stocks_tab()
         
         # Bottom buttons
@@ -403,36 +405,35 @@ class SettingsGUI:
         title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration", font=("Arial", 16, "bold"))
         title_label.pack(pady=(10, 5))
         
-        # Subtitle
-        subtitle = ctk.CTkLabel(tab, text="Showing symbols from config_table.csv", font=("Arial", 12), text_color="gray")
-        subtitle.pack(pady=(0, 10))
-
         # Table Frame
         table_frame = ctk.CTkFrame(tab)
         table_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(table_frame)
-        scrollbar.pack(side="right", fill="y")
-
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Status"),
+            columns=("Symbol", "Exchange", "Enabled", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %"),
             show="headings",
-            yscrollcommand=scrollbar.set,
-            height=10
+            height=8
         )
         self.stock_table.heading("Symbol", text="Symbol")
-        self.stock_table.heading("Exchange", text="Exchange")
-        self.stock_table.heading("Status", text="Status")
+        self.stock_table.heading("Exchange", text="Exch")
+        self.stock_table.heading("Enabled", text="Enabled")
+        self.stock_table.heading("Timeframe", text="TF")
+        self.stock_table.heading("Buy RSI", text="Buy")
+        self.stock_table.heading("Sell RSI", text="Sell")
+        self.stock_table.heading("Qty", text="Qty")
+        self.stock_table.heading("Target %", text="Profit %")
         
-        self.stock_table.column("Symbol", width=150, anchor="center")
-        self.stock_table.column("Exchange", width=150, anchor="center")
-        self.stock_table.column("Status", width=150, anchor="center")
+        for col in self.stock_table["columns"]:
+            self.stock_table.column(col, width=60, anchor="center")
+        self.stock_table.column("Symbol", width=100)
         
-        self.stock_table.pack(fill="both", expand=True)
-        scrollbar.config(command=self.stock_table.yview)
+        self.stock_table.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.stock_table.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.stock_table.configure(yscrollcommand=scrollbar.set)
 
         # Load data from CSV
         self.refresh_stock_table()
@@ -441,27 +442,56 @@ class SettingsGUI:
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.pack(pady=10)
 
-        self.validate_btn = ctk.CTkButton(
-            btn_frame,
-            text="🔍 Validate Symbols",
-            command=self.on_validate_symbols,
-            width=150
-        )
-        self.validate_btn.grid(row=0, column=0, padx=10)
+        ctk.CTkButton(btn_frame, text="➕ Add", width=80, fg_color="green", hover_color="darkgreen", command=self.on_add_stock).grid(row=0, column=0, padx=5)
+        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=1, padx=5)
+        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=2, padx=5)
+        
+        self.validate_btn = ctk.CTkButton(btn_frame, text="🔍 Validate", width=100, command=self.on_validate_symbols)
+        self.validate_btn.grid(row=0, column=3, padx=15)
 
-        open_csv_btn = ctk.CTkButton(
-            btn_frame,
-            text="📄 Open CSV",
-            command=self.open_config_csv,
-            width=150,
-            fg_color="gray",
-            hover_color="darkgray"
+    def build_notifications_tab(self):
+        """Telegram notifications configuration"""
+        tab = self.tabview.tab("Notifications")
+        
+        notif = self.settings_mgr.get("notifications", {})
+        
+        title = ctk.CTkLabel(tab, text="📲 Mobile Notifications", font=("Arial", 16, "bold"))
+        title.pack(pady=(20, 10))
+        
+        # Telegram Bot Token
+        token_label = ctk.CTkLabel(tab, text="Telegram Bot Token:", font=("Arial", 12))
+        token_label.pack(anchor="w", padx=100, pady=(10, 0))
+        
+        self.tg_token_entry = ctk.CTkEntry(tab, width=400, placeholder_text="Enter Bot Token from @BotFather", show="*")
+        self.tg_token_entry.insert(0, self.settings_mgr.get_decrypted("notifications.telegram_bot_token", ""))
+        self.tg_token_entry.pack(padx=100, pady=(0, 10))
+        
+        # Telegram Chat ID
+        chat_label = ctk.CTkLabel(tab, text="Telegram Chat ID:", font=("Arial", 12))
+        chat_label.pack(anchor="w", padx=100, pady=(10, 0))
+        
+        self.tg_chat_id_entry = ctk.CTkEntry(tab, width=400, placeholder_text="Enter Chat ID")
+        self.tg_chat_id_entry.insert(0, str(notif.get("telegram_chat_id", "")))
+        self.tg_chat_id_entry.pack(padx=100, pady=(0, 20))
+        
+        # Enable toggle
+        self.tg_enabled_var = ctk.BooleanVar(value=notif.get("enabled", False))
+        self.tg_enabled_check = ctk.CTkCheckBox(tab, text="Enable Telegram Alerts", variable=self.tg_enabled_var)
+        self.tg_enabled_check.pack(padx=100, pady=10)
+        
+        # Help link
+        help_btn = ctk.CTkButton(
+            tab, 
+            text="❓ How to set up Telegram notifications?", 
+            fg_color="transparent", 
+            text_color="#3498DB",
+            hover_color="#1E1E1E",
+            command=lambda: messagebox.showinfo("Setup Help", "1. Message @BotFather on Telegram to create a bot.\n2. Copy the token and paste it here.\n3. Search for @userinfobot to get your Chat ID.\n4. Enable alerts and save!")
         )
-        open_csv_btn.grid(row=0, column=1, padx=10)
+        help_btn.pack(pady=20)
 
     def refresh_stock_table(self):
         """Load symbols from CSV into the table"""
-        # Clear existing
         for item in self.stock_table.get_children():
             self.stock_table.delete(item)
             
@@ -470,7 +500,16 @@ class SettingsGUI:
             try:
                 df = pd.read_csv(csv_path)
                 for _, row in df.iterrows():
-                    self.stock_table.insert("", "end", values=(row['Symbol'], row['Exchange'], "Unknown ⚪"))
+                    self.stock_table.insert("", "end", values=(
+                        row['Symbol'], 
+                        row['Exchange'], 
+                        "Yes" if str(row['Enabled']).upper() == 'TRUE' else "No",
+                        row['Timeframe'],
+                        row['Buy RSI'],
+                        row['Sell RSI'],
+                        row['Quantity'],
+                        row['Profit Target %']
+                    ))
             except Exception as e:
                 print(f"Error loading CSV: {e}")
 
@@ -584,6 +623,11 @@ class SettingsGUI:
                     "catastrophic_stop_loss_pct": self.cat_stop_var.get(),
                     "daily_loss_limit_pct": self.daily_loss_var.get(),
                     "never_sell_at_loss": self.never_sell_at_loss_var.get()
+                },
+                "notifications": {
+                    "enabled": self.tg_enabled_var.get(),
+                    "telegram_bot_token": self.tg_token_entry.get(),
+                    "telegram_chat_id": self.tg_chat_id_entry.get()
                 }
             }
             
@@ -608,6 +652,137 @@ class SettingsGUI:
         """Start the GUI"""
         self.root.mainloop()
 
+    def on_add_stock(self):
+        """Add new stock configuration"""
+        self.show_stock_dialog()
+
+    def on_edit_stock(self):
+        """Edit selected stock configuration"""
+        selected = self.stock_table.selection()
+        if not selected:
+            messagebox.showwarning("Selection Required", "Please select a stock to edit.")
+            return
+            
+        values = self.stock_table.item(selected[0], "values")
+        self.show_stock_dialog(edit_values=values)
+
+    def on_delete_stock(self):
+        """Delete selected stock configuration"""
+        selected = self.stock_table.selection()
+        if not selected:
+            messagebox.showwarning("Selection Required", "Please select a stock to delete.")
+            return
+            
+        symbol = self.stock_table.item(selected[0], "values")[0]
+        exchange = self.stock_table.item(selected[0], "values")[1]
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to remove {symbol} ({exchange})?"):
+            try:
+                csv_path = 'config_table.csv'
+                df = pd.read_csv(csv_path)
+                
+                # Filter out the selected stock
+                df = df[~((df['Symbol'] == symbol) & (df['Exchange'] == exchange))]
+                
+                df.to_csv(csv_path, index=False)
+                self.refresh_stock_table()
+                messagebox.showinfo("Success", f"Removed {symbol} from list.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete: {e}")
+
+    def show_stock_dialog(self, edit_values=None):
+        """Show dialog for adding/editing a stock"""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Edit Stock" if edit_values else "Add New Stock")
+        dialog.geometry("400x550")
+        dialog.grab_set()  # Modal
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        # Fields
+        ctk.CTkLabel(dialog, text="Symbol:").pack(pady=(20, 0))
+        sym_entry = ctk.CTkEntry(dialog, width=200)
+        sym_entry.pack(pady=5)
+        if edit_values: sym_entry.insert(0, edit_values[0])
+        
+        ctk.CTkLabel(dialog, text="Exchange:").pack(pady=(10, 0))
+        exch_var = ctk.StringVar(value=edit_values[1] if edit_values else "NSE")
+        ctk.CTkOptionMenu(dialog, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
+        
+        ctk.CTkLabel(dialog, text="Timeframe:").pack(pady=(10, 0))
+        tf_var = ctk.StringVar(value=edit_values[3] if edit_values else "15T")
+        ctk.CTkOptionMenu(dialog, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
+        
+        # RSI Inputs in a grid
+        rsi_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        rsi_frame.pack(pady=10)
+        
+        ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
+        buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
+        buy_rsi_entry.grid(row=1, column=0, padx=10)
+        buy_rsi_entry.insert(0, edit_values[4] if edit_values else "35")
+        
+        ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
+        sell_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
+        sell_rsi_entry.grid(row=1, column=1, padx=10)
+        sell_rsi_entry.insert(0, edit_values[5] if edit_values else "65")
+        
+        # Qty and Target
+        ctk.CTkLabel(dialog, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
+        qty_entry = ctk.CTkEntry(dialog, width=200)
+        qty_entry.pack(pady=5)
+        qty_entry.insert(0, edit_values[6] if edit_values else "0")
+        
+        ctk.CTkLabel(dialog, text="Profit Target %:").pack(pady=(10, 0))
+        target_entry = ctk.CTkEntry(dialog, width=200)
+        target_entry.pack(pady=5)
+        target_entry.insert(0, edit_values[7] if edit_values else "10.0")
+
+        enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
+        ctk.CTkCheckBox(dialog, text="Enabled", variable=enabled_var).pack(pady=15)
+
+        def save_stock():
+            symbol = sym_entry.get().upper().strip()
+            if not symbol:
+                messagebox.showerror("Error", "Symbol is required")
+                return
+            
+            try:
+                new_data = {
+                    'Symbol': symbol,
+                    'Broker': 'mstock', # Default or fetched from broker tab
+                    'Enabled': enabled_var.get(),
+                    'Timeframe': tf_var.get(),
+                    'Buy RSI': int(buy_rsi_entry.get()),
+                    'Sell RSI': int(sell_rsi_entry.get()),
+                    'Profit Target %': float(target_entry.get()),
+                    'Quantity': int(qty_entry.get()),
+                    'Exchange': exch_var.get()
+                }
+                
+                csv_path = 'config_table.csv'
+                if os.path.exists(csv_path):
+                    df = pd.read_csv(csv_path)
+                    # If editing, remove old entry
+                    if edit_values:
+                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[1]))]
+                    
+                    # Append new entry
+                    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                    df.to_csv(csv_path, index=False)
+                else:
+                    pd.DataFrame([new_data]).to_csv(csv_path, index=False)
+                
+                self.refresh_stock_table()
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Invalid data: {e}")
+
+        ctk.CTkButton(dialog, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
 
 if __name__ == "__main__":
     app = SettingsGUI()

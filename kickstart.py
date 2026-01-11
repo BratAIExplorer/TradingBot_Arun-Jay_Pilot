@@ -50,7 +50,16 @@ except ImportError:
     STATE_MANAGER_AVAILABLE = False
 
 try:
-    from utils import retry_with_backoff, safe_divide, safe_get
+    from notifications import NotificationManager
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    print("⚠️ notifications module not found, alerts disabled")
+    NOTIFICATIONS_AVAILABLE = False
+
+try:
+    from utils import retry_on_failure, safe_divide, safe_get
+    # Map retry_on_failure to retry_with_backoff if needed by other parts of the code
+    retry_with_backoff = retry_on_failure
     UTILS_AVAILABLE = True
 except ImportError:
     print("⚠️ utils not found, using basic fallback implementations")
@@ -61,7 +70,18 @@ except ImportError:
         return a / b if b != 0 else default
     def safe_get(d, key, default=None):
         """Fallback safe get"""
+        if isinstance(d, dict) and '.' in key:
+            keys = key.split('.')
+            val = d
+            for k in keys:
+                if isinstance(val, dict) and k in val: val = val[k]
+                else: return default
+            return val
         return d.get(key, default) if isinstance(d, dict) else default
+    def retry_with_backoff(max_retries=3):
+        def decorator(func):
+            return func # Simple no-op fallback
+        return decorator
 
 
 # ---------------- State & Utils ----------------
@@ -191,28 +211,68 @@ def now_ist():
 
 # ---------------- Config & Auth ----------------
 
+# ---------------- Initialize Settings Manager Early (Phase 0A) ----------------
+settings = None
+if SETTINGS_AVAILABLE:
+    try:
+        settings = SettingsManager()
+        settings.load()
+    except Exception as e:
+        print(f"⚠️ Settings Manager early init failed: {e}")
+
+# ---------------- Config & Auth ----------------
+
 load_dotenv()
 
-API_KEY = os.getenv('API_KEY')
-API_SECRET = os.getenv('API_SECRET')
-CLIENT_CODE = os.getenv('CLIENT_CODE')
-PASSWORD = os.getenv('PASSWORD')
+# Prioritize settings.json, fallback to .env
+API_KEY = settings.get_decrypted("broker.api_key") if settings else os.getenv('API_KEY')
+API_SECRET = settings.get_decrypted("broker.api_secret") if settings else os.getenv('API_SECRET')
+CLIENT_CODE = settings.get("broker.client_code") if settings else os.getenv('CLIENT_CODE')
+PASSWORD = settings.get_decrypted("broker.password") if settings else os.getenv('PASSWORD')
 
-if not all([API_KEY, API_SECRET, CLIENT_CODE, PASSWORD]):
-    log_ok("❌ Missing required environment variables from .env file.")
-    sys.exit(1)
+if not all([API_KEY, API_SECRET, CLIENT_CODE]):
+    log_ok("⚠️ Warning: Missing broker credentials. Please configure them in the Settings GUI.")
+    # No longer exiting strictly to allow GUI access if launched from kickstart_gui
+    if not any([API_KEY, API_SECRET, CLIENT_CODE]):
+        log_ok("❌ Essential credentials missing. Bot will not be able to trade.")
 
 EXCHANGES = ["NSE", "BSE"]
 portfolio_state = {}
 RSI_PERIOD = 14
 
-try:
-    with open("credentials.json", "r") as f:
-        creds = json.load(f)
-except FileNotFoundError:
-    creds = {}
+# Consolidate Access Token
+ACCESS_TOKEN = settings.get_decrypted("broker.access_token") if settings else None
+if not ACCESS_TOKEN:
+    try:
+        if os.path.exists("credentials.json"):
+            with open("credentials.json", "r") as f:
+                creds = json.load(f)
+                ACCESS_TOKEN = creds.get("mstock", {}).get("access_token")
+    except Exception:
+        ACCESS_TOKEN = None
 
-ACCESS_TOKEN = creds.get("mstock", {}).get("access_token")
+def fetch_market_data(symbol, exchange):
+    if is_offline():
+        return None, None
+    url = "https://api.mstock.trade/openapi/typea/instruments/quote/ohlc"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    params = {"i": f"{exchange}:{symbol.upper()}"}
+    try:
+        response = safe_request("GET", url, headers=headers, params=params)
+        if response is None:
+            return None, None
+        if response.status_code != 200:
+            log_ok(f"❌ API error {response.status_code}: {response.text}")
+            return None, None
+        data = response.json() or {}
+        result = (data.get("data") or {}).get(params["i"])
+        if result:
+            return result, exchange
+        return None, None
+    except Exception as e:
+        if not is_offline():
+            log_ok(f"⚠️ Market data error for {symbol}: {str(e)}")
+        return None, None
 
 def handle_token_exception_and_refresh_token():
     global ACCESS_TOKEN
@@ -258,7 +318,10 @@ def handle_token_exception_and_refresh_token():
 
 if not ACCESS_TOKEN:
     if not handle_token_exception_and_refresh_token():
-        sys.exit(1)
+        if __name__ == "__main__":
+            sys.exit(1)
+        else:
+            log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
 
 config_df = pd.read_csv('config_table.csv')
 config_df['Enabled'] = config_df['Enabled'].astype(bool)
@@ -274,16 +337,16 @@ if not duplicates.empty:
 SYMBOLS_TO_TRACK = list(zip(mstock_config['Symbol'].str.upper(), mstock_config['Exchange'].str.upper()))
 config_dict = mstock_config.set_index(['Symbol', 'Exchange']).to_dict('index')
 
-# ---------------- Initialize New Modules (Phase 0A) ----------------
+# ---------------- Initialize Other Modules (Phase 0A) ----------------
 settings = None
 db = None
 risk_mgr = None
 state_mgr = None
+notifier = None
 
 if SETTINGS_AVAILABLE:
     try:
         settings = SettingsManager()
-        settings.load()
         log_ok("✅ Settings Manager initialized", force=True)
     except Exception as e:
         log_ok(f"⚠️ Settings Manager init failed: {e}", force=True)
@@ -299,18 +362,8 @@ if DATABASE_AVAILABLE:
 
 if RISK_MANAGER_AVAILABLE and db:
     try:
-        # Get risk settings from SettingsManager or use defaults
-        if settings:
-            risk_cfg = settings.get("risk", {})
-        else:
-            # Default risk configuration
-            risk_cfg = {
-                "stop_loss_pct": 5.0,
-                "profit_target_pct": 10.0,
-                "catastrophic_stop_loss_pct": 15.0,
-                "daily_loss_limit_pct": 10.0
-            }
-        risk_mgr = RiskManager(db, risk_cfg)
+        # RiskManager(settings, database, market_data_fetcher)
+        risk_mgr = RiskManager(settings, db, fetch_market_data)
         log_ok("✅ Risk Manager initialized", force=True)
     except Exception as e:
         log_ok(f"⚠️ Risk Manager init failed: {e}", force=True)
@@ -321,15 +374,17 @@ elif RISK_MANAGER_AVAILABLE and not db:
 if STATE_MANAGER_AVAILABLE:
     try:
         state_mgr = StateManager()
-        # Load previous state if exists
-        saved_state = state_mgr.load()
-        if saved_state and saved_state.get('last_update'):
-            log_ok(f"✅ State restored from {saved_state.get('last_update')}", force=True)
-        else:
-            log_ok("✅ State Manager initialized (no previous state)", force=True)
+        log_ok("✅ State Manager initialized", force=True)
     except Exception as e:
         log_ok(f"⚠️ State Manager init failed: {e}", force=True)
         state_mgr = None
+
+if NOTIFICATIONS_AVAILABLE and settings:
+    try:
+        notifier = NotificationManager(settings)
+        log_ok("✅ Notification Manager initialized", force=True)
+    except Exception as e:
+        log_ok(f"⚠️ Notification Manager init failed: {e}", force=True)
 
 
 def get_exchange_for_symbol(symbol: str) -> list[str]:
@@ -704,6 +759,26 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 fee_breakdown=fee_breakdown
             )
             log_ok(f"📝 Trade logged to database (ID: {trade_id})")
+            
+            # Send notification
+            if notifier:
+                try:
+                    trade_info = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "action": side.upper(),
+                        "quantity": qty,
+                        "price": round(current_price, 2),
+                        "gross_amount": round(gross_amount, 2),
+                        "total_fees": round(total_fees, 2),
+                        "net_amount": round(net_amount, 2),
+                        "strategy": "RSI",
+                        "reason": f"RSI-based {side.upper()}",
+                        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    notifier.send_trade_alert(trade_info)
+                except Exception as ne:
+                    log_ok(f"⚠️ Notification failed: {ne}")
         except Exception as e:
             log_ok(f"⚠️ Trade logging failed: {e}", force=True)
             # Don't fail the order if logging fails
@@ -797,29 +872,6 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token):
         else:
             raise
 
-def fetch_market_data(symbol, exchange):
-    if is_offline():
-        return None, None
-    url = "https://api.mstock.trade/openapi/typea/instruments/quote/ohlc"
-    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
-    params = {"i": f"{exchange}:{symbol.upper()}"}
-    # log_fetch(f"{exchange}:{symbol}")
-    try:
-        response = safe_request("GET", url, headers=headers, params=params)
-        if response is None:
-            return None, None
-        if response.status_code != 200:
-            log_ok(f"❌ API error {response.status_code}: {response.text}")
-            return None, None
-        data = response.json() or {}
-        result = (data.get("data") or {}).get(params["i"])
-        if result:
-            return result, exchange
-        return None, None
-    except Exception as e:
-        if not is_offline():
-            log_ok(f"❌ Exception during market data fetch: {e}")
-        return None, None
 
 # ---------------- Strategy ----------------
 

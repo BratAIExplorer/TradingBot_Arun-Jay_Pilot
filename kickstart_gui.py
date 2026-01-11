@@ -139,8 +139,15 @@ class TradingGUI:
         )
         self.settings_btn.grid(row=0, column=2, padx=5)
 
-        # ---------------- Log Area ----------------
-        self.log_area = ctk.CTkTextbox(self.root, width=1100, height=200, cursor="xterm")
+        # ---------------- Main Tabview ----------------
+        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        self.dashboard_tab = self.tabview.add("📊 Dashboard")
+        self.logs_tab = self.tabview.add("📜 Technical Logs")
+
+        # ---------------- Log Area (In Logs Tab) ----------------
+        self.log_area = ctk.CTkTextbox(self.logs_tab, cursor="xterm")
         self.log_area.pack(padx=10, pady=10, fill="both", expand=True)
 
         # Redirect stdout/stderr
@@ -148,16 +155,19 @@ class TradingGUI:
         sys.stdout.write = self.write_log
         sys.stderr.write = self.write_log
 
-        # ---------------- Dashboard ----------------
-        dashboard_frame = ctk.CTkFrame(self.root)
-        dashboard_frame.pack(pady=10, fill="both", expand=True)
+        # ---------------- Dashboard (In Dashboard Tab) ----------------
+        dashboard_container = ctk.CTkScrollableFrame(self.dashboard_tab, fg_color="transparent")
+        dashboard_container.pack(fill="both", expand=True)
 
         # Live Positions Table
-        self.positions_label = ctk.CTkLabel(dashboard_frame, text="📊 Live Positions", font=("Arial", 16, "bold"))
-        self.positions_label.pack(anchor="w", padx=10, pady=5)
+        pos_header_frame = ctk.CTkFrame(dashboard_container, fg_color="transparent")
+        pos_header_frame.pack(fill="x", padx=10, pady=(10, 5))
+        
+        self.positions_label = ctk.CTkLabel(pos_header_frame, text="📊 Live Positions", font=("Arial", 16, "bold"))
+        self.positions_label.pack(side="left")
 
-        pos_frame = ctk.CTkFrame(dashboard_frame)
-        pos_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        pos_frame = ctk.CTkFrame(dashboard_container)
+        pos_frame.pack(fill="x", padx=10, pady=5)
 
         self.positions_table = ttk.Treeview(
             pos_frame,
@@ -173,13 +183,30 @@ class TradingGUI:
         pos_frame.grid_rowconfigure(0, weight=1)
         pos_frame.grid_columnconfigure(0, weight=1)
 
+        # Bind Right Click
+        self.positions_table.bind("<Button-3>", self.show_position_context_menu)
+
         # Recent Trades Table (Phase 0A)
         if DATABASE_AVAILABLE:
-            self.trades_label = ctk.CTkLabel(dashboard_frame, text="📝 Recent Trades", font=("Arial", 16, "bold"))
-            self.trades_label.pack(anchor="w", padx=10, pady=5)
+            trades_header_frame = ctk.CTkFrame(dashboard_container, fg_color="transparent")
+            trades_header_frame.pack(fill="x", padx=10, pady=(20, 5))
             
-            trades_frame = ctk.CTkFrame(dashboard_frame)
-            trades_frame.pack(fill="both", expand=True, padx=10, pady=5)
+            self.trades_label = ctk.CTkLabel(trades_header_frame, text="📝 Recent Trades", font=("Arial", 16, "bold"))
+            self.trades_label.pack(side="left")
+            
+            self.export_btn = ctk.CTkButton(
+                trades_header_frame, 
+                text="📥 Export to Excel", 
+                width=120, 
+                height=28,
+                fg_color="#27AE60",
+                hover_color="#1E8449",
+                command=self.export_trades_to_excel
+            )
+            self.export_btn.pack(side="right")
+            
+            trades_frame = ctk.CTkFrame(dashboard_container)
+            trades_frame.pack(fill="x", padx=10, pady=5)
             
             self.trades_table = ttk.Treeview(
                 trades_frame,
@@ -201,11 +228,14 @@ class TradingGUI:
             self.update_trades_table()
 
         # RSI Monitor Table
-        self.rsi_label = ctk.CTkLabel(dashboard_frame, text="📈 RSI Monitor (Live)", font=("Arial", 16, "bold"))
-        self.rsi_label.pack(anchor="w", padx=10, pady=5)
+        rsi_header_frame = ctk.CTkFrame(dashboard_container, fg_color="transparent")
+        rsi_header_frame.pack(fill="x", padx=10, pady=(20, 5))
+        
+        self.rsi_label = ctk.CTkLabel(rsi_header_frame, text="📈 RSI Monitor (Live)", font=("Arial", 16, "bold"))
+        self.rsi_label.pack(side="left")
 
-        rsi_frame = ctk.CTkFrame(dashboard_frame)
-        rsi_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        rsi_frame = ctk.CTkFrame(dashboard_container)
+        rsi_frame.pack(fill="x", padx=10, pady=5)
 
         self.rsi_table = ttk.Treeview(
             rsi_frame,
@@ -522,6 +552,8 @@ class TradingGUI:
                     )
                 
                 if hasattr(self, 'today_pnl_label'):
+                    # In a real scenario, this would be daily P&L. 
+                    # For now, we'll use a placeholder or the same net PnL if it's a fresh db
                     today_pnl = perf.get('total_net_pnl', 0)
                     pnl_color = "#2ECC71" if today_pnl >= 0 else "#E74C3C"
                     self.today_pnl_label.configure(
@@ -545,6 +577,151 @@ class TradingGUI:
             
         except Exception as e:
             self.write_log(f"⚠️ Failed to update performance: {e}\n")
+
+    def export_trades_to_excel(self):
+        """Export all trades from database to Excel"""
+        if not DATABASE_AVAILABLE:
+            from tkinter import messagebox
+            messagebox.showwarning("Database Not Available", "Trade database is not initialized.")
+            return
+            
+        try:
+            import pandas as pd
+            import os
+            from datetime import datetime
+            from tkinter import filedialog, messagebox
+            
+            trades = db.get_recent_trades(limit=1000) # Get more for export
+            if not trades:
+                messagebox.showinfo("Export", "No trades found in the database to export.")
+                return
+                
+            df = pd.DataFrame(trades)
+            
+            # Save dialog
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"ARUN_Trade_Report_{timestamp}.xlsx"
+            
+            save_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                initialfile=default_name,
+                title="Export Trades to Excel"
+            )
+            
+            if save_path:
+                df.to_excel(save_path, index=False)
+                messagebox.showinfo("Export Successful", f"Trade report saved to:\n{save_path}")
+                self.write_log(f"📊 Exported {len(df)} trades to {save_path}\n")
+                
+        except Exception as e:
+            self.write_log(f"❌ Export failed: {e}\n")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Failed to export trades: {e}")
+
+    def show_position_context_menu(self, event):
+        """Show context menu for positions table"""
+        item = self.positions_table.identify_row(event.y)
+        if item:
+            self.positions_table.selection_set(item)
+            
+            # Create menu
+            import tkinter as tk
+            menu = tk.Menu(self.root, tearoff=0, background='#2B2B2B', foreground='white', activebackground='#1E88E5')
+            
+            symbol_str = self.positions_table.item(item, "values")[0]
+            
+            menu.add_command(label=f"🔴 Close Position: {symbol_str}", command=lambda: self.close_position(item))
+            menu.add_separator()
+            menu.add_command(label="⚠️ Emergency Exit: Close ALL", command=self.emergency_exit, foreground='red')
+            
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
+    def close_position(self, item):
+        """Manually close a specific position via market order"""
+        from tkinter import messagebox
+        values = self.positions_table.item(item, "values")
+        if not values or values[0] == "No active positions":
+            return
+            
+        symbol_full = values[0] # e.g. "RELIANCE (NSE)"
+        qty = int(values[1])
+        
+        # Parse symbol and exchange
+        try:
+            import re
+            match = re.search(r"(.+)\s\((.+)\)", symbol_full)
+            if match:
+                symbol = match.group(1)
+                exchange = match.group(2)
+            else:
+                symbol = symbol_full
+                exchange = "NSE"
+        except:
+            symbol = symbol_full
+            exchange = "NSE"
+            
+        confirm = messagebox.askyesno(
+            "Confirm Close", 
+            f"Are you sure you want to CLOSE {symbol} ({exchange})?\n\nQuantity: {qty}\nType: Market SELL",
+            icon='warning'
+        )
+        
+        if confirm:
+            self.write_log(f"🚀 Manual Intervention: Closing {symbol} ({qty} qty)...\n")
+            from kickstart import safe_place_order_when_open
+            
+            # Need instrument_token if available, but for CNC Market Sell it might work with 0 placeholder if the API handles it
+            # In kickstart.py, instrument_token is passed to place_order. 
+            # We might need to fetch it or pass 0.
+            
+            success = safe_place_order_when_open(symbol, exchange, qty, "SELL", "0", use_amo=False)
+            if success:
+                messagebox.showinfo("Success", f"Sell order placed for {symbol}.")
+            else:
+                messagebox.showerror("Error", f"Failed to place sell order for {symbol}.")
+
+    def emergency_exit(self):
+        """Close all active positions immediately"""
+        from tkinter import messagebox
+        children = self.positions_table.get_children()
+        active_positions = [c for c in children if self.positions_table.item(c, "values")[0] != "No active positions"]
+        
+        if not active_positions:
+            messagebox.showinfo("Emergency Exit", "No active positions to close.")
+            return
+            
+        confirm = messagebox.askyesno(
+            "⚠️ EMERGENCY EXIT", 
+            f"CRITICAL: This will attempt to SELL ALL {len(active_positions)} active positions at market price.\n\nPROCEED WITH CAUTION!",
+            icon='error'
+        )
+        
+        if confirm:
+            self.write_log("🚨 EMERGENCY EXIT TRIGGERED: Closing all positions...\n")
+            for item in active_positions:
+                self.close_position_silent(item)
+            messagebox.showinfo("Emergency Exit", "All exit orders have been sent.")
+
+    def close_position_silent(self, item):
+        """Helper to close position without individual confirmation"""
+        values = self.positions_table.item(item, "values")
+        symbol_full = values[0]
+        qty = int(values[1])
+        try:
+            import re
+            match = re.search(r"(.+)\s\((.+)\)", symbol_full)
+            symbol = match.group(1) if match else symbol_full
+            exchange = match.group(2) if match else "NSE"
+        except:
+            symbol = symbol_full
+            exchange = "NSE"
+            
+        from kickstart import safe_place_order_when_open
+        safe_place_order_when_open(symbol, exchange, qty, "SELL", "0", use_amo=False)
 
     def run(self):
         # Periodic performance update

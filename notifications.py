@@ -21,11 +21,13 @@ class NotificationManager:
         Initialize notification manager
         
         Args:
-            settings: Settings dictionary with notification config
+            settings: Settings dictionary or SettingsManager instance
         """
         self.settings = settings or {}
+        
+        # Default initialization (if settings is plain dict)
         self.email_enabled = self.settings.get('notifications', {}).get('email', {}).get('enabled', False)
-        self.telegram_enabled = self.settings.get('notifications', {}).get('telegram', {}).get('enabled', False)
+        self.telegram_enabled = self.settings.get('notifications', {}).get('enabled', False)
         
         # Email config
         self.smtp_server = self.settings.get('notifications', {}).get('email', {}).get('smtp_server', 'smtp.gmail.com')
@@ -35,8 +37,21 @@ class NotificationManager:
         self.recipient_email = self.settings.get('notifications', {}).get('email', {}).get('recipient_email', '')
         
         # Telegram config
-        self.telegram_token = self.settings.get('notifications', {}).get('telegram', {}).get('bot_token', '')
-        self.telegram_chat_id = self.settings.get('notifications', {}).get('telegram', {}).get('chat_id', '')
+        self.telegram_token = self.settings.get('notifications', {}).get('telegram_bot_token', '')
+        self.telegram_chat_id = self.settings.get('notifications', {}).get('telegram_chat_id', '')
+        
+        # If settings is a SettingsManager instance, use its decryption
+        from settings_manager import SettingsManager
+        if isinstance(self.settings, SettingsManager):
+            self._mgr = self.settings
+            self.telegram_enabled = self._mgr.get('notifications.enabled', False)
+            self.telegram_token = self._mgr.get_decrypted('notifications.telegram_bot_token', '')
+            self.telegram_chat_id = self._mgr.get('notifications.telegram_chat_id', '')
+            
+            self.email_enabled = self._mgr.get('notifications.email.enabled', False)
+            self.sender_email = self._mgr.get('notifications.email.sender_email', '')
+            self.sender_password = self._mgr.get_decrypted('notifications.email.sender_password', '')
+            self.recipient_email = self._mgr.get('notifications.email.recipient_email', '')
     
     def send_trade_alert(self, trade_data: Dict[str, Any]):
         """Send notification when trade is executed"""

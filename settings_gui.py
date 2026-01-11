@@ -8,6 +8,9 @@ from tkinter import messagebox, ttk
 from settings_manager import SettingsManager
 import json
 from typing import Dict, Any
+import pandas as pd
+import os
+from symbol_validator import validate_symbol
 
 class SettingsGUI:
     def __init__(self):
@@ -103,6 +106,9 @@ class SettingsGUI:
         self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
         self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
         self.api_key_entry.grid(row=1, column=1, sticky="w", padx=10, pady=10)
+
+        # Help button for API Key
+        self.add_help_button(tab, 1, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
         
         # API Secret
         secret_label = ctk.CTkLabel(tab, text="API Secret:", font=("Arial", 12))
@@ -111,6 +117,9 @@ class SettingsGUI:
         self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
         self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
         self.api_secret_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+
+        # Help button for API Secret
+        self.add_help_button(tab, 2, "API Secret: Companion to API Key, found in the same API portal.")
         
         # Client Code
         client_label = ctk.CTkLabel(tab, text="Client Code:", font=("Arial", 12))
@@ -119,6 +128,9 @@ class SettingsGUI:
         self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
         self.client_code_entry.insert(0, broker.get("client_code", ""))
         self.client_code_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+
+        # Help button for Client Code
+        self.add_help_button(tab, 3, "Client Code: Your unique login ID provided by the broker.")
         
         # Password
         password_label = ctk.CTkLabel(tab, text="Password:", font=("Arial", 12))
@@ -127,7 +139,21 @@ class SettingsGUI:
         self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
         self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
         self.password_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
+
+        # Help button for Password
+        self.add_help_button(tab, 4, "Password: Your login password for the broker portal.")
+
+        # Access Token
+        token_label = ctk.CTkLabel(tab, text="Access Token:", font=("Arial", 12))
+        token_label.grid(row=5, column=0, sticky="w", padx=20, pady=10)
         
+        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token", show="*")
+        self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
+        self.access_token_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
+        
+        # Help button for Token
+        self.add_help_button(tab, 5, "Access Token: \n- mStock: Generated via login flow or available under API portal.\n- Zerodha: Obtained after app authorization.")
+
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
         show_pass_check = ctk.CTkCheckBox(
@@ -136,7 +162,7 @@ class SettingsGUI:
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
-        show_pass_check.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+        show_pass_check.grid(row=6, column=1, sticky="w", padx=10, pady=5)
         
         # Info label
         info = ctk.CTkLabel(
@@ -361,42 +387,110 @@ class SettingsGUI:
         warning_label.pack(padx=15, pady=15)
     
     def build_stocks_tab(self):
-        """Stock configuration - Simple view/edit interface"""
+        """Stock configuration - View and validate interface"""
         tab = self.tabview.tab("Stocks")
         
-        # Info label
-        info_label = ctk.CTkLabel(
-            tab,
-            text="📊 Stock Configuration\n(Currently managed via config_table.csv)",
-            font=("Arial", 14, "bold")
-        )
-        info_label.pack(pady=20)
+        # Title
+        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration", font=("Arial", 16, "bold"))
+        title_label.pack(pady=(10, 5))
         
-        # Coming soon message
-        coming_soon = ctk.CTkLabel(
-            tab,
-            text="🚧 Visual Stock Editor Coming Soon!\n\n"
-                 "For now, edit stocks in: config_table.csv\n"
-                 "Next update will add:\n"
-                 "• Stock search & add\n"
-                 "• Per-stock RSI thresholds\n"
-                 "• Enable/disable individual stocks\n"
-                 "• Timeframe selection",
-            font=("Arial", 12),
-            text_color="gray",
-            justify="center"
+        # Subtitle
+        subtitle = ctk.CTkLabel(tab, text="Showing symbols from config_table.csv", font=("Arial", 12), text_color="gray")
+        subtitle.pack(pady=(0, 10))
+
+        # Table Frame
+        table_frame = ctk.CTkFrame(tab)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        # Treeview for symbols
+        self.stock_table = ttk.Treeview(
+            table_frame,
+            columns=("Symbol", "Exchange", "Status"),
+            show="headings",
+            yscrollcommand=scrollbar.set,
+            height=10
         )
-        coming_soon.pack(pady=30)
+        self.stock_table.heading("Symbol", text="Symbol")
+        self.stock_table.heading("Exchange", text="Exchange")
+        self.stock_table.heading("Status", text="Status")
         
-        # Open CSV button
+        self.stock_table.column("Symbol", width=150, anchor="center")
+        self.stock_table.column("Exchange", width=150, anchor="center")
+        self.stock_table.column("Status", width=150, anchor="center")
+        
+        self.stock_table.pack(fill="both", expand=True)
+        scrollbar.config(command=self.stock_table.yview)
+
+        # Load data from CSV
+        self.refresh_stock_table()
+
+        # Action Buttons Frame
+        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
+        self.validate_btn = ctk.CTkButton(
+            btn_frame,
+            text="🔍 Validate Symbols",
+            command=self.on_validate_symbols,
+            width=150
+        )
+        self.validate_btn.grid(row=0, column=0, padx=10)
+
         open_csv_btn = ctk.CTkButton(
-            tab,
-            text="📄 Open config_table.csv",
+            btn_frame,
+            text="📄 Open CSV",
             command=self.open_config_csv,
-            width=200,
-            height=40
+            width=150,
+            fg_color="gray",
+            hover_color="darkgray"
         )
-        open_csv_btn.pack(pady=10)
+        open_csv_btn.grid(row=0, column=1, padx=10)
+
+    def refresh_stock_table(self):
+        """Load symbols from CSV into the table"""
+        # Clear existing
+        for item in self.stock_table.get_children():
+            self.stock_table.delete(item)
+            
+        csv_path = 'config_table.csv'
+        if os.path.exists(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+                for _, row in df.iterrows():
+                    self.stock_table.insert("", "end", values=(row['Symbol'], row['Exchange'], "Unknown ⚪"))
+            except Exception as e:
+                print(f"Error loading CSV: {e}")
+
+    def on_validate_symbols(self):
+        """Validate all symbols in the table"""
+        self.validate_btn.configure(state="disabled", text="Validating...")
+        self.root.update_idletasks()
+        
+        items = self.stock_table.get_children()
+        total = len(items)
+        valid_count = 0
+        
+        for i, item in enumerate(items):
+            symbol, exchange, _ = self.stock_table.item(item, "values")
+            # Update status to checking
+            self.stock_table.item(item, values=(symbol, exchange, "Checking... ⏳"))
+            self.root.update_idletasks()
+            
+            # Use validator
+            is_valid = validate_symbol(symbol, exchange)
+            
+            status = "Valid ✅" if is_valid else "Invalid ❌"
+            if is_valid: valid_count += 1
+            
+            self.stock_table.item(item, values=(symbol, exchange, status))
+            self.root.update_idletasks()
+            
+        self.validate_btn.configure(state="normal", text="🔍 Validate Symbols")
+        messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
     
     def toggle_password_visibility(self):
         """Toggle password and API key field visibility"""
@@ -404,6 +498,22 @@ class SettingsGUI:
         self.api_key_entry.configure(show="" if show else "*")
         self.api_secret_entry.configure(show="" if show else "*")
         self.password_entry.configure(show="" if show else "*")
+        self.access_token_entry.configure(show="" if show else "*")
+
+    def add_help_button(self, parent, row, message):
+        """Add a help '?' button to the right of an entry"""
+        help_btn = ctk.CTkButton(
+            parent, 
+            text="?", 
+            width=20, 
+            height=20, 
+            fg_color="transparent", 
+            border_width=1,
+            text_color="gray",
+            hover_color="#333333",
+            command=lambda: messagebox.showinfo("How to get this?", message)
+        )
+        help_btn.grid(row=row, column=2, padx=5, pady=10, sticky="w")
     
     def on_never_sell_at_loss_toggled(self):
         """Handle never-sell-at-loss toggle with confirmation dialog"""
@@ -450,7 +560,8 @@ class SettingsGUI:
                     "api_key": self.api_key_entry.get(),
                     "api_secret": self.api_secret_entry.get(),
                     "client_code": self.client_code_entry.get(),
-                    "password": self.password_entry.get()
+                    "password": self.password_entry.get(),
+                    "access_token": self.access_token_entry.get()
                 },
                 "capital": {
                     "total_capital": float(self.total_capital_entry.get()),
@@ -472,7 +583,7 @@ class SettingsGUI:
             current_settings.update(new_settings)
             
             # Save to JSON
-            self.settings_mgr.save(current_settings)
+            self.settings_mgr.save()
             
             messagebox.showinfo(
                 "✅ Success",

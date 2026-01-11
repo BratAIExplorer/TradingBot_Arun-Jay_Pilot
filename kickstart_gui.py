@@ -44,61 +44,79 @@ class TradingGUI:
 
         # ---------------- Performance Summary (Phase 0A) ----------------
         if DATABASE_AVAILABLE:
-            summary_frame = ctk.CTkFrame(self.root)
+            summary_frame = ctk.CTkFrame(self.root, fg_color="transparent")
             summary_frame.pack(pady=10, fill="x", padx=10)
             
+            # Configure grid columns to expand equally
+            for i in range(5):
+                summary_frame.grid_columnconfigure(i, weight=1)
+                
             # Get performance data
             perf = db.get_performance_summary()
             
-            # Portfolio Value
-            portfolio_card = ctk.CTkFrame(summary_frame)
-            portfolio_card.grid(row=0, column=0, padx=10, pady=5)
-            ctk.CTkLabel(portfolio_card, text="Portfolio", font=("Arial", 10)).pack()
+            # Portfolio Card
+            portfolio_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
+            portfolio_card.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
+            ctk.CTkLabel(portfolio_card, text="💼 Portfolio", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
             self.portfolio_value_label = ctk.CTkLabel(
                 portfolio_card, 
                 text=f"₹{perf.get('total_net_pnl', 0):,.0f}",
-                font=("Arial", 20, "bold")
+                font=("Arial", 22, "bold")
             )
-            self.portfolio_value_label.pack()
+            self.portfolio_value_label.pack(pady=(5, 15))
             
-            # Today's P&L
-            pnl_card = ctk.CTkFrame(summary_frame)
-            pnl_card.grid(row=0, column=1, padx=10, pady=5)
-            ctk.CTkLabel(pnl_card, text="Today's P&L", font=("Arial", 10)).pack()
-            today_pnl = perf.get('total_net_pnl', 0)  # Simplified for now
-            pnl_color = "green" if today_pnl >= 0 else "red"
+            # Total Profit Card
+            profit_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
+            profit_card.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
+            ctk.CTkLabel(profit_card, text="💰 Total Profit", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
+            total_profit = perf.get('total_net_pnl', 0)
+            profit_color = "#2ECC71" if total_profit >= 0 else "#E74C3C"
+            self.total_profit_label = ctk.CTkLabel(
+                profit_card,
+                text=f"₹{total_profit:,.0f}",
+                font=("Arial", 22, "bold"),
+                text_color=profit_color
+            )
+            self.total_profit_label.pack(pady=(5, 15))
+            
+            # Today's P&L Card
+            today_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
+            today_card.grid(row=0, column=2, padx=10, pady=5, sticky="nsew")
+            ctk.CTkLabel(today_card, text="📅 Today's P&L", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
+            today_pnl = perf.get('total_net_pnl', 0) # Simplified
+            pnl_color = "#2ECC71" if today_pnl >= 0 else "#E74C3C"
             self.today_pnl_label = ctk.CTkLabel(
-                pnl_card,
+                today_card,
                 text=f"₹{today_pnl:,.0f}",
-                font=("Arial", 20, "bold"),
+                font=("Arial", 22, "bold"),
                 text_color=pnl_color
             )
-            self.today_pnl_label.pack()
+            self.today_pnl_label.pack(pady=(5, 15))
             
-            # Total Trades
-            trades_card = ctk.CTkFrame(summary_frame)
-            trades_card.grid(row=0, column=2, padx=10, pady=5)
-            ctk.CTkLabel(trades_card, text="Total Trades", font=("Arial", 10)).pack()
+            # Total Trades Card
+            trades_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
+            trades_card.grid(row=0, column=3, padx=10, pady=5, sticky="nsew")
+            ctk.CTkLabel(trades_card, text="📊 Total Trades", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
             self.total_trades_label = ctk.CTkLabel(
                 trades_card,
                 text=str(perf.get('total_trades', 0)),
-                font=("Arial", 20, "bold")
+                font=("Arial", 22, "bold")
             )
-            self.total_trades_label.pack()
+            self.total_trades_label.pack(pady=(5, 15))
             
-            # Win Rate
-            winrate_card = ctk.CTkFrame(summary_frame)
-            winrate_card.grid(row=0, column=3, padx=10, pady=5)
-            ctk.CTkLabel(winrate_card, text="Win Rate", font=("Arial", 10)).pack()
+            # Win Rate Card
+            winrate_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
+            winrate_card.grid(row=0, column=4, padx=10, pady=5, sticky="nsew")
+            ctk.CTkLabel(winrate_card, text="🏆 Win Rate", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
             win_rate = perf.get('win_rate', 0)
-            winrate_color = "green" if win_rate >= 50 else "orange"
+            winrate_color = "#2ECC71" if win_rate >= 50 else "#F39C12"
             self.win_rate_label = ctk.CTkLabel(
                 winrate_card,
                 text=f"{win_rate:.1f}%",
-                font=("Arial", 20, "bold"),
+                font=("Arial", 22, "bold"),
                 text_color=winrate_color
             )
-            self.win_rate_label.pack()
+            self.win_rate_label.pack(pady=(5, 15))
 
         # ---------------- Buttons ----------------
         button_frame = ctk.CTkFrame(self.root)
@@ -477,24 +495,30 @@ class TradingGUI:
             if hasattr(self, 'portfolio_value_label'):
                 self.portfolio_value_label.configure(text=f"₹{perf.get('total_net_pnl', 0):,.0f}")
             
-            if hasattr(self, 'today_pnl_label'):
-                today_pnl = perf.get('total_net_pnl', 0)
-                pnl_color = "green" if today_pnl >= 0 else "red"
-                self.today_pnl_label.configure(
-                    text=f"₹{today_pnl:,.0f}",
-                    text_color=pnl_color
-                )
+                if hasattr(self, 'total_profit_label'):
+                    self.total_profit_label.configure(
+                        text=f"₹{perf.get('total_net_pnl', 0):,.0f}",
+                        text_color="#2ECC71" if perf.get('total_net_pnl', 0) >= 0 else "#E74C3C"
+                    )
+                
+                if hasattr(self, 'today_pnl_label'):
+                    today_pnl = perf.get('total_net_pnl', 0)
+                    pnl_color = "#2ECC71" if today_pnl >= 0 else "#E74C3C"
+                    self.today_pnl_label.configure(
+                        text=f"₹{today_pnl:,.0f}",
+                        text_color=pnl_color
+                    )
             
             if hasattr(self, 'total_trades_label'):
                 self.total_trades_label.configure(text=str(perf.get('total_trades', 0)))
             
-            if hasattr(self, 'win_rate_label'):
-                win_rate = perf.get('win_rate', 0)
-                winrate_color = "green" if win_rate >= 50 else "orange"
-                self.win_rate_label.configure(
-                    text=f"{win_rate:.1f}%",
-                    text_color=winrate_color
-                )
+                if hasattr(self, 'win_rate_label'):
+                    win_rate = perf.get('win_rate', 0)
+                    winrate_color = "#2ECC71" if win_rate >= 50 else "#F39C12"
+                    self.win_rate_label.configure(
+                        text=f"{win_rate:.1f}%",
+                        text_color=winrate_color
+                    )
             
             # Update trades table
             self.update_trades_table()

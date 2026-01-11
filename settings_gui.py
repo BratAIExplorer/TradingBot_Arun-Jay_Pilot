@@ -78,6 +78,15 @@ class SettingsGUI:
             hover_color="darkgray"
         )
         self.cancel_btn.grid(row=0, column=1, padx=10)
+
+        # Disclaimer Section
+        disclaimer_label = ctk.CTkLabel(
+            self.root,
+            text="⚠️ ARUN is a utility tool, not financial advice. You are responsible for your own investment decisions.",
+            font=("Arial", 10, "italic"),
+            text_color="gray"
+        )
+        disclaimer_label.pack(side="bottom", pady=10)
     
     def build_broker_tab(self):
         """Broker credentials configuration"""

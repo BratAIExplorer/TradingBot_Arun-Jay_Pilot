@@ -221,6 +221,26 @@ class TradingGUI:
         rsi_frame.grid_rowconfigure(0, weight=1)
         rsi_frame.grid_columnconfigure(0, weight=1)
 
+        # ---------------- Disclaimer Footer ----------------
+        disclaimer_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        disclaimer_frame.pack(side="bottom", fill="x", pady=(0, 5))
+        
+        disclaimer_text = (
+            "⚠️ DISCLAIMER: ARUN is a technical tool for algorithmic scanning and execution. It does NOT provide investment advice. "
+            "Users are solely responsible for their trading decisions, financial actions, and any resulting gains or losses. "
+            "Past performance does not guarantee future results. Trade responsibly."
+        )
+        
+        disclaimer_label = ctk.CTkLabel(
+            disclaimer_frame, 
+            text=disclaimer_text,
+            font=("Arial", 10),
+            text_color="#888888",
+            wraplength=1100,
+            justify="center"
+        )
+        disclaimer_label.pack(pady=5)
+
         # ---------------- Internals ----------------
         self.thread = None
         self.update_thread = None

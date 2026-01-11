@@ -86,8 +86,16 @@ class RiskManager:
                 logging.error(f"  🛑 CATASTROPHIC STOP: {symbol} down {pnl_pct:.1f}%!")
                 continue
             
-            # Check stop-loss
+            # Check stop-loss (with never-sell-at-loss override)
             if pnl_pct <= -self.stop_loss_pct:
+                # Check if never-sell-at-loss is enabled
+                never_sell_at_loss = self.settings.get('risk.never_sell_at_loss', False)
+                
+                if never_sell_at_loss and pnl_pct < 0:
+                    logging.warning(f"  ⚠️ Stop-loss ignored for {symbol} ({pnl_pct:.1f}%) - Never Sell at Loss enabled")
+                    continue  # Skip stop-loss, position remains open
+                
+                # Proceed with normal stop-loss
                 actions.append({
                     'symbol': symbol,
                     'exchange': exchange,

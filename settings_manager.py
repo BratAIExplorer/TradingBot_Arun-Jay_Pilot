@@ -7,6 +7,8 @@ import json
 import os
 from typing import Dict, Any
 from pathlib import Path
+from cryptography.fernet import Fernet
+import base64
 
 
 class SettingsManager:
@@ -17,6 +19,7 @@ class SettingsManager:
     def __init__(self, settings_file: str = "settings.json"):
         self.settings_file = settings_file
         self.settings = {}
+        self._encryption_key = self._get_or_create_encryption_key()
         self.load()
     
     def load(self) -> Dict[str, Any]:
@@ -85,6 +88,49 @@ class SettingsManager:
         
         return value
     
+    def _get_or_create_encryption_key(self) -> bytes:
+        """
+        Get or create encryption key for sensitive data
+        Stores key in .encryption_key file (should be added to .gitignore)
+        """
+        key_file = ".encryption_key"
+        if os.path.exists(key_file):
+            with open(key_file, 'rb') as f:
+                return f.read()
+        else:
+            # Generate new key
+            key = Fernet.generate_key()
+            with open(key_file, 'wb') as f:
+                f.write(key)
+            print("🔐 New encryption key generated for sensitive data")
+            return key
+    
+    def _encrypt_value(self, value: str) -> str:
+        """
+        Encrypt a string value
+        """
+        if not value:
+            return ""
+        fernet = Fernet(self._encryption_key)
+        encrypted = fernet.encrypt(value.encode())
+        return base64.b64encode(encrypted).decode()
+    
+    def _decrypt_value(self, encrypted_value: str) -> str:
+        """
+        Decrypt a string value
+        Returns empty string if decryption fails
+        """
+        if not encrypted_value:
+            return ""
+        try:
+            fernet = Fernet(self._encryption_key)
+            encrypted_bytes = base64.b64decode(encrypted_value.encode())
+            decrypted = fernet.decrypt(encrypted_bytes)
+            return decrypted.decode()
+        except Exception:
+            # If decryption fails, assume it's plain text (backward compatibility)
+            return encrypted_value
+    
     def set(self, key_path: str, value: Any) -> bool:
         """
         Set setting value using dot notation
@@ -101,9 +147,28 @@ class SettingsManager:
                 current[key] = {}
             current = current[key]
         
-        # Set the value
-        current[keys[-1]] = value
+        # Set the value (encrypt if sensitive field)
+        if self._is_sensitive_field(key_path):
+            current[keys[-1]] = self._encrypt_value(str(value))
+        else:
+            current[keys[-1]] = value
         return self.save()
+    
+    def _is_sensitive_field(self, key_path: str) -> bool:
+        """
+        Check if field should be encrypted
+        """
+        sensitive_patterns = ['api_key', 'api_secret', 'password', 'token']
+        return any(pattern in key_path.lower() for pattern in sensitive_patterns)
+    
+    def get_decrypted(self, key_path: str, default=None):
+        """
+        Get setting value and decrypt if it's a sensitive field
+        """
+        value = self.get(key_path, default)
+        if value and self._is_sensitive_field(key_path):
+            return self._decrypt_value(str(value))
+        return value
     
     def validate(self) -> tuple[bool, list]:
         """

@@ -100,8 +100,8 @@ class SettingsGUI:
         api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 12))
         api_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
         
-        self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key")
-        self.api_key_entry.insert(0, broker.get("api_key", ""))
+        self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
+        self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
         self.api_key_entry.grid(row=1, column=1, sticky="w", padx=10, pady=10)
         
         # API Secret
@@ -109,7 +109,7 @@ class SettingsGUI:
         secret_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
         
         self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
-        self.api_secret_entry.insert(0, broker.get("api_secret", ""))
+        self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
         self.api_secret_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
         
         # Client Code
@@ -125,14 +125,14 @@ class SettingsGUI:
         password_label.grid(row=4, column=0, sticky="w", padx=20, pady=10)
         
         self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
-        self.password_entry.insert(0, broker.get("password", ""))
+        self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
         self.password_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
         
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
         show_pass_check = ctk.CTkCheckBox(
             tab,
-            text="Show passwords",
+            text="Show API keys & passwords",
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
@@ -141,7 +141,7 @@ class SettingsGUI:
         # Info label
         info = ctk.CTkLabel(
             tab,
-            text="💡 Tip: Credentials are stored in settings.json. Keep this file secure!",
+            text="🔐 Tip: All sensitive credentials are encrypted and stored securely in settings.json",
             font=("Arial", 10),
             text_color="gray"
         )
@@ -226,8 +226,12 @@ class SettingsGUI:
             text=f"• Total Capital: ₹{total_cap:,.0f}\n"
                  f"• Per Trade: ₹{per_trade_amount:,.0f} ({per_trade_pct:.1f}%)\n"
                  f"• Max Positions: {self.max_positions_var.get()}\n"
-                 f"• Max Deployed: ₹{per_trade_amount * self.max_positions_var.get():,.0f}",
-            font=("Arial", 11),
+                 f"• Max Deployed: ₹{per_trade_amount * self.max_positions_var.get():,.0f}\n\n"
+                 f"💡 How Quantity Works:\n"
+                 f"  • CSV Quantity = 0: Calculate shares from capital %\n"
+                 f"  • CSV Quantity > 0: Buy exactly that many shares (ignore %)\n"
+                 f"  • Max Positions limits total # of different stocks held",
+            font=("Arial", 10),
             justify="left"
         )
         info_text.pack(anchor="w", padx=10, pady=5)
@@ -314,9 +318,34 @@ class SettingsGUI:
         daily_value_label = ctk.CTkLabel(tab, text=f"{self.daily_loss_var.get():.1f}%", font=("Arial", 12, "bold"))
         daily_value_label.grid(row=3, column=2, sticky="w", padx=5)
         
-        # Warning section
+        # Never sell at loss option
+        never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
+        never_sell_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        
+        self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
+        never_sell_check = ctk.CTkCheckBox(
+            never_sell_frame,
+            text="⛔ Never Sell at Loss (Override Stop-Loss)",
+            variable=self.never_sell_at_loss_var,
+            font=("Arial", 13, "bold"),
+            command=self.on_never_sell_at_loss_toggled
+        )
+        never_sell_check.pack(anchor="w", padx=15, pady=(15, 5))
+        
+        never_sell_warning = ctk.CTkLabel(
+            never_sell_frame,
+            text="⚠️ WARNING: When enabled, stop-loss will NOT trigger if position is in loss.\n"
+                 "This could lead to unlimited losses if market keeps dropping.\n"
+                 "Catastrophic stop will still work as final safety measure.",
+            font=("Arial", 10),
+            text_color="#FFB84D",
+            justify="left"
+        )
+        never_sell_warning.pack(anchor="w", padx=15, pady=(0, 15))
+        
+        # Risk summary section
         warning_frame = ctk.CTkFrame(tab, fg_color="darkred")
-        warning_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
+        warning_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
         
         warning_label = ctk.CTkLabel(
             warning_frame,
@@ -370,10 +399,30 @@ class SettingsGUI:
         open_csv_btn.pack(pady=10)
     
     def toggle_password_visibility(self):
-        """Toggle password field visibility"""
+        """Toggle password and API key field visibility"""
         show = self.show_pass_var.get()
+        self.api_key_entry.configure(show="" if show else "*")
         self.api_secret_entry.configure(show="" if show else "*")
         self.password_entry.configure(show="" if show else "*")
+    
+    def on_never_sell_at_loss_toggled(self):
+        """Handle never-sell-at-loss toggle with confirmation dialog"""
+        if self.never_sell_at_loss_var.get():
+            from tkinter import messagebox
+            result = messagebox.askokcancel(
+                "⚠️ Warning: Never Sell at Loss",
+                "You are about to enable 'Never Sell at Loss'.\n\n"
+                "This will OVERRIDE your stop-loss protection when positions are in loss.\n\n"
+                "Risk:\n"
+                "• Losses could accumulate indefinitely\n"
+                "• Capital could be tied up in losing positions\n"
+                "• Catastrophic stop is your only safety net\n\n"
+                "Are you sure you want to enable this?",
+                icon='warning'
+            )
+            if not result:
+                # User clicked Cancel, revert the checkbox
+                self.never_sell_at_loss_var.set(False)
     
     def open_config_csv(self):
         """Open config CSV in default editor"""
@@ -413,7 +462,8 @@ class SettingsGUI:
                     "stop_loss_pct": self.stop_loss_var.get(),
                     "profit_target_pct": self.profit_target_var.get(),
                     "catastrophic_stop_loss_pct": self.cat_stop_var.get(),
-                    "daily_loss_limit_pct": self.daily_loss_var.get()
+                    "daily_loss_limit_pct": self.daily_loss_var.get(),
+                    "never_sell_at_loss": self.never_sell_at_loss_var.get()
                 }
             }
             

@@ -19,6 +19,10 @@ from dataclasses import dataclass
 import numpy as np
 from getRSI import calculate_intraday_rsi_tv
 from requests.exceptions import Timeout, ConnectionError, RequestException
+try:
+    from nifty50 import NIFTY_50
+except ImportError:
+    NIFTY_50 = set()
 
 # ---------------- New Module Imports (Phase 0A) ----------------
 try:
@@ -399,6 +403,41 @@ def get_exchange_for_symbol(symbol: str) -> list[str]:
 # ---------------- Positions ----------------
 
 def get_positions():
+    # Paper Trading Override
+    if settings and settings.get("app_settings.paper_trading_mode"):
+        if not db:
+            return {}
+        try:
+            # Fetch simulated positions from DB
+            db_positions = db.get_open_positions(is_paper=True)
+            pos_dict = {}
+
+            for pos in db_positions:
+                sym = pos['symbol']
+                qty = pos['net_quantity']
+                avg_price = pos['avg_entry_price']
+                exchange = pos['exchange']
+
+                # Fetch live price for P&L calculation
+                market_data, _ = fetch_market_data_once(sym, exchange)
+                ltp = float(market_data.get("last_price", avg_price)) if market_data else avg_price
+
+                pnl = (ltp - avg_price) * qty
+
+                pos_dict[sym] = {
+                    "qty": qty,
+                    "price": avg_price,
+                    "ltp": ltp,
+                    "pnl": pnl,
+                    "used_quantity": 0,
+                    "exchange": exchange,
+                    "is_paper": True
+                }
+            return pos_dict
+        except Exception as e:
+            log_ok(f"⚠️ Error fetching paper positions: {e}")
+            return {}
+
     if is_offline():
         return {}
     url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
@@ -449,6 +488,31 @@ def safe_get_positions():
             raise
 
 def get_orders_today():
+    # Paper Trading Override
+    if settings and settings.get("app_settings.paper_trading_mode"):
+        if not db:
+            return []
+        try:
+            # Fetch simulated orders from DB for today
+            df = db.get_today_trades(is_paper=True)
+            executed = []
+            for _, row in df.iterrows():
+                executed.append({
+                    "tradingsymbol": row['symbol'],
+                    "exchange": row['exchange'],
+                    "transaction_type": row['action'],
+                    "quantity": row['quantity'],
+                    "filled_quantity": row['quantity'],
+                    "price": row['price'],
+                    "average_price": row['price'],
+                    "status": "COMPLETE",
+                    "order_timestamp": row['timestamp']
+                })
+            return executed
+        except Exception as e:
+            log_ok(f"⚠️ Error fetching paper orders: {e}")
+            return []
+
     if is_offline():
         return []
     url = "https://api.mstock.trade/openapi/typea/orders"
@@ -938,6 +1002,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         sell_rsi = sym_config["Sell RSI"]
         profit_pct = sym_config["Profit Target %"]
         config_qty = int(sym_config.get("Quantity", 0))
+        strategy_type = str(sym_config.get("Strategy", "TRADE")).upper() # TRADE or INVEST
         
         # Get current price first (needed for quantity calculation)
         current_close = float(market_data.get("last_price", np.nan)) if market_data else np.nan
@@ -1016,12 +1081,32 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
 
         if pos["active"] and pos["price"] > 0:
             can_consider_sell = current_close > pos["price"]
-            should_sell = (last_rsi >= sell_rsi and can_consider_sell) or (target_price and current_close > pos["price"] and current_close >= target_price)
+
+            # --- SELL LOGIC ---
+            should_sell = False
+            sell_reason = ""
+
+            # Check Profit Target (Available in both TRADE and INVEST)
+            if target_price and current_close >= target_price:
+                should_sell = True
+                sell_reason = f"Profit Target Hit ({profit_pct}%)"
+
+            # Check RSI Sell (Only for TRADE strategy)
+            elif strategy_type == "TRADE":
+                if last_rsi >= sell_rsi and can_consider_sell:
+                    should_sell = True
+                    sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
+
+            # Accumulation Mode (INVEST): We SKIP RSI-based selling
+            elif strategy_type == "INVEST":
+                if last_rsi >= sell_rsi:
+                     log_ok(f"💎 INVEST MODE: Ignoring Sell Signal for {symbol} (RSI {last_rsi:.1f}). HODLing.")
+
             if should_sell and is_market_open_now_ist():
                 sell_qty = max(0, min(qty, available_qty))
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
-                    log_ok(f"⏳ Attempting sell for {symbol}: RSI={last_rsi:.2f}")
+                    log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
                     safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0)
                 return
 
@@ -1081,6 +1166,45 @@ def connectivity_monitor():
 def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
     if is_offline():
         return False
+
+    # Check Paper Trading Mode
+    if settings and settings.get("app_settings.paper_trading_mode"):
+        log_ok(f"🧪 PAPER TRADE: {side} {symbol} Qty: {qty} @ {price or 'MKT'}")
+
+        # Log to database as a paper trade
+        if db:
+            try:
+                # Estimate price if MKT (use last close if available, else 0)
+                estimated_price = price
+                if estimated_price == 0:
+                    market_data, _ = fetch_market_data_once(symbol, exchange)
+                    estimated_price = float(market_data.get("last_price", 0)) if market_data else 0
+
+                gross_amount = estimated_price * qty
+
+                # Zero fees for paper trading simulation (or could simulate them)
+                total_fees = 0
+                net_amount = gross_amount if side.upper() == "BUY" else gross_amount
+
+                db.insert_trade(
+                    symbol=symbol,
+                    exchange=exchange,
+                    action=side.upper(),
+                    quantity=qty,
+                    price=estimated_price,
+                    gross_amount=gross_amount,
+                    total_fees=total_fees,
+                    net_amount=net_amount,
+                    strategy="RSI (Paper)",
+                    reason=f"Paper Trade {side.upper()}",
+                    broker="PAPER"
+                )
+                log_ok("✅ Paper trade logged to DB")
+                return True
+            except Exception as e:
+                log_ok(f"❌ Failed to log paper trade: {e}")
+                return False
+        return True
 
     def attempt_place_order():
         variety = "regular"
@@ -1181,11 +1305,21 @@ def run_cycle():
     reset_cycle_quotes()
     log_ok(f"---------------------------------------------------------------------------------------------------------------{datetime.now()}")
     processed = set()
+    nifty_only = settings.get("app_settings.nifty_50_only", False) if settings else False
+
     for symbol, ex in SYMBOLS_TO_TRACK:
         key = (symbol, ex)
         if key in processed:
             continue
         processed.add(key)
+
+        # Nifty 50 Filter Check
+        if nifty_only and symbol not in NIFTY_50:
+            # We log this once per cycle to avoid spam, or check if we should even track it
+            # For now, just skip silently or with verbose log
+            # log_ok(f"🚫 Skipping {symbol}: Not in Nifty 50")
+            continue
+
         try:
             tf = config_dict.get((symbol, ex), {}).get("Timeframe", "15T")
             market_data, _ = fetch_market_data_once(symbol, ex)

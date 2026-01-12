@@ -28,6 +28,7 @@ class TradesDatabase:
         
         # Create tables
         self._create_tables()
+        self._run_migrations()
         print(f"✅ Database initialized: {db_path}")
     
     def _create_tables(self):
@@ -82,6 +83,23 @@ class TradesDatabase:
         """)
         
         self.conn.commit()
+
+    def _run_migrations(self):
+        """
+        Run schema migrations for existing databases
+        """
+        try:
+            # Check if 'broker' column exists
+            self.cursor.execute("PRAGMA table_info(trades)")
+            columns = [info[1] for info in self.cursor.fetchall()]
+
+            if 'broker' not in columns:
+                print("🔄 Migrating database: Adding 'broker' column...")
+                self.cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
+                self.conn.commit()
+                print("✅ Migration complete")
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
     
     def insert_trade(self,
                     symbol: str,
@@ -131,21 +149,28 @@ class TradesDatabase:
         print(f"✅ Trade logged: {action} {symbol} @ ₹{price} (ID: {trade_id})")
         return trade_id
     
-    def get_open_positions(self) -> List[Dict]:
+    def get_open_positions(self, is_paper: bool = False) -> List[Dict]:
         """
         Get all open positions (bought but not yet sold)
+        Filter by paper/real trades to avoid mixing
         """
-        self.cursor.execute("""
+        broker_filter = "broker = 'PAPER'" if is_paper else "broker != 'PAPER'"
+
+        query = f"""
             SELECT symbol, exchange, 
                    SUM(CASE WHEN action = 'BUY' THEN quantity ELSE -quantity END) as net_quantity,
                    AVG(CASE WHEN action = 'BUY' THEN price END) as avg_entry_price,
                    MIN(CASE WHEN action = 'BUY' THEN timestamp END) as first_buy_time,
                    SUM(CASE WHEN action = 'BUY' THEN net_amount ELSE 0 END) as total_invested,
-                   strategy
+                   strategy,
+                   broker
             FROM trades
+            WHERE {broker_filter}
             GROUP BY symbol, exchange
             HAVING net_quantity > 0
-        """)
+        """
+
+        self.cursor.execute(query)
         
         positions = []
         for row in self.cursor.fetchall():
@@ -172,14 +197,16 @@ class TradesDatabase:
         df = pd.read_sql_query(query, self.conn, params=params)
         return df
     
-    def get_today_trades(self) -> pd.DataFrame:
+    def get_today_trades(self, is_paper: bool = False) -> pd.DataFrame:
         """
         Get today's trades
         """
         today = datetime.now().date().isoformat()
-        query = """
+        broker_filter = "broker = 'PAPER'" if is_paper else "broker != 'PAPER'"
+
+        query = f"""
             SELECT * FROM trades
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(timestamp) = ? AND {broker_filter}
             ORDER BY timestamp DESC
         """
         df = pd.read_sql_query(query, self.conn, params=[today])

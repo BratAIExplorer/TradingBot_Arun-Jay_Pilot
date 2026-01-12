@@ -97,9 +97,37 @@ class SettingsGUI:
         # Get broker settings
         broker = self.settings_mgr.get("broker", {})
         
+        # Paper Trading Mode Toggle
+        paper_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
+        paper_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
+
+        self.paper_mode_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.paper_trading_mode", True))
+        paper_check = ctk.CTkCheckBox(
+            paper_frame,
+            text="🧪 Enable Paper Trading (Simulation Mode)",
+            variable=self.paper_mode_var,
+            font=("Arial", 13, "bold"),
+            text_color="#3498DB"
+        )
+        paper_check.pack(side="left", padx=15, pady=10)
+
+        self.add_help_button(paper_frame, 0, "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
+
+        # Nifty 50 Filter Toggle
+        self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
+        nifty_check = ctk.CTkCheckBox(
+            paper_frame,
+            text="🛡️ Nifty 50 Only (Safety Filter)",
+            variable=self.nifty_filter_var,
+            font=("Arial", 13, "bold"),
+            text_color="#2ECC71"
+        )
+        nifty_check.pack(side="left", padx=15, pady=10)
+        self.add_help_button(paper_frame, 0, "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
+
         # Broker selection
         broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
-        broker_label.grid(row=0, column=0, sticky="w", padx=20, pady=10)
+        broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
         
         self.broker_var = ctk.StringVar(value=broker.get("name", "mstock"))
         broker_menu = ctk.CTkOptionMenu(
@@ -108,62 +136,62 @@ class SettingsGUI:
             values=["mstock", "zerodha", "other"],
             width=200
         )
-        broker_menu.grid(row=0, column=1, sticky="w", padx=10, pady=10)
+        broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)
         
         # API Key
         api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 12))
-        api_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
+        api_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
         
         self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
         self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
-        self.api_key_entry.grid(row=1, column=1, sticky="w", padx=10, pady=10)
+        self.api_key_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
         # Help button for API Key
-        self.add_help_button(tab, 1, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
+        self.add_help_button(tab, 2, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
         
         # API Secret
         secret_label = ctk.CTkLabel(tab, text="API Secret:", font=("Arial", 12))
-        secret_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
+        secret_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
         
         self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
         self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
-        self.api_secret_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+        self.api_secret_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
 
         # Help button for API Secret
-        self.add_help_button(tab, 2, "API Secret: Companion to API Key, found in the same API portal.")
+        self.add_help_button(tab, 3, "API Secret: Companion to API Key, found in the same API portal.")
         
         # Client Code
         client_label = ctk.CTkLabel(tab, text="Client Code:", font=("Arial", 12))
-        client_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
+        client_label.grid(row=4, column=0, sticky="w", padx=20, pady=10)
         
         self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
         self.client_code_entry.insert(0, broker.get("client_code", ""))
-        self.client_code_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        self.client_code_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
 
         # Help button for Client Code
-        self.add_help_button(tab, 3, "Client Code: Your unique login ID provided by the broker.")
+        self.add_help_button(tab, 4, "Client Code: Your unique login ID provided by the broker.")
         
         # Password
         password_label = ctk.CTkLabel(tab, text="Password:", font=("Arial", 12))
-        password_label.grid(row=4, column=0, sticky="w", padx=20, pady=10)
+        password_label.grid(row=5, column=0, sticky="w", padx=20, pady=10)
         
         self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
         self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
-        self.password_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
+        self.password_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
 
         # Help button for Password
-        self.add_help_button(tab, 4, "Password: Your login password for the broker portal.")
+        self.add_help_button(tab, 5, "Password: Your login password for the broker portal.")
 
         # Access Token
         token_label = ctk.CTkLabel(tab, text="Access Token:", font=("Arial", 12))
-        token_label.grid(row=5, column=0, sticky="w", padx=20, pady=10)
+        token_label.grid(row=6, column=0, sticky="w", padx=20, pady=10)
         
         self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token", show="*")
         self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
-        self.access_token_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
+        self.access_token_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
         
         # Help button for Token
-        self.add_help_button(tab, 5, "Access Token: \n- mStock: Generated via login flow or available under API portal.\n- Zerodha: Obtained after app authorization.")
+        self.add_help_button(tab, 6, "Access Token: \n- mStock: Generated via login flow or available under API portal.\n- Zerodha: Obtained after app authorization.")
 
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
@@ -173,7 +201,7 @@ class SettingsGUI:
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
-        show_pass_check.grid(row=6, column=1, sticky="w", padx=10, pady=5)
+        show_pass_check.grid(row=7, column=1, sticky="w", padx=10, pady=5)
         
         # Info label
         info = ctk.CTkLabel(
@@ -182,7 +210,7 @@ class SettingsGUI:
             font=("Arial", 10),
             text_color="gray"
         )
-        info.grid(row=6, column=0, columnspan=2, padx=20, pady=20)
+        info.grid(row=7, column=0, columnspan=2, padx=20, pady=20)
     
     def build_capital_tab(self):
         """Capital management configuration"""
@@ -412,13 +440,14 @@ class SettingsGUI:
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Enabled", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %"),
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %"),
             show="headings",
             height=8
         )
         self.stock_table.heading("Symbol", text="Symbol")
         self.stock_table.heading("Exchange", text="Exch")
         self.stock_table.heading("Enabled", text="Enabled")
+        self.stock_table.heading("Strategy", text="Mode") # New column
         self.stock_table.heading("Timeframe", text="TF")
         self.stock_table.heading("Buy RSI", text="Buy")
         self.stock_table.heading("Sell RSI", text="Sell")
@@ -504,6 +533,7 @@ class SettingsGUI:
                         row['Symbol'], 
                         row['Exchange'], 
                         "Yes" if str(row['Enabled']).upper() == 'TRUE' else "No",
+                        row.get('Strategy', 'TRADE'), # Default to TRADE if missing
                         row['Timeframe'],
                         row['Buy RSI'],
                         row['Sell RSI'],
@@ -603,6 +633,10 @@ class SettingsGUI:
         try:
             # Build settings dictionary
             new_settings = {
+                "app_settings": {
+                    "paper_trading_mode": self.paper_mode_var.get(),
+                    "nifty_50_only": self.nifty_filter_var.get()
+                },
                 "broker": {
                     "name": self.broker_var.get(),
                     "api_key": self.api_key_entry.get(),
@@ -713,8 +747,15 @@ class SettingsGUI:
         exch_var = ctk.StringVar(value=edit_values[1] if edit_values else "NSE")
         ctk.CTkOptionMenu(dialog, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
         
+        # Strategy Mode
+        ctk.CTkLabel(dialog, text="Strategy Mode:").pack(pady=(10, 0))
+        strat_var = ctk.StringVar(value=edit_values[3] if edit_values else "TRADE")
+        ctk.CTkOptionMenu(dialog, values=["TRADE", "INVEST"], variable=strat_var).pack(pady=5)
+
         ctk.CTkLabel(dialog, text="Timeframe:").pack(pady=(10, 0))
-        tf_var = ctk.StringVar(value=edit_values[3] if edit_values else "15T")
+        # Adjust index for edit_values because we added a column
+        tf_index = 4 if edit_values else 3
+        tf_var = ctk.StringVar(value=edit_values[tf_index] if edit_values else "15T")
         ctk.CTkOptionMenu(dialog, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
         
         # RSI Inputs in a grid
@@ -724,23 +765,27 @@ class SettingsGUI:
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
-        buy_rsi_entry.insert(0, edit_values[4] if edit_values else "35")
+        buy_rsi_index = 5 if edit_values else 4
+        buy_rsi_entry.insert(0, edit_values[buy_rsi_index] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
         sell_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         sell_rsi_entry.grid(row=1, column=1, padx=10)
-        sell_rsi_entry.insert(0, edit_values[5] if edit_values else "65")
+        sell_rsi_index = 6 if edit_values else 5
+        sell_rsi_entry.insert(0, edit_values[sell_rsi_index] if edit_values else "65")
         
         # Qty and Target
         ctk.CTkLabel(dialog, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
         qty_entry = ctk.CTkEntry(dialog, width=200)
         qty_entry.pack(pady=5)
-        qty_entry.insert(0, edit_values[6] if edit_values else "0")
+        qty_index = 7 if edit_values else 6
+        qty_entry.insert(0, edit_values[qty_index] if edit_values else "0")
         
         ctk.CTkLabel(dialog, text="Profit Target %:").pack(pady=(10, 0))
         target_entry = ctk.CTkEntry(dialog, width=200)
         target_entry.pack(pady=5)
-        target_entry.insert(0, edit_values[7] if edit_values else "10.0")
+        target_index = 8 if edit_values else 7
+        target_entry.insert(0, edit_values[target_index] if edit_values else "10.0")
 
         enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
         ctk.CTkCheckBox(dialog, text="Enabled", variable=enabled_var).pack(pady=15)
@@ -756,6 +801,7 @@ class SettingsGUI:
                     'Symbol': symbol,
                     'Broker': 'mstock', # Default or fetched from broker tab
                     'Enabled': enabled_var.get(),
+                    'Strategy': strat_var.get(),
                     'Timeframe': tf_var.get(),
                     'Buy RSI': int(buy_rsi_entry.get()),
                     'Sell RSI': int(sell_rsi_entry.get()),

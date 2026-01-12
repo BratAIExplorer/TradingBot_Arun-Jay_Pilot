@@ -171,11 +171,11 @@ class TradingGUI:
 
         self.positions_table = ttk.Treeview(
             pos_frame,
-            columns=("Symbol", "Qty", "Entry", "Last", "PnL"),
+            columns=("Symbol", "Mode", "Qty", "Entry", "Last", "PnL"),
             show="headings",
             style="NoHighlight.Treeview"
         )
-        for col in ("Symbol", "Qty", "Entry", "Last", "PnL"):
+        for col in ("Symbol", "Mode", "Qty", "Entry", "Last", "PnL"):
             self.positions_table.heading(col, text=col, command=lambda c=col: self.sort_table(self.positions_table, c, False))
             self.positions_table.column(col, width=120, stretch=True, anchor="center")
         
@@ -433,12 +433,15 @@ class TradingGUI:
                                 price = pos.get("price", 0.0)
                                 last_price = pos.get("ltp", 0.0)
                                 pnl = pos.get("pnl", 0.0)
+                                is_paper = pos.get("is_paper", False)
+                                mode_str = "PAPER 🧪" if is_paper else "REAL 💵"
                                 tag = "profit" if pnl >= 0 else "loss"
+                                if is_paper: tag = "paper"
 
                                 if self.positions_table.exists(iid):
-                                    self.positions_table.item(iid, values=(sym_str, qty, price, last_price, pnl), tags=(tag,))
+                                    self.positions_table.item(iid, values=(sym_str, mode_str, qty, price, last_price, pnl), tags=(tag,))
                                 else:
-                                    self.positions_table.insert("", "end", iid=iid, values=(sym_str, qty, price, last_price, pnl), tags=(tag,))
+                                    self.positions_table.insert("", "end", iid=iid, values=(sym_str, mode_str, qty, price, last_price, pnl), tags=(tag,))
 
                             remove_placeholder()
                             for iid in list(self.positions_table.get_children()):
@@ -464,6 +467,7 @@ class TradingGUI:
 
         self.positions_table.tag_configure("profit", foreground="green")
         self.positions_table.tag_configure("loss", foreground="red")
+        self.positions_table.tag_configure("paper", foreground="#3498DB") # Blue for paper trades
         self.positions_table.tag_configure("neutral", foreground="black")
         self.rsi_table.tag_configure("buy", foreground="black")
         self.rsi_table.tag_configure("sell", foreground="black")
@@ -741,5 +745,12 @@ class TradingGUI:
         self.root.mainloop()
 
 if __name__ == "__main__":
-    gui = TradingGUI()
-    gui.run()
+    # Check Disclaimer first
+    from disclaimer_gui import DisclaimerGUI
+
+    def start_main_gui():
+        gui = TradingGUI()
+        gui.run()
+
+    # Launch Disclaimer -> then Main GUI
+    DisclaimerGUI(start_main_gui)

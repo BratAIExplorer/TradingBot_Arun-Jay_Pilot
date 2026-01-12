@@ -36,11 +36,26 @@ ARUN is a smart, automated trading assistant designed for Indian investors. It a
 
 ## 🚀 Getting Started (Desktop App)
 
-1.  **Download & Install:**
-    - Download `ARUN_Bot.exe`.
-    - Double-click to run. (No installation required).
+### How to Distribute (Friends & Family)
+Since you are distributing this yourself, here is the easiest way for your friends to get started:
 
-2.  **First Run:**
+**Method 1: Share the EXE directly**
+1.  Run `install_and_build.bat` on your computer.
+2.  Go to the `dist` folder.
+3.  Zip the `ARUN_Bot.exe` file.
+4.  Send it to your friends via Email/WhatsApp/Drive.
+5.  They just double-click to run.
+
+**Method 2: One-Click Source Setup**
+If they downloaded the source code (Zip from GitHub):
+1.  Extract the folder.
+2.  Double-click **`install_and_build.bat`**.
+3.  Wait for it to finish.
+4.  It will automatically create an **ARUN Bot shortcut** on their Desktop.
+
+### Usage Guide
+
+1.  **First Run:**
     - Accept the **User Responsibility Disclaimer**.
     - Go to **Settings** -> **Broker** tab.
     - Enter your mStock credentials (API Key, Secret, Client Code).

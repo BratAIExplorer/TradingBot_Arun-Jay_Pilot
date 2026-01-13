@@ -12,7 +12,6 @@ a = Analysis(
         ('settings_default.json', '.'),
         ('config_table.csv', '.'),
         ('nifty50.py', '.'),
-        ('.env', '.'),
     ],
     hiddenimports=[
         'PIL',

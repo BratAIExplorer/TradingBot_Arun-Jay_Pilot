@@ -92,6 +92,22 @@ If they downloaded the source code (Zip from GitHub):
    ```
    *This uses PyInstaller to package the app into `dist/ARUN_Bot.exe`.*
 
+## ❓ FAQ & Troubleshooting
+
+### Q: Does this run 24/7?
+**A:** Because this is a **Desktop Application**, it only runs when your computer is ON and the app is OPEN.
+*   If your PC sleeps, the bot stops.
+*   If you need true 24/7 trading (e.g., for servers), you should run this on a **VPS (Virtual Private Server)** or wait for the Phase 2 Web Version.
+
+### Q: Can I add more strategies?
+**A:** Yes! The current version supports **RSI Trading** and **Investment (Accumulation)**.
+*   The architecture is modular. New strategies can be added by modifying the `kickstart.py` logic engine.
+*   *Note:* This requires Python knowledge.
+
+### Q: The Installer Failed!
+**A:** Check the **`install_log.txt`** file created in the folder. It contains the detailed error message.
+*   **Common Fix:** Ensure you have Python 3.10+ installed and added to your PATH.
+
 ## ⚠️ Disclaimer
 
 **Not Investment Advice.** ARUN is a software tool for order execution. You are solely responsible for the configuration, strategy, and risk management. Always test strategies in **Paper Trading Mode** first. The developers are not liable for financial losses.

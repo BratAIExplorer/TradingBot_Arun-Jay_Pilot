@@ -1,9 +1,0 @@
-customtkinter
-yfinance
-pandas
-numpy
-cryptography
-requests
-python-dotenv
-pytz
-pyinstaller

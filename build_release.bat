@@ -36,6 +36,12 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
+echo 🔒 Ensuring winshell is installed...
+pip install winshell
+if %errorlevel% neq 0 (
+    echo ⚠️ Failed to install winshell (may already be installed).
+)
+
 echo 📦 Packaging...
 echo ℹ️ Running PyInstaller...
 pyinstaller --noconfirm --onedir --windowed --name "%EXE_NAME%" --hidden-import=yfinance --hidden-import=PIL --hidden-import=customtkinter --hidden-import=tkinter kickstart_gui.py

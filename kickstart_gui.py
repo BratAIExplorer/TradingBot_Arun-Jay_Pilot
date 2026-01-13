@@ -234,6 +234,10 @@ class TradingGUI:
         self.rsi_label = ctk.CTkLabel(rsi_header_frame, text="📈 RSI Monitor (Live)", font=("Arial", 16, "bold"))
         self.rsi_label.pack(side="left")
 
+        # Market Status Indicator
+        self.market_status_label = ctk.CTkLabel(rsi_header_frame, text="NIFTY: Checking... ⏳", font=("Arial", 12, "bold"))
+        self.market_status_label.pack(side="right", padx=10)
+
         rsi_frame = ctk.CTkFrame(dashboard_container)
         rsi_frame.pack(fill="x", padx=10, pady=5)
 
@@ -460,6 +464,13 @@ class TradingGUI:
                                 rsi_display = f"{rsi_val:.2f}" if rsi_val is not None else f"Error: {error}"
                                 self.rsi_table.item(row, values=(sym_str, rsi_display, buy_rsi, sell_rsi), tags=(tag,))
                                 break
+                    elif data_type == "market_status":
+                        status, price, dma = data
+                        color = "#2ECC71" if status == "BULLISH" else "#E74C3C"
+                        icon = "🟢" if status == "BULLISH" else "🔴"
+                        text = f"NIFTY: {icon} {status} ({price:.0f})"
+                        self.market_status_label.configure(text=text, text_color=color)
+
                 except queue.Empty:
                     break
         except Exception as e:
@@ -476,6 +487,13 @@ class TradingGUI:
         self.root.after(2000, self.update_dashboard)  # Update every 2 seconds
 
     def update_data_in_background(self):
+        # Import inside thread to avoid circular dependency
+        try:
+            from regime_monitor import RegimeMonitor
+            monitor = RegimeMonitor()
+        except ImportError:
+            monitor = None
+
         while not self.stop_update_flag.is_set():
             if not is_system_online():
                 self.write_log("🔴 System offline, skipping data update\n")
@@ -484,6 +502,16 @@ class TradingGUI:
 
             try:
                 positions = safe_get_live_positions_merged()
+
+                # Fetch Market Status
+                if monitor:
+                    m_status = monitor.get_market_status()
+                    if "status" in m_status and m_status["status"] != "UNKNOWN":
+                        try:
+                            self.data_queue.put(("market_status", (m_status["status"], m_status["price"], m_status["dma"])), timeout=1)
+                        except queue.Full:
+                            pass
+
                 try:
                     self.data_queue.put(("positions", positions), timeout=1)
                 except queue.Full:

@@ -45,7 +45,6 @@ a = Analysis(
 )
 
 # CustomTkinter data files
-from customtkinter import get_appearance_mode_or_theme
 import customtkinter
 import os
 ctk_path = os.path.dirname(customtkinter.__file__)

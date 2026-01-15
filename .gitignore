@@ -51,7 +51,7 @@ BACKUP_*/
 *_BACKUP_*.py
 
 # Build artifacts
-# *.spec  <-- Commented out to allow build.spec tracking
+*.spec
 build/
 dist/
 

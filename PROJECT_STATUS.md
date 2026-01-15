@@ -1,95 +1,76 @@
-# 📋 ARUN Project Status Report
+# 🏗️ ARUN Project Status & Architecture
 
-**Date:** January 12, 2026
-**Phase:** V1.0 Desktop Product ("Inner Circle" Release)
-**Status:** ✅ **COMPLETE / RELEASE READY**
-
----
-
-## 1. Executive Summary
-The **ARUN (Automated RSI-based Utility Network)** project has successfully transitioned from a personal developer script into a distributable Desktop Application. The V1 release focuses on **safety, usability, and automated investment** for a closed user group ("Friends & Family").
-
-The core objective—providing a risk-free environment for users to automate RSI strategies—has been met via the new **Paper Trading** engine and **Investment Mode**.
+**Last Updated:** January 11, 2026
+**Version:** Pilot Release v1
 
 ---
 
-## 2. Completed Functionality (V1)
+## 📂 File Structure & Functionality Map
 
-| Feature Category | Feature Name | Status | Description |
-| :--- | :--- | :--- | :--- |
-| **Core Trading** | **RSI Strategy Engine** | ✅ Live | Automates Buy/Sell based on configurable RSI levels (e.g., Buy < 30, Sell > 70). |
-| | **Investment Mode** | ✅ Live | New 'Accumulation' strategy. Buys on dips but ignores RSI sell signals (HODL). Respects Profit Targets. |
-| **Safety & Risk** | **Paper Trading Simulator** | ✅ Live | **Default Mode.** Routes orders to a local SQLite database. Bypasses broker API entirely. Visualized in BLUE. |
-| | **Nifty 50 Filter** | ✅ Live | Hard-coded guardrail. Prevents the bot from trading risky stocks outside India's top 50 companies. |
-| | **EULA / Disclaimer** | ✅ Live | Mandatory "First Run" popup ensuring users acknowledge risk and responsibility. |
-| **User Experience** | **Desktop Dashboard** | ✅ Live | Real-time monitoring of P&L, Active Positions, and RSI values. Color-coded (Paper vs Real). |
-| | **Configuration GUI** | ✅ Live | Excel-style table for managing stock watchlists. No coding required. |
-| | **One-Click Installer** | ✅ Live | `install_and_build.bat` automates environment setup and .exe creation for non-techies. |
-| **Backend** | **Auto-Migration** | ✅ Live | Database automatically updates schema (adds `broker` column) to support new features without data loss. |
+Here is a detailed breakdown of every file in the codebase and its specific role.
 
----
+### 🟢 Core Trading Logic
+| File | Purpose | Status |
+|------|---------|--------|
+| `kickstart.py` | **The Brain.** Main trading loop. Fetches data, calculates RSI, executes trades, and manages the bot's lifecycle. | ✅ Active |
+| `kickstart_gui.py` | **The Face.** CustomTkinter GUI that launches `kickstart.py` in a thread. Displays dashboard, logs, and controls. | ✅ Active |
+| `risk_manager.py` | **The Shield.** Enforces stop-loss, profit targets, and daily loss limits. Called by the trading loop. | ✅ Active |
+| `state_manager.py` | **The Memory.** Manages persistent state (e.g., "Bot is Running", "Offline Mode") to survive restarts. | ✅ Active |
+| `symbol_validator.py` | **The Gatekeeper.** Validates stock symbols with the exchange before allowing them into the config. | ✅ Active |
 
-## 3. Architecture Audit
+### 🔧 Utilities & Helpers
+| File | Purpose | Status |
+|------|---------|--------|
+| `utils.py` | Helper functions for date/time, logging, and common formatting tasks. | ✅ Active |
+| `getRSI.py` | Dedicated module for calculating RSI using the TradingView methodology (Wilder's Smoothing). | ✅ Active |
+| `nifty50.py` | Hardcoded list of NIFTY 50 stocks used for safety filtering (regime monitoring). | ✅ Active |
+| `notifications.py` | System for sending email and Telegram alerts for trades and errors. | ✅ Active |
 
-The system follows a **Decoupled Monolith** architecture optimized for Desktop execution.
+### ⚙️ Configuration & Data
+| File | Purpose | Status |
+|------|---------|--------|
+| `config_table.csv` | **User Rules.** The main input for users to define stocks, RSI thresholds, and quantities. | ✅ Active |
+| `settings.json` | **App Config.** Stores global settings (API keys, themes, notification toggles, risk limits). | ✅ Active |
+| `settings_manager.py` | Handles reading/writing `settings.json` and encrypting sensitive data (passwords/keys). | ✅ Active |
+| `settings_gui.py` | GUI window for editing `settings.json` user-friendly way. | ✅ Active |
+| `database/` | Folder containing `trades.db` (SQLite) for storing trade history and paper trading records. | ✅ Active |
 
-```mermaid
-graph TD
-    User[User] --> GUI[Desktop GUI (CustomTkinter)]
-    GUI -- Settings/Config --> Config[Settings Manager]
-    GUI -- Reads --> DB[(SQLite Database)]
-
-    Engine[Trading Engine (kickstart.py)] -- Reads --> Config
-    Engine -- Polls --> MStockAPI[mStock Broker API]
-    Engine -- Writes --> DB
-
-    subgraph "Execution Logic"
-    Engine --> |Check Mode| Mode{Paper or Real?}
-    Mode -- Paper --> LocalExec[Log to DB Only]
-    Mode -- Real --> RemoteExec[Execute via Broker API]
-    end
-```
-
-### Key Technical Decisions:
-1.  **Local Database (SQLite):** Chosen for zero-config deployment. Handles trade history and paper trading state.
-2.  **Fernet Encryption:** Used for `settings.json` to encrypt API Keys and Passwords at rest.
-3.  **Polling vs Websockets:** Currently uses Polling (every 1 min) for simplicity and reliability. Websockets planned for V2.
+### 🚀 Build & Deployment
+| File | Purpose | Status |
+|------|---------|--------|
+| `install_and_build.bat`| **One-Click Installer.** Setup script that redirects to `build_release.bat`. | ✅ Active |
+| `build_release.bat` | **Builder.** Cleans environment, installs dependencies, and compiles the `.exe`. | ✅ Active |
+| `create_shortcut.py` | Python script to create a robust Desktop shortcut (replaces fragile VBScript). | ✅ Active |
+| `requirements.txt` | List of Python libraries needed (pinned `yfinance==0.2.40` for stability). | ✅ Active |
 
 ---
 
-## 4. Security & Risk Audit
+## 🚦 Feature Status Matrix
 
-| Risk Area | Mitigation Strategy | Status |
-| :--- | :--- | :--- |
-| **Credential Theft** | API Keys are encrypted locally using `cryptography` (Fernet). Keys never leave the user's machine. | 🟢 Secure |
-| **Financial Loss** | **Paper Trading** is enabled by default. **Nifty 50 Filter** blocks penny stocks. **Disclaimer** limits liability. | 🟢 Managed |
-| **Code Theft** | Application is packaged as a compiled `.exe` (PyInstaller). Basic obfuscation, though reverse-engineering is possible. | 🟡 Acceptable for V1 |
-| **Broker API Failure** | Engine handles timeouts/connection errors gracefully. Offline mode detection implemented. | 🟢 Robust |
+### ✅ Implemented Features
+1.  **RSI Mean Reversion Strategy:** Buying on dips (RSI < 30/35), selling on highs (RSI > 65/70).
+2.  **Paper Trading Mode:** Simulate trades without real money to test strategies.
+3.  **GUI Dashboard:** Real-time P&L, active positions, and log console.
+4.  **Risk Management:**
+    *   Stop-Loss (Fixed %)
+    *   Profit Targets (Fixed %)
+    *   Daily Loss Limit (Circuit Breaker)
+5.  **Notifications:** Email and Telegram alerts for filled orders.
+6.  **Robust Build System:** One-click `.exe` generation for non-technical users.
+7.  **Crash Recovery:** Auto-restart on minor errors, persistent state.
 
----
+### 🚧 Works in Progress / Partially Complete
+1.  **Regime Filter:** Logic exists to check NIFTY 50 trend, but currently disabled/experimental in `kickstart.py`.
+2.  **Advanced Charts:** Basic RSI plotting is planned but not fully integrated into the main GUI.
 
-## 5. Technical Debt & Known Issues
-
-1.  **Database Concurrency:** SQLite is file-based. If the GUI and Engine write simultaneously, a lock error *could* occur (rare in current low-frequency usage).
-    *   *Fix:* V2 should move to a server-based DB or implement strict mutex locking.
-2.  **Single Broker:** Tightly coupled to **mStock**.
-    *   *Fix:* Abstract the `Broker` class to support Zerodha/AngelOne in V2.
-3.  **Updates:** No automatic "Over-the-Air" update mechanism. Users must download new `.exe` versions manually.
-
----
-
-## 6. Product Backlog (Roadmap)
-
-### Phase 2: The "Modern" Update (Q2 2026)
-- [ ] **Web Dashboard:** Replace the desktop GUI with a local Web Server (FastAPI + React). Allows viewing from mobile on the same WiFi.
-- [ ] **Advanced Risk Controls:** Portfolio-level Stop Loss (e.g., "Sell everything if down 5%").
-- [ ] **Friday Liquidation:** Optional "Cash Out for Weekend" toggle.
-
-### Phase 3: Commercial SaaS (Q4 2026)
-- [ ] **Cloud Hosting:** Move engine to AWS/DigitalOcean.
-- [ ] **Multi-Tenant DB:** PostgreSQL to handle multiple users.
-- [ ] **License Management:** Stripe/LemonSqueezy integration for subscription billing.
+### ❌ Not Started / Roadmap
+1.  **Mobile App:** Currently Desktop only.
+2.  **Multi-Strategy:** Adding MACD, Bollinger Bands, etc.
+3.  **Cloud Sync:** Syncing settings between different computers.
 
 ---
 
-*End of Report.*
+## 🛠 Recent Fixes (in this update)
+*   **Crash Fix:** Downgraded `yfinance` to `0.2.40` to resolve the "TypeError: unsupported operand type(s)" error on launch.
+*   **Shortcut Fix:** Replaced the broken "VBScript" shortcut creator with a Python-native solution (`create_shortcut.py`) that handles OneDrive paths correctly.
+*   **Build Unified:** Merged `install_and_build.bat` logic to ensure a clean, consistent build every time.

@@ -125,18 +125,6 @@ class SettingsGUI:
         nifty_check.pack(side="left", padx=15, pady=10)
         self.add_help_button(paper_frame, 0, "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
 
-        # Market Regime Override
-        self.regime_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.ignore_market_regime", False))
-        regime_check = ctk.CTkCheckBox(
-            paper_frame,
-            text="⚠️ Ignore Market Trend (Risky)",
-            variable=self.regime_var,
-            font=("Arial", 13, "bold"),
-            text_color="#E74C3C"
-        )
-        regime_check.pack(side="left", padx=15, pady=10)
-        self.add_help_button(paper_frame, 0, "Safety Check: By default, the bot stops buying if NIFTY 50 is below its 200-day moving average (Bear Market). Check this to force buying anyway.")
-
         # Broker selection
         broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
         broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
@@ -647,8 +635,7 @@ class SettingsGUI:
             new_settings = {
                 "app_settings": {
                     "paper_trading_mode": self.paper_mode_var.get(),
-                    "nifty_50_only": self.nifty_filter_var.get(),
-                    "ignore_market_regime": self.regime_var.get()
+                    "nifty_50_only": self.nifty_filter_var.get()
                 },
                 "broker": {
                     "name": self.broker_var.get(),

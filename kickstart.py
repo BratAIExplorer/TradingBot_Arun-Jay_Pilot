@@ -24,12 +24,6 @@ try:
 except ImportError:
     NIFTY_50 = set()
 
-try:
-    from regime_monitor import RegimeMonitor
-    regime_monitor = RegimeMonitor()
-except ImportError:
-    regime_monitor = None
-
 # ---------------- New Module Imports (Phase 0A) ----------------
 try:
     from settings_manager import SettingsManager
@@ -1121,21 +1115,10 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             return
 
         if last_rsi <= buy_rsi and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY"):
-            # Market Regime Check (Safety)
-            is_unsafe = False
-            ignore_regime = settings.get("app_settings.ignore_market_regime", False) if settings else False
-
-            if regime_monitor and not ignore_regime:
-                status = regime_monitor.get_market_status()
-                if status.get("status") == "BEARISH":
-                    log_ok(f"🛑 Market Regime Safe-Guard: NIFTY is BEARISH (Price {status.get('price'):.0f} < 200DMA {status.get('dma'):.0f}). Skipping BUY.")
-                    is_unsafe = True
-
-            if not is_unsafe:
-                need_qty = qty - max(0, available_qty)
-                if need_qty > 0:
-                    log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
+            need_qty = qty - max(0, available_qty)
+            if need_qty > 0:
+                log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
+                safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
     finally:
         SYMBOL_LOCKS[symbol] = False
 

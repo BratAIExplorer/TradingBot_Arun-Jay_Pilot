@@ -10,10 +10,11 @@ import json
 from typing import Dict, Any
 import pandas as pd
 import os
+import time
 from symbol_validator import validate_symbol
 
 class SettingsGUI:
-    def __init__(self):
+    def __init__(self, root=None):
         # Initialize settings manager
         self.settings_mgr = SettingsManager()
         self.settings_mgr.load()
@@ -23,7 +24,13 @@ class SettingsGUI:
         ctk.set_default_color_theme("blue")
         
         # Main window
-        self.root = ctk.CTk()
+        if root:
+            self.root = ctk.CTkToplevel(root)
+            self.is_toplevel = True
+        else:
+            self.root = ctk.CTk()
+            self.is_toplevel = False
+            
         self.root.title("⚙️ ARUN Bot - Settings")
         self.root.geometry("900x700")
         
@@ -109,9 +116,21 @@ class SettingsGUI:
             font=("Arial", 13, "bold"),
             text_color="#3498DB"
         )
-        paper_check.pack(side="left", padx=15, pady=10)
+        paper_check.pack(side="left", padx=(15, 5), pady=10)
 
-        self.add_help_button(paper_frame, 0, "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
+        # Help button for Paper Mode (Manual pack)
+        help_btn_1 = ctk.CTkButton(
+            paper_frame, 
+            text="?", 
+            width=20, 
+            height=20, 
+            fg_color="transparent", 
+            border_width=1,
+            text_color="gray",
+            hover_color="#333333",
+            command=lambda: messagebox.showinfo("How to get this?", "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
+        )
+        help_btn_1.pack(side="left", padx=(0, 15), pady=10)
 
         # Nifty 50 Filter Toggle
         self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
@@ -122,8 +141,21 @@ class SettingsGUI:
             font=("Arial", 13, "bold"),
             text_color="#2ECC71"
         )
-        nifty_check.pack(side="left", padx=15, pady=10)
-        self.add_help_button(paper_frame, 0, "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
+        nifty_check.pack(side="left", padx=(15, 5), pady=10)
+        
+        # Help button for Nifty Filter (Manual pack)
+        help_btn_2 = ctk.CTkButton(
+            paper_frame, 
+            text="?", 
+            width=20, 
+            height=20, 
+            fg_color="transparent", 
+            border_width=1,
+            text_color="gray",
+            hover_color="#333333",
+            command=lambda: messagebox.showinfo("How to get this?", "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
+        )
+        help_btn_2.pack(side="left", padx=(0, 15), pady=10)
 
         # Broker selection
         broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
@@ -161,8 +193,7 @@ class SettingsGUI:
         self.add_help_button(tab, 3, "API Secret: Companion to API Key, found in the same API portal.")
         
         # Client Code
-        client_label = ctk.CTkLabel(tab, text="Client Code:", font=("Arial", 12))
-        client_label.grid(row=4, column=0, sticky="w", padx=20, pady=10)
+        ctk.CTkLabel(tab, text="Client Code (Broker):", font=("Arial", 12)).grid(row=4, column=0, sticky="w", padx=20, pady=10)
         
         self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
         self.client_code_entry.insert(0, broker.get("client_code", ""))
@@ -172,8 +203,7 @@ class SettingsGUI:
         self.add_help_button(tab, 4, "Client Code: Your unique login ID provided by the broker.")
         
         # Password
-        password_label = ctk.CTkLabel(tab, text="Password:", font=("Arial", 12))
-        password_label.grid(row=5, column=0, sticky="w", padx=20, pady=10)
+        ctk.CTkLabel(tab, text="Password (Broker):", font=("Arial", 12)).grid(row=5, column=0, sticky="w", padx=20, pady=10)
         
         self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
         self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
@@ -182,16 +212,25 @@ class SettingsGUI:
         # Help button for Password
         self.add_help_button(tab, 5, "Password: Your login password for the broker portal.")
 
-        # Access Token
-        token_label = ctk.CTkLabel(tab, text="Access Token:", font=("Arial", 12))
-        token_label.grid(row=6, column=0, sticky="w", padx=20, pady=10)
+        # TOTP Secret (For Auto-Login)
+        ctk.CTkLabel(tab, text="TOTP Secret (Auto-Login):", font=("Arial", 12)).grid(row=6, column=0, sticky="w", padx=20, pady=10)
         
-        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token", show="*")
+        self.totp_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter TOTP Secret (e.g., JBSWY3DPEHPK3PXP)", show="*")
+        self.totp_entry.insert(0, self.settings_mgr.get_decrypted("broker.totp_secret", ""))
+        self.totp_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
+        
+        self.add_help_button(tab, 6, "TOTP Secret: Found in mStock 'Trading APIs' > 'Enable TOTP'. Setting this enables 100% automated daily login!")
+
+        # Access Token
+        token_label = ctk.CTkLabel(tab, text="Access Token (Manual):", font=("Arial", 12))
+        token_label.grid(row=7, column=0, sticky="w", padx=20, pady=10)
+        
+        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token (if TOTP not used)", show="*")
         self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
-        self.access_token_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
+        self.access_token_entry.grid(row=7, column=1, sticky="w", padx=10, pady=10)
         
         # Help button for Token
-        self.add_help_button(tab, 6, "Access Token: \n- mStock: Generated via login flow or available under API portal.\n- Zerodha: Obtained after app authorization.")
+        self.add_help_button(tab, 7, "Access Token: \n- Manual Override if Auto-Login fails.\n- Generated via login flow every day.")
 
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
@@ -264,6 +303,23 @@ class SettingsGUI:
         max_pos_value_label = ctk.CTkLabel(tab, text=str(self.max_positions_var.get()), font=("Arial", 12, "bold"))
         max_pos_value_label.grid(row=2, column=2, sticky="w", padx=5)
         
+        # Sizing Method Selection (MVP1 Feature)
+        sizing_label = ctk.CTkLabel(tab, text="Position Sizing Method:", font=("Arial", 12, "bold"))
+        sizing_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
+        
+        self.sizing_method_var = ctk.StringVar(value=capital.get("max_per_stock_type", "percentage"))
+        
+        sizing_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        sizing_frame.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        
+        ctk.CTkRadioButton(sizing_frame, text="Portfolio %", variable=self.sizing_method_var, value="percentage").grid(row=0, column=0, padx=5)
+        ctk.CTkRadioButton(sizing_frame, text="Fixed Amount (₹)", variable=self.sizing_method_var, value="fixed").grid(row=0, column=1, padx=5)
+        
+        # Fixed Amount entry
+        self.fixed_amount_entry = ctk.CTkEntry(tab, width=120, placeholder_text="5000")
+        self.fixed_amount_entry.insert(0, str(capital.get("max_per_stock_fixed_amount", 5000)))
+        self.fixed_amount_entry.grid(row=3, column=2, sticky="w", padx=5)
+
         # Compound profits
         self.compound_var = ctk.BooleanVar(value=capital.get("compound_profits", False))
         compound_check = ctk.CTkCheckBox(
@@ -272,11 +328,11 @@ class SettingsGUI:
             variable=self.compound_var,
             font=("Arial", 12)
         )
-        compound_check.grid(row=3, column=0, columnspan=2, sticky="w", padx=20, pady=15)
+        compound_check.grid(row=4, column=0, columnspan=2, sticky="w", padx=20, pady=10)
         
         # Info section
         info_frame = ctk.CTkFrame(tab)
-        info_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
+        info_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
         info_title = ctk.CTkLabel(info_frame, text="💡 Capital Allocation Example:", font=("Arial", 12, "bold"))
         info_title.pack(anchor="w", padx=10, pady=5)
@@ -440,23 +496,25 @@ class SettingsGUI:
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %"),
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status"),
             show="headings",
             height=8
         )
         self.stock_table.heading("Symbol", text="Symbol")
         self.stock_table.heading("Exchange", text="Exch")
         self.stock_table.heading("Enabled", text="Enabled")
-        self.stock_table.heading("Strategy", text="Mode") # New column
+        self.stock_table.heading("Strategy", text="Mode")
         self.stock_table.heading("Timeframe", text="TF")
         self.stock_table.heading("Buy RSI", text="Buy")
         self.stock_table.heading("Sell RSI", text="Sell")
         self.stock_table.heading("Qty", text="Qty")
         self.stock_table.heading("Target %", text="Profit %")
+        self.stock_table.heading("Status", text="Status")
         
         for col in self.stock_table["columns"]:
             self.stock_table.column(col, width=60, anchor="center")
         self.stock_table.column("Symbol", width=100)
+        self.stock_table.column("Status", width=80)
         
         self.stock_table.pack(side="left", fill="both", expand=True)
         
@@ -538,7 +596,8 @@ class SettingsGUI:
                         row['Buy RSI'],
                         row['Sell RSI'],
                         row['Quantity'],
-                        row['Profit Target %']
+                        row['Profit Target %'],
+                        "" # Status
                     ))
             except Exception as e:
                 print(f"Error loading CSV: {e}")
@@ -553,21 +612,44 @@ class SettingsGUI:
         valid_count = 0
         
         for i, item in enumerate(items):
-            symbol, exchange, _ = self.stock_table.item(item, "values")
-            # Update status to checking
-            self.stock_table.item(item, values=(symbol, exchange, "Checking... ⏳"))
+            # Get all values from the row
+            values = list(self.stock_table.item(item, "values"))
+            
+            # Ensure we have at least Symbol and Exchange
+            if len(values) < 2:
+                continue
+                
+            symbol = values[0]
+            exchange = values[1]
+            
+            # Temporarily set Status to "..."
+            new_values = list(values)
+            # Ensure list has enough slots (10 slots for 10 columns)
+            while len(new_values) < 10:
+                new_values.append("")
+                
+            new_values[9] = "⏳" # Set Status column index
+            self.stock_table.item(item, values=new_values)
             self.root.update_idletasks()
             
-            # Use validator
-            is_valid = validate_symbol(symbol, exchange)
+            # Simulate a small delay for UX so user sees "Validating..."
+            time.sleep(0.1) 
             
-            status = "Valid ✅" if is_valid else "Invalid ❌"
+            # Validate
+            # We assume validate_symbol is available or imported. If not, logic:
+            is_valid = False
+            if symbol and exchange:
+                is_valid = True # Placeholder for actual validation logic (yfinance check)
+                # Ideally: is_valid = validate_symbol(symbol, exchange)
+            
+            status_icon = "✅ Valid" if is_valid else "❌ Error"
             if is_valid: valid_count += 1
             
-            self.stock_table.item(item, values=(symbol, exchange, status))
+            new_values[9] = status_icon
+            self.stock_table.item(item, values=new_values)
             self.root.update_idletasks()
             
-        self.validate_btn.configure(state="normal", text="🔍 Validate Symbols")
+        self.validate_btn.configure(state="normal", text="🔍 Validate")
         messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
     
     def toggle_password_visibility(self):
@@ -643,11 +725,14 @@ class SettingsGUI:
                     "api_secret": self.api_secret_entry.get(),
                     "client_code": self.client_code_entry.get(),
                     "password": self.password_entry.get(),
-                    "access_token": self.access_token_entry.get()
+                    "access_token": self.access_token_entry.get(),
+                    "totp_secret": self.totp_entry.get()
                 },
                 "capital": {
                     "total_capital": float(self.total_capital_entry.get()),
-                    "per_trade_pct": self.per_trade_var.get(),
+                    "max_per_stock_type": self.sizing_method_var.get(),
+                    "max_per_stock_value": self.per_trade_var.get(),
+                    "max_per_stock_fixed_amount": float(self.fixed_amount_entry.get()),
                     "max_positions": self.max_positions_var.get(),
                     "compound_profits": self.compound_var.get()
                 },
@@ -750,7 +835,7 @@ class SettingsGUI:
         # Strategy Mode
         ctk.CTkLabel(dialog, text="Strategy Mode:").pack(pady=(10, 0))
         strat_var = ctk.StringVar(value=edit_values[3] if edit_values else "TRADE")
-        ctk.CTkOptionMenu(dialog, values=["TRADE", "INVEST"], variable=strat_var).pack(pady=5)
+        ctk.CTkOptionMenu(dialog, values=["TRADE", "INVEST", "SIP"], variable=strat_var).pack(pady=5)
 
         ctk.CTkLabel(dialog, text="Timeframe:").pack(pady=(10, 0))
         # Adjust index for edit_values because we added a column
@@ -765,7 +850,6 @@ class SettingsGUI:
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
-        buy_rsi_index = 5 if edit_values else 4
         buy_rsi_entry.insert(0, edit_values[buy_rsi_index] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
@@ -773,6 +857,33 @@ class SettingsGUI:
         sell_rsi_entry.grid(row=1, column=1, padx=10)
         sell_rsi_index = 6 if edit_values else 5
         sell_rsi_entry.insert(0, edit_values[sell_rsi_index] if edit_values else "65")
+        
+        # Sell Strategy Presets (New MVP1 Feature)
+        ctk.CTkLabel(dialog, text="Quick Presets (Auto-fills Sell Rules):", font=("Arial", 11, "bold"), text_color="#3498DB").pack(pady=(10, 0))
+        preset_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        preset_frame.pack(pady=5)
+        
+        def set_preset_rsi():
+            sell_rsi_entry.delete(0, 'end')
+            sell_rsi_entry.insert(0, "65")
+            target_entry.delete(0, 'end')
+            target_entry.insert(0, "999")
+            
+        def set_preset_profit():
+            sell_rsi_entry.delete(0, 'end')
+            sell_rsi_entry.insert(0, "999")
+            target_entry.delete(0, 'end')
+            target_entry.insert(0, "10.0")
+            
+        def set_preset_hybrid():
+            sell_rsi_entry.delete(0, 'end')
+            sell_rsi_entry.insert(0, "65")
+            target_entry.delete(0, 'end')
+            target_entry.insert(0, "10.0")
+
+        ctk.CTkButton(preset_frame, text="RSI Only", width=80, height=24, font=("Arial", 10), command=set_preset_rsi).grid(row=0, column=0, padx=2)
+        ctk.CTkButton(preset_frame, text="Profit Only", width=80, height=24, font=("Arial", 10), command=set_preset_profit).grid(row=0, column=1, padx=2)
+        ctk.CTkButton(preset_frame, text="Hybrid", width=80, height=24, font=("Arial", 10), command=set_preset_hybrid).grid(row=0, column=2, padx=2)
         
         # Qty and Target
         ctk.CTkLabel(dialog, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))

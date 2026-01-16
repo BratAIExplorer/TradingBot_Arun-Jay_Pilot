@@ -2,6 +2,13 @@
 
 import requests
 import hashlib
+from strategies.nifty_sip import NiftySIPStrategy
+print("✅ LOADED KICKSTART V3.0 (Fixes Applied)")
+
+# Strategy Engines
+sip_engine = None
+notifier = None
+STOP_REQUESTED = False
 import pandas as pd
 from datetime import datetime, timedelta, time as dtime, date
 import json
@@ -18,7 +25,14 @@ from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
 from getRSI import calculate_intraday_rsi_tv
+import logging
 from requests.exceptions import Timeout, ConnectionError, RequestException
+try:
+    import pyotp
+except ImportError:
+    print("⚠️ pyotp not found, auto-login disabled")
+    pyotp = None
+
 try:
     from nifty50 import NIFTY_50
 except ImportError:
@@ -61,7 +75,7 @@ except ImportError:
     NOTIFICATIONS_AVAILABLE = False
 
 try:
-    from utils import retry_on_failure, safe_divide, safe_get
+    from utils import retry_on_failure, safe_divide, safe_get, setup_logging
     # Map retry_on_failure to retry_with_backoff if needed by other parts of the code
     retry_with_backoff = retry_on_failure
     UTILS_AVAILABLE = True
@@ -87,15 +101,24 @@ except ImportError:
             return func # Simple no-op fallback
         return decorator
 
+    def setup_logging(log_file="bot.log", level=20): pass # fallback
+
 
 # ---------------- State & Utils ----------------
 
 LOG_SUPPRESS = False
 
+# Initialize Logging
+try:
+    setup_logging()
+except Exception as e:
+    print(f"Failed to setup logging: {e}")
+
 def log_ok(msg: str = "", *args, force: bool = False, **kwargs):
+    logging.info(msg)
     if LOG_SUPPRESS and not force:
         return
-    print(msg, *args, **kwargs)
+    # print(msg, *args, **kwargs) # Disable print, use logging
 
 def log_fetch(symbol_ex: str):
     if not LOG_SUPPRESS and is_market_open_now_ist():
@@ -200,6 +223,20 @@ def safe_request(method, url, **kwargs):
         if "timeout" not in kwargs:
             kwargs["timeout"] = (5, 15)
         resp = requests.request(method=method, url=url, **kwargs)
+        
+        # 403 Forbidden / 401 Unauthorized Handling (Auto-Login Trigger)
+        if resp.status_code in [401, 403]:
+            # Avoid infinite recursion if verifytotp itself fails
+            if "verifytotp" not in url:
+                log_ok(f"⚠️ API Error {resp.status_code}. Attempting Auto-Login refresh...")
+                if perform_auto_login():
+                     # Update headers with new token
+                    if "headers" in kwargs and "Authorization" in kwargs["headers"]:
+                        kwargs["headers"]["Authorization"] = f"token {API_KEY}:{ACCESS_TOKEN}"
+                    # Retry once
+                    log_ok("🔄 Retrying request with new token...")
+                    resp = requests.request(method=method, url=url, **kwargs)
+
         mark_online_if_needed()
         return resp
     except (ConnectionError, Timeout):
@@ -246,14 +283,18 @@ RSI_PERIOD = 14
 
 # Consolidate Access Token
 ACCESS_TOKEN = settings.get_decrypted("broker.access_token") if settings else None
-if not ACCESS_TOKEN:
+
+# Migration Logic: If token is in credentials.json but not in settings, migrate it (Phase 0A Cleanup)
+if not ACCESS_TOKEN and os.path.exists("credentials.json"):
     try:
-        if os.path.exists("credentials.json"):
-            with open("credentials.json", "r") as f:
-                creds = json.load(f)
-                ACCESS_TOKEN = creds.get("mstock", {}).get("access_token")
-    except Exception:
-        ACCESS_TOKEN = None
+        with open("credentials.json", "r") as f:
+            legacy_creds = json.load(f)
+            ACCESS_TOKEN = legacy_creds.get("mstock", {}).get("access_token")
+            if ACCESS_TOKEN and settings:
+                settings.set("broker.access_token", ACCESS_TOKEN)
+                log_ok("🔐 Migrated access token from credentials.json to encrypted settings.json")
+    except Exception as e:
+        log_ok(f"⚠️ Migration from credentials.json failed: {e}")
 
 def fetch_market_data(symbol, exchange):
     if is_offline():
@@ -278,9 +319,259 @@ def fetch_market_data(symbol, exchange):
             log_ok(f"⚠️ Market data error for {symbol}: {str(e)}")
         return None, None
 
+def fetch_funds():
+    """Fetch available funds from broker"""
+    if is_offline() or not ACCESS_TOKEN:
+        return 0.0
+    
+    # Generic endpoint for mStock/Mirae (Limits/Cash)
+    # Note: Exact endpoint path might vary, using standard Type A path pattern
+    url = "https://api.mstock.trade/openapi/typea/limits/getCashLimits" 
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Parse response - usually 'data' -> 'availableCash' or similar
+            # Placeholder parsing logic based on standard response structure
+            return float(safe_get(data, "data.availableCash", 0.0))
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch funds: {e}")
+    
+    return 0.0
+
+    return 0.0
+
+def check_connectivity_latency() -> Tuple[bool, int]:
+    """Check API connection and measure latency in ms"""
+    if is_offline() or not ACCESS_TOKEN:
+        return False, 0
+        
+    start = time.time()
+    try:
+        # Use a lightweight endpoint - Limits is good
+        url = "https://api.mstock.trade/openapi/typea/limits/getCashLimits"
+        headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+        resp = safe_request("GET", url, headers=headers, timeout=(3, 5))
+        
+        latency = int((time.time() - start) * 1000)
+        
+        if resp and resp.status_code == 200:
+            return True, latency
+        return False, latency
+    except Exception:
+        return False, 0
+
+def get_market_status_display() -> str:
+    """Return display string for market status (IST)"""
+    now = now_ist()
+    t = now.time()
+    
+    # Weekends
+    if now.weekday() >= 5: # Sat or Sun
+        return "CLOSED (Weekend)"
+        
+    # Trading Hours (approx)
+    pre_open_start = dtime(9, 0)
+    market_start = dtime(9, 15)
+    market_end = dtime(15, 30)
+    
+    if pre_open_start <= t < market_start:
+        return "PRE-OPEN"
+    elif market_start <= t < market_end:
+        return "OPEN"
+    elif t >= market_end:
+        return "CLOSED"
+    else:
+        return "CLOSED"
+
+def fetch_orders():
+    """Fetch all orders for the day from broker"""
+    if is_offline() or not ACCESS_TOKEN:
+        return []
+    
+    # Generic endpoint for mStock/Mirae (Orders)
+    url = "https://api.mstock.trade/openapi/typea/orders"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Expecting list of orders in data['data']
+            return data.get("data", [])
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch orders: {e}")
+    
+    return []
+
+    return []
+
+def cancel_all_orders() -> int:
+    """
+    Cancel all open/pending orders
+    Returns: Count of cancelled orders
+    """
+    if is_offline() or not ACCESS_TOKEN:
+        return 0
+        
+    count = 0
+    orders = fetch_orders()
+    for order in orders:
+        status = order.get("orderStatus")
+        if status not in ["COMPLETE", "REJECTED", "CANCELLED", "TRADED"]:
+            # Need order ID
+            oid = order.get("orderID") or order.get("orderId")
+            if oid:
+                # API Call to cancel
+                url = "https://api.mstock.trade/openapi/typea/orders/cancel"
+                headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+                payload = {"orderId": oid} # Adjust payload based on exact API spec
+                try:
+                    # Note: Type A cancel might differ slightly, using simplified payload for now
+                    # requests.delete usually not used, usually POST for cancel endpoint in mStock
+                    # Research suggests POST to /cancel with body
+                    requests.post(url, json=payload, headers=headers, timeout=5)
+                    count += 1
+                except Exception:
+                    pass
+    log_ok(f"🚨 Panic Mode: Cancelled {count} pending orders.")
+    return count
+
+def square_off_all_positions() -> int:
+    """
+    Close all open positions at Market Price
+    Returns: Count of positions closed
+    """
+    if is_offline() or not ACCESS_TOKEN:
+        return 0
+
+    count = 0
+    positions = safe_get_live_positions_merged() 
+    # This returns dict {symbol: details}
+    
+    for symbol_key, pos in positions.items():
+        qty = int(pos.get("qty", 0))
+        if qty == 0: continue
+        
+        # Determine symbol and exchange
+        if isinstance(symbol_key, tuple):
+            symbol, exchange = symbol_key
+        else:
+            symbol = str(symbol_key)
+            exchange = "NSE" # Default assumption
+            
+        side = "SELL" if qty > 0 else "BUY"
+        abs_qty = abs(qty)
+        
+        # Place Market Exit Order
+        # We use instrument token if available, logic similar to place_order
+        # For panic mode, we force MKT order
+        
+        # We need instrument token. 
+        # Ideally we refactor place_order to handle this, but for now we try best effort
+        try:
+           # Assuming place_order handles instrument token lookup internally if not passed? 
+           # No, it needs it. We must fetch.
+           md, _ = fetch_market_data_once(symbol, exchange)
+           it = md.get("instrument_token") if md else None
+           
+           if it:
+               place_order(symbol, exchange, abs_qty, side, it, price=0)
+               count += 1
+        except Exception:
+            pass
+            
+    log_ok(f"🚨 Panic Mode: Squared off {count} positions.")
+    return count
+
+def perform_auto_login() -> bool:
+    """
+    Attempt to auto-login using stored TOTP secret
+    Returns: True if successful, False otherwise
+    """
+    global ACCESS_TOKEN
+    
+    if not pyotp:
+        log_ok("⚠️ Auto-login skipped: pyotp not installed.")
+        return False
+        
+    try:
+        # Get TOTP Secret from settings
+        # Note: We duplicate logic here for robustness if settings_mgr isn't fully init
+        config_path = "settings.json"
+        
+        # Helper to find settings file
+        if not os.path.exists(config_path):
+            # Try looking relative to script
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(script_dir, "settings.json")
+            
+        if not os.path.exists(config_path):
+            log_ok("⚠️ Auto-login skipped: settings.json not found.")
+            return False
+            
+        with open(config_path, "r") as f:
+            settings = json.load(f)
+            
+        totp_secret = safe_get(settings, "api.totp_secret")
+        api_key = safe_get(settings, "api.access_token") # We use 'access_token' field for API Key in this app
+        
+        if not totp_secret or not api_key:
+            log_ok("⚠️ Auto-login skipped: TOTP secret or API Key missing.")
+            return False
+            
+        # Generate TOTP
+        try:
+            totp = pyotp.TOTP(totp_secret)
+            otp_code = totp.now()
+            log_ok(f"🔐 Generating TOTP for auto-login...")
+        except Exception as e:
+            log_ok(f"❌ TOTP Generation failed: {e}")
+            return False
+            
+        # Call Verify TOTP API
+        url = "https://api.mstock.trade/openapi/typea/session/verifytotp"
+        payload = {"api_key": api_key, "totp": otp_code}
+        headers = {
+            "X-Mirae-Version": "1", 
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        # Direct request to avoid recursion with safe_request if it checks token
+        resp = requests.post(url, data=payload, headers=headers, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "success":
+                new_token = safe_get(data, "data.access_token")
+                if new_token:
+                    ACCESS_TOKEN = new_token
+                    log_ok("✅ Auto-Login SUCCESS! Access Token refreshed.")
+                    return True
+            else:
+                log_ok(f"❌ Auto-Login API Error: {data.get('message')}")
+        else:
+            log_ok(f"❌ Auto-Login HTTP {resp.status_code}: {resp.text}")
+            
+    except Exception as e:
+        log_ok(f"❌ Auto-Login Failed: {e}")
+        
+    return False
+
 def handle_token_exception_and_refresh_token():
     global ACCESS_TOKEN
-    log_ok("⚠️ TokenException detected, refreshing token...")
+    log_ok("⚠️ Token refresh required (mStock session expired).")
+    
+    # 🔔 Notify user via Telegram/Email (MVP1 Feature)
+    if notifier:
+        try:
+            notifier.send_auth_alert()
+            log_ok("📲 Authentication alert sent via configured channels.")
+        except Exception as e:
+            log_ok(f"⚠️ Failed to send auth alert: {e}")
+
     try:
         login_url = "https://api.mstock.trade/openapi/typea/connect/login"
         login_payload = {"username": CLIENT_CODE, "password": PASSWORD}
@@ -311,21 +602,23 @@ def handle_token_exception_and_refresh_token():
             return False
 
         ACCESS_TOKEN = session_data["data"]["access_token"]
-        creds["mstock"] = {"access_token": ACCESS_TOKEN}
-        with open("credentials.json", "w") as f:
-            json.dump(creds, f, indent=2)
-        log_ok("✅ Access token refreshed and saved.")
+        if settings:
+            settings.set("broker.access_token", ACCESS_TOKEN)
+        
+        # Legacy cleanup: Keep credentials.json empty or delete if preferred
+        # For now, we just stop writing sensitive data to it.
+        log_ok("✅ Access token refreshed and saved to encrypted settings.")
         return True
     except Exception as e:
         log_ok(f"❌ Exception in token refresh: {e}")
         return False
 
 if not ACCESS_TOKEN:
-    if not handle_token_exception_and_refresh_token():
-        if __name__ == "__main__":
+    if __name__ == "__main__":
+        if not handle_token_exception_and_refresh_token():
             sys.exit(1)
-        else:
-            log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
+    else:
+        log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
 
 config_df = pd.read_csv('config_table.csv')
 config_df['Enabled'] = config_df['Enabled'].astype(bool)
@@ -383,12 +676,16 @@ if STATE_MANAGER_AVAILABLE:
         log_ok(f"⚠️ State Manager init failed: {e}", force=True)
         state_mgr = None
 
+# Initialize Strategy Engines
+sip_engine = NiftySIPStrategy(settings)
+
+# Initialize Notification Manager
 if NOTIFICATIONS_AVAILABLE and settings:
     try:
         notifier = NotificationManager(settings)
         log_ok("✅ Notification Manager initialized", force=True)
     except Exception as e:
-        log_ok(f"⚠️ Notification Manager init failed: {e}", force=True)
+        log_ok(f"⚠️ Notification Manager failed: {e}", force=True)
 
 
 def get_exchange_for_symbol(symbol: str) -> list[str]:
@@ -495,6 +792,8 @@ def get_orders_today():
         try:
             # Fetch simulated orders from DB for today
             df = db.get_today_trades(is_paper=True)
+            if df is None: df = pd.DataFrame() # Fix NoneType error
+            
             executed = []
             for _, row in df.iterrows():
                 executed.append({
@@ -738,6 +1037,9 @@ def wait_for_market_open():
     LOG_SUPPRESS = True
     try:
         while not is_market_open_now_ist():
+            if STOP_REQUESTED:
+                log_ok("⏹ Cycle stopped by user during market wait.", force=True)
+                return
             target = next_market_open_dt_ist()
             now = now_ist()
             remaining = int((target - now).total_seconds())
@@ -1010,22 +1312,31 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             log_ok(f"⚠️ {symbol}:{exchange}: no valid LTP ({current_close})")
             return
         
-        # Dual-mode quantity logic
+        # Advanced Position Sizing (MVP1 Feature)
         if config_qty > 0:
-            # Fixed quantity mode: Use exact quantity from CSV
+            # METHOD A: Fixed quantity mode (from CSV)
             qty = config_qty
         else:
-            # Dynamic quantity mode: Calculate from capital %
+            # DYNAMIC SIZING (Methods B or C)
             if settings:
                 total_capital = settings.get("capital.total_capital", 50000)
-                per_trade_pct = settings.get("capital.per_trade_pct", 10.0)
-                per_trade_amount = total_capital * (per_trade_pct / 100)
+                sizing_type = settings.get("capital.max_per_stock_type", "percentage") # "percentage" or "fixed"
+                
+                if sizing_type == "percentage":
+                    # METHOD C: Portfolio Percentage
+                    per_trade_pct = settings.get("capital.max_per_stock_value", 10.0)
+                    per_trade_amount = total_capital * (per_trade_pct / 100)
+                else:
+                    # METHOD B: Fixed Capital Amount
+                    per_trade_amount = settings.get("capital.max_per_stock_fixed_amount", 5000)
                 
                 # Calculate quantity based on current price
                 qty = int(per_trade_amount / current_close)
                 
-                # Ensure minimum quantity of 1
+                # Ensure minimum quantity of 1 for Penny stocks
                 qty = max(1, qty)
+                
+                # Risk Check: Max positions (handled in run_cycle but good to note)
             else:
                 # Fallback if settings not available
                 qty = 1
@@ -1078,6 +1389,27 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         if entry_price > 0:
             pos["price"] = entry_price
         target_price = pos["price"] * (1 + profit_pct / 100) if pos["price"] else None
+
+        # --- SIP STRATEGY LOGIC (MVP1 Feature) ---
+        if strategy_type == "SIP":
+            if sip_engine:
+                last_buy_price = pos.get("price", 0)
+                should_buy, reason = sip_engine.should_buy(current_close, last_buy_price)
+                
+                if should_buy and is_market_open_now_ist():
+                    # Check if we already bought today to avoid duplicates
+                    if not check_existing_orders(symbol, exchange, qty, "BUY"):
+                        log_ok(f"🎯 SIP TRIGGER: {reason} for {symbol}", force=True)
+                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0)
+                        
+                        # Notify user
+                        if notifier:
+                            notifier.send_trade_alert({
+                                'symbol': symbol, 'exchange': exchange, 'action': 'BUY',
+                                'quantity': qty, 'price': current_close, 'strategy': 'SIP',
+                                'reason': reason
+                            })
+            return # Exit SIP processing (SIP never sells via RSI)
 
         if pos["active"] and pos["price"] > 0:
             can_consider_sell = current_close > pos["price"]
@@ -1297,6 +1629,34 @@ def run_cycle():
                         symbol, exchange, qty, "SELL", 
                         instrument_token, price=0, use_amo=False
                     )
+
+                    # 🔔 Notify user (MVP1 Feature)
+                    if notifier:
+                        try:
+                            # Create a display-friendly position dict for the notifier
+                            notif_data = {
+                                'symbol': symbol,
+                                'exchange': exchange,
+                                'action': 'SELL',
+                                'quantity': qty,
+                                'reason': reason,
+                                # Passing extra info if available from RiskManager action
+                                'profit_amount': action.get('pnl_amount', 0),
+                                'profit_pct': action.get('pnl_pct', 0),
+                                'current_price': action.get('current_price', 0)
+                            }
+                            
+                            if "Stop Loss" in reason:
+                                notifier.send_stop_loss_alert(notif_data)
+                            elif "Profit Target" in reason:
+                                notifier.send_profit_target_alert(notif_data)
+                            else:
+                                # Fallback or circuit breaker
+                                notifier.send_circuit_breaker_alert(notif_data)
+                                
+                            log_ok(f"📲 Risk alert sent for {symbol}: {reason}")
+                        except Exception as e:
+                            log_ok(f"⚠️ Failed to send risk alert: {e}")
                 else:
                     log_ok(f"⚠️ Cannot execute risk-triggered sell: no instrument token for {symbol}", force=True)
         except Exception as e:
@@ -1344,16 +1704,20 @@ def save_state_snapshot():
             positions = safe_get_live_positions_merged()
             perf = db.get_performance_summary()
             
-            state_mgr.save({
-                "positions": positions,
-                "portfolio_value": perf.get('total_net_pnl', 0),
-                "circuit_breaker_active": risk_mgr.is_circuit_breaker_active() if risk_mgr else False,
-                "total_trades": perf.get('total_trades', 0)
-            })
+            # Update state components
+            state_mgr.state['positions'] = positions
+            state_mgr.update_portfolio_value(perf.get('total_net_pnl', 0))
+            # circuit breaker is auto-saved in setter, so we might just sync it if needed, or rely on existing state
+            state_mgr.state['total_trades_today'] = perf.get('total_trades', 0)
+            state_mgr.save()
         except Exception as e:
             log_ok(f"⚠️ State save failed: {e}")
 
 def main_loop():
+    # ---------------- Auto-Login (Phase 3) ----------------
+    if perform_auto_login():
+        pass
+    
     # ---------------- Load State (Phase 0A) ----------------
     if state_mgr:
         try:

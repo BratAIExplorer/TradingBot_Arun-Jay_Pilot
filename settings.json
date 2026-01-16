@@ -1,12 +1,12 @@
 {
   "broker": {
     "name": "mstock",
-    "api_key": "",
-    "secret": "",
-    "client_code": "",
-    "password": "",
-    "connection_status": "not_connected",
-    "last_login": null
+    "api_key": "37gcDiQSKtGSK7PvDdhWgITHlox8GzhqGuhj0Tn9ndI=",
+    "api_secret": "37gcDiQSKtGSK7PvDdhWgITHlox8GzhqGuhj0Tn9ndI=",
+    "client_code": "MA8224736",
+    "password": "Bharat@123",
+    "access_token": "",
+    "totp_secret": ""
   },
   "market": {
     "name": "india_nse",
@@ -17,54 +17,17 @@
     "close_time": "15:30"
   },
   "capital": {
-    "total_capital": 50000,
-    "starting_capital": 50000,
+    "total_capital": 50000.0,
     "max_per_stock_type": "percentage",
-    "max_per_stock_value": 10,
-    "max_per_stock_fixed_amount": 5000,
-    "daily_loss_limit_pct": 10,
-    "max_simultaneous_positions": 10,
-    "capital_recycling": {
-      "enabled": true,
-      "compound_profits": true
-    }
+    "max_per_stock_value": 10.0,
+    "max_per_stock_fixed_amount": 5000.0,
+    "max_positions": 5,
+    "compound_profits": false
   },
   "notifications": {
-    "email": {
-      "enabled": false,
-      "smtp_server": "smtp.gmail.com",
-      "smtp_port": 587,
-      "sender_email": "",
-      "sender_password": "",
-      "recipient_email": "",
-      "notify_on": {
-        "trade_executed": true,
-        "profit_target_hit": true,
-        "stop_loss_hit": true,
-        "daily_loss_limit_reached": true,
-        "catastrophic_stop_hit": true,
-        "bot_started": true,
-        "bot_stopped": true,
-        "errors": true
-      }
-    },
-    "telegram": {
-      "enabled": false,
-      "bot_token": "",
-      "chat_id": "",
-      "notify_on": {
-        "trade_executed": true,
-        "profit_target_hit": true,
-        "stop_loss_hit": true,
-        "high_confluence_signal": true,
-        "daily_summary": true,
-        "regime_change": true,
-        "catastrophic_stop_hit": true,
-        "bot_started": true,
-        "bot_stopped": true,
-        "errors": true
-      }
-    }
+    "enabled": false,
+    "telegram_bot_token": "",
+    "telegram_chat_id": ""
   },
   "risk_controls": {
     "default_use_stop_loss": true,
@@ -112,8 +75,14 @@
   },
   "app_settings": {
     "paper_trading_mode": true,
-    "auto_start_on_market_open": false,
-    "log_level": "INFO",
-    "show_warnings": true
+    "nifty_50_only": false,
+    "disclaimer_accepted": true
+  },
+  "risk": {
+    "stop_loss_pct": 5.0,
+    "profit_target_pct": 10.0,
+    "catastrophic_stop_loss_pct": 15.0,
+    "daily_loss_limit_pct": 10.0,
+    "never_sell_at_loss": false
   }
 }

@@ -1,8 +1,114 @@
 import threading
 import queue
 import customtkinter as ctk
+import os
+import sys
+import atexit
+from pathlib import Path
+
+# ---------------- SINGLE INSTANCE LOCK ----------------
+# Prevent multiple instances to avoid duplicate trades and database conflicts
+LOCK_FILE = "arun_bot.lock"
+
+def cleanup_lock():
+    """Remove lock file on exit"""
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except:
+        pass
+
+def check_single_instance():
+    """Ensure only one instance of the bot is running"""
+    if os.path.exists(LOCK_FILE):
+        try:
+            # Check if the lock file is stale (process crashed without cleanup)
+            import time
+            lock_age = time.time() - os.path.getmtime(LOCK_FILE)
+            
+            # If lock is older than 5 minutes, assume stale and remove
+            if lock_age > 300:
+                print("⚠️ Removing stale lock file...")
+                os.remove(LOCK_FILE)
+            else:
+                # Active lock - another instance is running
+                print("=" * 60)
+                print("⚠️  ARUN Bot is already running!")
+                print("=" * 60)
+                print()
+                print("Another instance of the bot is currently active.")
+                print("Running multiple instances can cause:")
+                print("  • Duplicate trades (buying/selling the same stock twice)")
+                print("  • Database corruption")
+                print("  • API rate limit issues")
+                print()
+                print("Please close the existing instance first, or check Task Manager")
+                print("if you don't see it running (it might be minimized).")
+                print()
+                input("Press Enter to exit...")
+                sys.exit(1)
+        except Exception as e:
+            print(f"Warning: Could not check lock file: {e}")
+    
+    # Create lock file
+    try:
+        with open(LOCK_FILE, 'w') as f:
+            import time
+            f.write(f"ARUN Bot Instance\nStarted: {time.ctime()}\nPID: {os.getpid()}")
+        atexit.register(cleanup_lock)
+    except Exception as e:
+        print(f"Warning: Could not create lock file: {e}")
+
+# Check for single instance FIRST (before any GUI or heavy imports)
+check_single_instance()
+
+#---------------- MANDATORY DISCLAIMER ----------------
+# Show legal disclaimer EVERY time the GUI launches
+try:
+    from disclaimer_gui import DisclaimerGUI
+    disclaimer_accepted = False
+    
+    def on_disclaimer_accept():
+        global disclaimer_accepted
+        disclaimer_accepted = True
+    
+    print("⚠️ Showing mandatory disclaimer...")
+    DisclaimerGUI(on_disclaimer_accept)
+    
+    if not disclaimer_accepted:
+        print("Disclaimer declined. Exiting.")
+        cleanup_lock()  # Remove lock if user declines
+        sys.exit(0)
+        
+except Exception as e:
+    print(f"⚠️ Error showing disclaimer: {e}")
+    # Continue anyway - don't block on disclaimer errors
+
+# ---------------- INSTALLER CHECK ----------------
+# If settings.json is missing, this is likely a first run.
+# Launch the Setup Wizard automatically.
+if not os.path.exists("settings.json") and not os.path.exists("settings_default.json"): 
+    # Logic: If default exists, user might have just built it but not configured.
+    # Actually, we rely on settings.json being the active config.
+    try:
+        import setup_wizard
+        print("ℹ️ Configuration missing. Launching Setup Wizard...")
+        app = setup_wizard.SetupWizard()
+        app.mainloop()
+        
+        # Check again if settings were created
+        if not os.path.exists("settings.json"):
+            print("⚠️ Setup cancelled. Exiting.")
+            sys.exit(0)
+    except ImportError:
+        print("⚠️ setup_wizard.py not found. Continuing with risky default...")
+    except Exception as e:
+        print(f"⚠️ Error launching Setup Wizard: {e}")
+
 from tkinter import END, ttk
 from kickstart import run_cycle, fetch_market_data, config_dict, SYMBOLS_TO_TRACK, calculate_intraday_rsi_tv, is_system_online, safe_get_positions, safe_get_live_positions_merged
+from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide
+from tkinter import messagebox
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -25,8 +131,13 @@ class TradingGUI:
         # Main window
         self.root = ctk.CTk()
         self.root.title("📈 ARUN")
+        print("✅ STARTING GUI V3.0 (Fixes Applied)")
         self.root.geometry("1200x750")
         self.root.configure(cursor="arrow")
+        
+        # Initialize Settings Manager (needed for capital allocation, etc.)
+        from settings_manager import SettingsManager
+        self.settings_mgr = SettingsManager()
 
         # Configure Treeview style to disable selection highlight
         style = ttk.Style()
@@ -42,6 +153,21 @@ class TradingGUI:
             foreground=[("selected", style.lookup("Treeview", "foreground"))]
         )
 
+        # ---------------- Status Bar (Phase 1) ----------------
+        self.status_bar_frame = ctk.CTkFrame(self.root, height=30, fg_color="#1E1E1E")
+        self.status_bar_frame.pack(fill="x", padx=0, pady=(0, 5))
+        
+        # API Status
+        self.api_status_label = ctk.CTkLabel(self.status_bar_frame, text="API: ●", font=("Arial", 12, "bold"), text_color="gray")
+        self.api_status_label.pack(side="left", padx=(10, 5))
+        
+        self.latency_label = ctk.CTkLabel(self.status_bar_frame, text="-- ms", font=("Arial", 12), text_color="gray")
+        self.latency_label.pack(side="left", padx=(0, 15))
+        
+        # Market Status
+        self.market_status_label = ctk.CTkLabel(self.status_bar_frame, text="MARKET: --", font=("Arial", 12, "bold"), text_color="gray")
+        self.market_status_label.pack(side="right", padx=10)
+
         # ---------------- Performance Summary (Phase 0A) ----------------
         if DATABASE_AVAILABLE:
             summary_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -54,16 +180,18 @@ class TradingGUI:
             # Get performance data
             perf = db.get_performance_summary()
             
-            # Portfolio Card
+            # Funds Card (Allocated vs Real)
             portfolio_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
             portfolio_card.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
-            ctk.CTkLabel(portfolio_card, text="💼 Portfolio", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
-            self.portfolio_value_label = ctk.CTkLabel(
-                portfolio_card, 
-                text=f"₹{perf.get('total_net_pnl', 0):,.0f}",
-                font=("Arial", 22, "bold")
-            )
-            self.portfolio_value_label.pack(pady=(5, 15))
+            ctk.CTkLabel(portfolio_card, text="💼 Funds (Allocated / Real)", font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10, 0))
+            
+            # Allocated
+            self.allocated_label = ctk.CTkLabel(portfolio_card, text="Alloc: --", font=("Arial", 14, "bold"), text_color="#3498DB")
+            self.allocated_label.pack(pady=(2, 0))
+            
+            # Real
+            self.real_funds_label = ctk.CTkLabel(portfolio_card, text="Real: --", font=("Arial", 14, "bold"), text_color="#E67E22")
+            self.real_funds_label.pack(pady=(0, 10))
             
             # Total Profit Card
             profit_card = ctk.CTkFrame(summary_frame, fg_color="#1E1E1E", corner_radius=10)
@@ -125,8 +253,20 @@ class TradingGUI:
         self.start_btn = ctk.CTkButton(button_frame, text="▶ Start Bot", command=self.start_bot, cursor="hand2")
         self.start_btn.grid(row=0, column=0, padx=5)
 
-        self.stop_btn = ctk.CTkButton(button_frame, text="⏹ Stop Bot", command=self.stop_bot, state="disabled", cursor="hand2")
+        self.stop_btn = ctk.CTkButton(button_frame, text="⏸️ Pause Bot", command=self.stop_bot, state="disabled", cursor="hand2", fg_color="#E74C3C", hover_color="#C0392B")
         self.stop_btn.grid(row=0, column=1, padx=5)
+        
+        # Panic Button (Phase 4)
+        self.panic_btn = ctk.CTkButton(
+            button_frame,
+            text="🚨 PANIC (EXIT ALL)",
+            command=self.emergency_exit,
+            fg_color="#8B0000",
+            hover_color="#FF0000",
+            text_color="white",
+            width=140
+        )
+        self.panic_btn.grid(row=0, column=4, padx=(20, 5))
         
         # Settings button
         self.settings_btn = ctk.CTkButton(
@@ -134,21 +274,70 @@ class TradingGUI:
             text="⚙️ Settings",
             command=self.open_settings,
             cursor="hand2",
-            fg_color="gray",
-            hover_color="darkgray"
+            fg_color="#2C3E50",
+            hover_color="#34495E"
         )
         self.settings_btn.grid(row=0, column=2, padx=5)
+
+        # Knowledge Center button
+        self.help_btn = ctk.CTkButton(
+            button_frame,
+            text="📖 Knowledge Center",
+            command=self.show_knowledge_center,
+            cursor="hand2",
+            fg_color="#3498DB",
+            hover_color="#2980B9"
+        )
+        self.help_btn.grid(row=0, column=3, padx=5)
 
         # ---------------- Main Tabview ----------------
         self.tabview = ctk.CTkTabview(self.root)
         self.tabview.pack(padx=10, pady=10, fill="both", expand=True)
         
         self.dashboard_tab = self.tabview.add("📊 Dashboard")
+        self.orders_tab = self.tabview.add("📖 Orders")
+        self.simulation_tab = self.tabview.add("🧪 Simulation")
         self.logs_tab = self.tabview.add("📜 Technical Logs")
 
         # ---------------- Log Area (In Logs Tab) ----------------
         self.log_area = ctk.CTkTextbox(self.logs_tab, cursor="xterm")
         self.log_area.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        # ---------------- Orders Tab (Phase 2) ----------------
+        orders_container = ctk.CTkFrame(self.orders_tab, fg_color="transparent")
+        orders_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Controls (Sync Button)
+        orders_ctrl_frame = ctk.CTkFrame(orders_container, fg_color="transparent")
+        orders_ctrl_frame.pack(fill="x", pady=(0, 10))
+        
+        self.sync_btn = ctk.CTkButton(
+            orders_ctrl_frame, 
+            text="🔄 Resync with Broker", 
+            fg_color="#F39C12", 
+            hover_color="#D35400",
+            command=self.resync_broker_data
+        )
+        self.sync_btn.pack(side="right")
+        
+        ctk.CTkLabel(orders_ctrl_frame, text="📖 Order Book (Open Orders)", font=("Arial", 16, "bold")).pack(side="left")
+
+        # Orders Table
+        orders_table_frame = ctk.CTkFrame(orders_container)
+        orders_table_frame.pack(fill="both", expand=True)
+        
+        self.orders_table = ttk.Treeview(
+            orders_table_frame,
+            columns=("Time", "Symbol", "Type", "Side", "Qty", "Price", "Status"),
+            show="headings",
+            style="NoHighlight.Treeview"
+        )
+        for col in ("Time", "Symbol", "Type", "Side", "Qty", "Price", "Status"):
+            self.orders_table.heading(col, text=col)
+            width = 100 if col not in ["Time", "Symbol"] else 120
+            self.orders_table.column(col, width=width, anchor="center")
+            
+        self.orders_table.pack(fill="both", expand=True)
 
         # Redirect stdout/stderr
         import sys
@@ -283,6 +472,9 @@ class TradingGUI:
         for symbol, exchange in SYMBOLS_TO_TRACK:
             self.rsi_table.insert("", END, values=(f"{symbol} ({exchange})", "N/A", "N/A", "N/A"), tags=("neutral",))
 
+        # Build Simulation Tab (New MVP1 Feature)
+        self.build_simulation_tab()
+        
         # Start dashboard updates
         self.update_dashboard()
 
@@ -303,6 +495,11 @@ class TradingGUI:
         self.stop_btn.configure(state="normal")
         self.write_log("🟢 Starting bot\n")
         self.stop_update_flag.clear()
+        
+        # Reset Global Stop Flag
+        import kickstart
+        kickstart.STOP_REQUESTED = False
+        
         self.thread = threading.Thread(target=self.run_cycle_thread, daemon=True)
         self.thread.start()
         self.update_thread = threading.Thread(target=self.update_data_in_background, daemon=True)
@@ -352,6 +549,11 @@ class TradingGUI:
 
     def stop_bot(self):
         self.stop_update_flag.set()
+        
+        # Signal Global Stop
+        import kickstart
+        kickstart.STOP_REQUESTED = True
+        
         self.write_log("\n⏹ Bot stopped by user\n")
         self.start_btn.configure(state="normal")
         self.stop_btn.configure(state="disabled")
@@ -495,8 +697,16 @@ class TradingGUI:
     def open_settings(self):
         """Open settings GUI"""
         try:
-            import subprocess
-            subprocess.Popen(["python", "settings_gui.py"], shell=False)
+            # Singleton Check
+            if hasattr(self, 'settings_window') and self.settings_window and self.settings_window.root.winfo_exists():
+                self.settings_window.root.lift()
+                self.settings_window.root.focus_force()
+                return
+
+            from settings_gui import SettingsGUI
+            # Pass main root to make it a dependent window (Toplevel)
+            self.settings_window = SettingsGUI(self.root)
+            # Note: We do NOT call .run() here because the main loop is already running
         except Exception as e:
             self.write_log(f"❌ Failed to open Settings: {e}\n")
     
@@ -543,11 +753,49 @@ class TradingGUI:
             return
         
         try:
+             # --- Update Status Bar (Phase 1) ---
+            import kickstart
+            if hasattr(self, 'api_status_label'):
+                # Market Status
+                mkt_status = kickstart.get_market_status_display()
+                mkt_color = "#2ECC71" if "OPEN" in mkt_status and "PRE" not in mkt_status else "#95A5A6"
+                if "CLOSED" in mkt_status: mkt_color = "#E74C3C"
+                self.market_status_label.configure(text=f"MARKET: {mkt_status}", text_color=mkt_color)
+                
+                # Connectivity & Latency
+                is_connected, latency = kickstart.check_connectivity_latency()
+                conn_color = "#2ECC71" if is_connected else "#E74C3C"
+                diff_text = "● Connected" if is_connected else "● Disconnected"
+                self.api_status_label.configure(text=f"API: {diff_text}", text_color=conn_color)
+                
+                lat_color = "#2ECC71" if latency < 200 else ("#F39C12" if latency < 500 else "#E74C3C")
+                self.latency_label.configure(text=f"{latency} ms", text_color=lat_color)
+
             perf = db.get_performance_summary()
             
+            # Update orders table (Phase 2)
+            self.update_orders_table()
+            
             # Update labels
-            if hasattr(self, 'portfolio_value_label'):
-                self.portfolio_value_label.configure(text=f"₹{perf.get('total_net_pnl', 0):,.0f}")
+            # Update labels
+            if hasattr(self, 'allocated_label') and hasattr(self, 'real_funds_label'):
+                # Allocated
+                alloc = self.settings_mgr.get("capital.total_capital", 0.0)
+                self.allocated_label.configure(text=f"Alloc: ₹{alloc:,.0f}")
+                
+                # Real
+                import kickstart
+                real = kickstart.fetch_funds()
+                real_color = "#E74C3C" if real < alloc else "#2ECC71"
+                self.real_funds_label.configure(
+                    text=f"Real: ₹{real:,.0f}",
+                    text_color=real_color
+                )
+            
+                # Update deprecated label if exists (backwards compatibility)
+                if hasattr(self, 'portfolio_value_label'):
+                     # We removed it, but in case of partial update or other refs
+                     pass
             
                 if hasattr(self, 'total_profit_label'):
                     self.total_profit_label.configure(
@@ -581,6 +829,105 @@ class TradingGUI:
             
         except Exception as e:
             self.write_log(f"⚠️ Failed to update performance: {e}\n")
+
+    def update_orders_table(self):
+        """Fetch and display open orders"""
+        if not hasattr(self, 'orders_table'): return
+        
+        try:
+            import kickstart
+            orders = kickstart.fetch_orders()
+            
+            # Clear existing
+            for item in self.orders_table.get_children():
+                self.orders_table.delete(item)
+                
+            # Filter and Insert
+            # Note: Adjust field names based on actual API response
+            for order in orders:
+                status = order.get("orderStatus", "UNKNOWN")
+                if status not in ["COMPLETE", "REJECTED", "CANCELLED"]: # Show active only
+                    # Parse timestamp (if available) or use current
+                    ts = order.get("orderTime", "--")
+                    sym = order.get("tradingSymbol", order.get("symbol", "??"))
+                    typ = order.get("productType", "--")
+                    side = order.get("transactionType", "--")
+                    qty = f"{order.get('filledQuantity', 0)}/{order.get('quantity', 0)}"
+                    price = order.get("price", 0)
+                    
+                    self.orders_table.insert("", "end", values=(ts, sym, typ, side, qty, price, status))
+                    
+        except Exception as e:
+            # self.write_log(f"⚠️ Order fetch error: {e}\n") # Too noisy if frequent
+            pass
+
+    def resync_broker_data(self):
+        """Sync missing trades from Broker to Local DB"""
+        if not DATABASE_AVAILABLE:
+            from tkinter import messagebox
+            messagebox.showerror("Error", "Database not available.")
+            return
+            
+        try:
+            import kickstart
+            from datetime import datetime
+            from tkinter import messagebox
+            
+            orders = kickstart.fetch_orders()
+            completed_orders = [o for o in orders if o.get("orderStatus") == "COMPLETE"]
+            
+            if not completed_orders:
+                messagebox.showinfo("Sync", "No completed orders found in Broker today.")
+                return
+                
+            # Get local trades
+            local_trades = db.get_today_trades(is_paper=False)
+            local_sigs = set()
+            if not local_trades.empty:
+                # Create simple signature: Symbol-Action-Qty
+                for _, row in local_trades.iterrows():
+                    sig = f"{row['symbol']}-{row['action']}-{row['quantity']}"
+                    local_sigs.add(sig)
+            
+            synced_count = 0
+            for order in completed_orders:
+                sym = order.get("tradingSymbol", order.get("symbol", ""))
+                side = order.get("transactionType", "BUY") # Default to BUY if missing
+                qty = int(order.get("quantity", 0))
+                price = float(order.get("averagePrice", order.get("price", 0)))
+                
+                sig = f"{sym}-{side}-{qty}"
+                
+                if sig not in local_sigs:
+                    # Record Trade
+                    gross = qty * price
+                    # Approx fees (0.1% placeholder)
+                    fees = gross * 0.001 
+                    net = gross + fees if side == "BUY" else gross - fees
+                    
+                    db.insert_trade(
+                        symbol=sym,
+                        exchange=order.get("exchange", "NSE"),
+                        action=side,
+                        quantity=qty,
+                        price=price,
+                        gross_amount=gross,
+                        total_fees=fees,
+                        net_amount=net,
+                        strategy="MANUAL/SYNC",
+                        reason="Resync from Broker",
+                        broker=kickstart.CLIENT_CODE
+                    )
+                    synced_count += 1
+                    local_sigs.add(sig) # Prevent dup if broker sends dups
+            
+            messagebox.showinfo("Sync Complete", f"Synced {synced_count} missing trades from Broker.")
+            self.update_trades_table() # Refresh UI
+            self.update_performance_summary()
+            
+        except Exception as e:
+            from tkinter import messagebox
+            messagebox.showerror("Sync Failed", f"Error: {e}")
 
     def export_trades_to_excel(self):
         """Export all trades from database to Excel"""
@@ -689,26 +1036,32 @@ class TradingGUI:
                 messagebox.showerror("Error", f"Failed to place sell order for {symbol}.")
 
     def emergency_exit(self):
-        """Close all active positions immediately"""
+        """Panic Mode: Cancel all orders and close all positions"""
         from tkinter import messagebox
-        children = self.positions_table.get_children()
-        active_positions = [c for c in children if self.positions_table.item(c, "values")[0] != "No active positions"]
+        import kickstart
         
-        if not active_positions:
-            messagebox.showinfo("Emergency Exit", "No active positions to close.")
-            return
-            
         confirm = messagebox.askyesno(
-            "⚠️ EMERGENCY EXIT", 
-            f"CRITICAL: This will attempt to SELL ALL {len(active_positions)} active positions at market price.\n\nPROCEED WITH CAUTION!",
+            "⚠️ EMERGENCY PANIC SWITCH", 
+            f"CRITICAL: This will attempt to:\n1. CANCEL all pending orders.\n2. MARKET SELL all open positions.\n\nUse this only in emergencies!\n\nAre you sure?",
             icon='error'
         )
         
         if confirm:
-            self.write_log("🚨 EMERGENCY EXIT TRIGGERED: Closing all positions...\n")
-            for item in active_positions:
-                self.close_position_silent(item)
-            messagebox.showinfo("Emergency Exit", "All exit orders have been sent.")
+            self.write_log("🚨 EMERGENCY PROTOCOL INITIATED...\n")
+            
+            # 1. Cancel Orders
+            cancelled = kickstart.cancel_all_orders()
+            self.write_log(f"🚨 Cancelled {cancelled} pending orders.\n")
+            
+            # 2. Square off Positions
+            closed = kickstart.square_off_all_positions()
+            self.write_log(f"🚨 Squared off {closed} active positions.\n")
+            
+            messagebox.showwarning("Panic Mode Executed", f"Report:\nCancelled Orders: {cancelled}\nClosed Positions: {closed}\n\nPlease verify manually in Broker App!")
+            
+            # Refresh all data
+            self.update_dashboard()
+            self.update_orders_table()
 
     def close_position_silent(self, item):
         """Helper to close position without individual confirmation"""
@@ -726,6 +1079,96 @@ class TradingGUI:
             
         from kickstart import safe_place_order_when_open
         safe_place_order_when_open(symbol, exchange, qty, "SELL", "0", use_amo=False)
+
+    def build_simulation_tab(self):
+        """Simulation/Backtesting UI"""
+        tab = self.simulation_tab
+        
+        ctk.CTkLabel(tab, text="🔍 Strategy Backtester (Simulate)", font=("Arial", 18, "bold")).pack(pady=20)
+        
+        input_frame = ctk.CTkFrame(tab)
+        input_frame.pack(padx=20, pady=10, fill="x")
+        
+        ctk.CTkLabel(input_frame, text="Symbol (e.g. RELIANCE.NS):").grid(row=0, column=0, padx=10, pady=10)
+        self.bt_symbol_entry = ctk.CTkEntry(input_frame, width=150)
+        self.bt_symbol_entry.insert(0, "RELIANCE.NS")
+        self.bt_symbol_entry.grid(row=0, column=1, padx=10, pady=10)
+        
+        ctk.CTkLabel(input_frame, text="Buy RSI:").grid(row=1, column=0, padx=10, pady=10)
+        self.bt_buy_entry = ctk.CTkEntry(input_frame, width=60)
+        self.bt_buy_entry.insert(0, "35")
+        self.bt_buy_entry.grid(row=1, column=1, sticky="w", padx=10, pady=10)
+        
+        ctk.CTkLabel(input_frame, text="Sell RSI:").grid(row=1, column=2, padx=10, pady=10)
+        self.bt_sell_entry = ctk.CTkEntry(input_frame, width=60)
+        self.bt_sell_entry.insert(0, "65")
+        self.bt_sell_entry.grid(row=1, column=3, sticky="w", padx=10, pady=10)
+        
+        self.run_bt_btn = ctk.CTkButton(tab, text="🚀 Run Backtest", command=self.run_historical_backtest)
+        self.run_bt_btn.pack(pady=20)
+        
+        self.bt_result_area = ctk.CTkTextbox(tab, width=500, height=200)
+        self.bt_result_area.pack(pady=10)
+        self.bt_result_area.insert("0.0", "Results will appear here...")
+
+    def run_historical_backtest(self):
+        """Invoke the backtester module"""
+        symbol = self.bt_symbol_entry.get()
+        buy_rsi = int(self.bt_buy_entry.get())
+        sell_rsi = int(self.bt_sell_entry.get())
+        
+        self.run_bt_btn.configure(state="disabled", text="⏳ Running...")
+        self.bt_result_area.delete("0.0", "end")
+        self.bt_result_area.insert("0.0", f"Fetching data for {symbol}...\n")
+        
+        def run():
+            try:
+                from backtester import run_backtest
+                results = run_backtest(symbol, buy_rsi=buy_rsi, sell_rsi=sell_rsi)
+                
+                self.root.after(0, lambda: self.show_bt_results(results))
+            except Exception as e:
+                self.root.after(0, lambda: self.bt_result_area.insert("end", f"Error: {e}"))
+                self.root.after(0, lambda: self.run_bt_btn.configure(state="normal", text="🚀 Run Backtest"))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def show_bt_results(self, results):
+        self.run_bt_btn.configure(state="normal", text="🚀 Run Backtest")
+        self.bt_result_area.delete("0.0", "end")
+        if "error" in results:
+            self.bt_result_area.insert("0.0", f"❌ Error: {results['error']}")
+            return
+            
+        res_text = "📊 BACKTEST RESULTS\n" + "="*30 + "\n"
+        for k, v in results.items():
+            res_text += f"{k}: {v}\n"
+        self.bt_result_area.insert("0.0", res_text)
+
+    def show_knowledge_center(self):
+        """Show the Knowledge Center / Strategy Guide modal"""
+        guide_dialog = ctk.CTkToplevel(self.root)
+        guide_dialog.title("📖 ARUN Knowledge Center")
+        guide_dialog.geometry("1100x800")
+        guide_dialog.grab_set()
+
+        ctk.CTkLabel(guide_dialog, text="🎓 Strategy Guides", font=("Arial", 26, "bold")).pack(pady=20)
+        
+        # Guide Selection
+        guide_frame = ctk.CTkScrollableFrame(guide_dialog, width=1050, height=650)
+        guide_frame.pack(padx=20, pady=10, fill="both", expand=True)
+
+        for name, guide in STRATEGY_GUIDES.items():
+            card = ctk.CTkFrame(guide_frame, fg_color="#2B2B2B", corner_radius=10)
+            card.pack(fill="x", pady=10, padx=5)
+            
+            ctk.CTkLabel(card, text=guide['title'], font=("Arial", 18, "bold"), text_color="#3498DB").pack(anchor="w", padx=15, pady=(10, 5))
+            ctk.CTkLabel(card, text=guide['summary'], font=("Arial", 14), wraplength=800, justify="left").pack(anchor="w", padx=15, pady=5)
+            
+            steps = "\n".join([f"• {step}" for step in guide['how_it_works']])
+            ctk.CTkLabel(card, text=f"How it works:\n{steps}", font=("Arial", 13), text_color="gray", justify="left").pack(anchor="w", padx=25, pady=(5, 10))
+
+        ctk.CTkButton(guide_dialog, text="Close", command=guide_dialog.destroy).pack(pady=10)
 
     def run(self):
         # Periodic performance update

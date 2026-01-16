@@ -23,7 +23,7 @@ Here is a detailed breakdown of every file in the codebase and its specific role
 |------|---------|--------|
 | `utils.py` | Helper functions for date/time, logging, and common formatting tasks. | ✅ Active |
 | `getRSI.py` | Dedicated module for calculating RSI using the TradingView methodology (Wilder's Smoothing). | ✅ Active |
-| `nifty50.py` | Hardcoded list of NIFTY 50 stocks used for safety filtering (regime monitoring). | ✅ Active |
+| `nifty50.py` | **NIFTY 50 Filter.** Whitelist of top 50 Indian stocks for safe filtering. (Previously confused with "Regime Monitor") | ✅ Active |
 | `notifications.py` | System for sending email and Telegram alerts for trades and errors. | ✅ Active |
 
 ### ⚙️ Configuration & Data
@@ -38,16 +38,25 @@ Here is a detailed breakdown of every file in the codebase and its specific role
 ### 🚀 Build & Deployment
 | File | Purpose | Status |
 |------|---------|--------|
-| `install_and_build.bat`| **One-Click Installer.** Setup script that redirects to `build_release.bat`. | ✅ Active |
-| `build_release.bat` | **Builder.** Cleans environment, installs dependencies, and compiles the `.exe`. | ✅ Active |
-| `create_shortcut.py` | Python script to create a robust Desktop shortcut (replaces fragile VBScript). | ✅ Active |
-| `requirements.txt` | List of Python libraries needed (pinned `yfinance==0.2.40` for stability). | ✅ Active |
+| `START_HERE.bat` | **Smart Installer (Batch).** Auto-detects Python, creates venv, installs dependencies. For advanced users. | ✅ Active |
+| `installer_gui.py` | **Professional GUI Installer.** Surfshark-style windowed installer with progress bars and animations. | ✅ MVP 3 |
+| `build_installer.bat` | **Installer Builder.** Compiles `installer_gui.py` into standalone EXE using PyInstaller. | ✅ MVP 3 |
+| `setup_wizard.py` | **First-Run Config.** GUI wizard for entering API credentials on first launch. | ✅ Active |
+| `create_shortcut.py` | Python script to create desktop shortcuts (venv-aware, OneDrive compatible). | ✅ Active |
+| `requirements.txt` | List of Python libraries (relaxed versions for Python 3.13 compatibility). | ✅ Active |
+| `_dev_tools/build_release.bat` | **EXE Builder (Legacy).** Builds full app EXE. Archived for advanced use. | 🗄️ Archived |
 
 ---
 
 ## 🚦 Feature Status Matrix
 
-### ✅ Implemented Features
+### ✅ Implemented Features (MVP1 Week 1)
+- **RSI Mean Reversion**: Fully functional in `kickstart.py`.
+- **Sell Presets**: RSI Only, Profit Only, and Hybrid modes available in Settings.
+- **Position Sizing**: Supports Fixed Quantity, Fixed Capital, and Portfolio % methods.
+- **Nifty SIP**: Automated weekly accumulation strategy for ETFs.
+- **Backtesting Setup**: Simulation tab added to GUI (uses `backtesting.py` + `yfinance`).
+- **Knowledge Center**: Educational guides integrated into the GUI.
 1.  **RSI Mean Reversion Strategy:** Buying on dips (RSI < 30/35), selling on highs (RSI > 65/70).
 2.  **Paper Trading Mode:** Simulate trades without real money to test strategies.
 3.  **GUI Dashboard:** Real-time P&L, active positions, and log console.
@@ -58,6 +67,8 @@ Here is a detailed breakdown of every file in the codebase and its specific role
 5.  **Notifications:** Email and Telegram alerts for filled orders.
 6.  **Robust Build System:** One-click `.exe` generation for non-technical users.
 7.  **Crash Recovery:** Auto-restart on minor errors, persistent state.
+8.  **Smart Batch Installer (MVP 2):** `START_HERE.bat` with auto-Python detection, logging, Quick Start mode.
+9.  **Professional GUI Installer (MVP 3):** Surfshark-style windowed installer with animated progress bars, step tracking, and error handling.
 
 ### 🚧 Works in Progress / Partially Complete
 1.  **Regime Filter:** Logic exists to check NIFTY 50 trend, but currently disabled/experimental in `kickstart.py`.

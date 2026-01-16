@@ -1,4 +1,5 @@
-Symbol,Broker,Enabled,Timeframe,Buy RSI,Sell RSI,Profit Target %,Quantity,Exchange
-MICEL,mstock,TRUE,15T,35,65,10,5,BSE
-MOSCHIP,mstock,TRUE,15T,35,65,10,5,NSE
-MOSCHIP,mstock,TRUE,15T,35,65,10,5,BSE
+Symbol,Broker,Enabled,Timeframe,Buy RSI,Sell RSI,Profit Target %,Quantity,Exchange,Strategy
+MICEL,mstock,True,15T,35,65,10.0,5,BSE,
+MOSCHIP,mstock,True,15T,35,65,10.0,5,NSE,
+MOSCHIP,mstock,True,15T,35,65,10.0,5,BSE,
+TATASTEEL,mstock,True,15T,35,999,10.0,5,NSE,TRADE

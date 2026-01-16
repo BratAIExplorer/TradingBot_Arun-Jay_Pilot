@@ -28,8 +28,9 @@ class TradesDatabase:
         
         # Create tables
         self._create_tables()
+        self._create_tables()
         self._run_migrations()
-        print(f"✅ Database initialized: {db_path}")
+        print(f"✅ Database initialized: {db_path} (v2 with get_recent_trades)")
     
     def _create_tables(self):
         """
@@ -209,8 +210,25 @@ class TradesDatabase:
             WHERE DATE(timestamp) = ? AND {broker_filter}
             ORDER BY timestamp DESC
         """
-        df = pd.read_sql_query(query, self.conn, params=[today])
-        return df
+    def get_recent_trades(self, limit: int = 10, is_paper: bool = None) -> List[Dict]:
+        """
+        Get list of recent trades
+        """
+        query = "SELECT * FROM trades"
+        params = []
+        
+        if is_paper is not None:
+            query += " WHERE broker = 'PAPER'" if is_paper else " WHERE broker != 'PAPER'"
+            
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        
+        try:
+            self.cursor.execute(query, params)
+            return [dict(row) for row in self.cursor.fetchall()]
+        except Exception as e:
+            print(f"⚠️ Error fetching recent trades: {e}")
+            return []
     
     def get_performance_summary(self, days: int = 30) -> Dict:
         """

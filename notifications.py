@@ -77,6 +77,14 @@ class NotificationManager:
         if self.telegram_enabled:
             self._send_telegram_profit_target(position)
     
+    def send_auth_alert(self, details: Dict[str, Any] = None):
+        """Send notification when authentication (token refresh) is required"""
+        if self.email_enabled:
+            self._send_email_auth(details)
+        
+        if self.telegram_enabled:
+            self._send_telegram_auth(details)
+
     def send_circuit_breaker_alert(self, details: Dict[str, Any]):
         """Send notification when circuit breaker is triggered"""
         if self.email_enabled:
@@ -84,8 +92,6 @@ class NotificationManager:
         
         if self.telegram_enabled:
             self._send_telegram_circuit_breaker(details)
-    
-    def _send_email_trade(self, trade: Dict[str, Any]):
         """Send email notification for trade"""
         if not self.sender_email or not self.sender_password:
             return
@@ -159,6 +165,27 @@ ARUN Trading Bot
         
         self._send_email(subject, body)
     
+    def _send_email_auth(self, details: Dict[str, Any] = None):
+        """Send email notification for authentication required"""
+        subject = "🔑 ACTION REQUIRED: ARUN Bot Token Refresh"
+        
+        body = f"""
+AUTHENTICATION REQUIRED:
+The mStock API session has expired or is missing. 
+
+Please open the ARUN Trading Bot and follow the prompts to:
+1. Refresh your session
+2. Enter the OTP sent to your registered device
+
+TRADING IS PAUSED until this is completed.
+
+TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+ARUN Trading Bot
+        """
+        self._send_email(subject, body)
+
     def _send_email_circuit_breaker(self, details: Dict[str, Any]):
         """Send email notification for circuit breaker"""
         subject = "🚨 CIRCUIT BREAKER ACTIVATED - Trading Halted"
@@ -245,6 +272,19 @@ Great job! Position closed at target.
         
         self._send_telegram(message)
     
+    def _send_telegram_auth(self, details: Dict[str, Any] = None):
+        """Send Telegram notification for authentication required"""
+        message = f"""
+🔑 <b>ACTION REQUIRED: TOKEN REFRESH</b>
+
+Your mStock session has expired. 
+
+Please check your registered phone for an OTP and enter it in the bot window to resume trading.
+
+<b>Bot is currently PAUSED.</b>
+        """
+        self._send_telegram(message)
+
     def _send_telegram_circuit_breaker(self, details: Dict[str, Any]):
         """Send Telegram notification for circuit breaker"""
         message = f"""
@@ -318,6 +358,12 @@ def notify_profit_target(position: Dict, settings: Dict):
     """Send profit target notification"""
     notifier = NotificationManager(settings)
     notifier.send_profit_target_alert(position)
+
+
+def notify_auth(settings: Dict, details: Dict = None):
+    """Send authentication alert"""
+    notifier = NotificationManager(settings)
+    notifier.send_auth_alert(details)
 
 
 def notify_circuit_breaker(details: Dict, settings: Dict):

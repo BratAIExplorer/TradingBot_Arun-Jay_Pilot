@@ -10,20 +10,17 @@ import sys
 class DisclaimerGUI:
     def __init__(self, on_accept_callback):
         self.on_accept = on_accept_callback
-        self.settings_mgr = SettingsManager()
-
-        # Check if already accepted
-        if self.settings_mgr.get("app_settings.disclaimer_accepted", False):
-            self.on_accept()
-            return
-
+        
+        # ALWAYS show disclaimer on every launch for legal protection
+        # (Removed the settings check that skipped it after first acceptance)
+        
         # Theme
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
         self.root = ctk.CTk()
         self.root.title("⚠️ Important Disclaimer")
-        self.root.geometry("600x500")
+        self.root.geometry("650x550")
         self.root.resizable(False, False)
 
         # Center window
@@ -58,32 +55,41 @@ class DisclaimerGUI:
         text_frame.pack(fill="both", expand=True, padx=30, pady=10)
 
         disclaimer_text = """
-        IMPORTANT: READ CAREFULLY
+        ⚠️ CRITICAL WARNING - READ BEFORE PROCEEDING ⚠️
 
-        1. NOT INVESTMENT ADVICE
-        The ARUN Trading Bot ("Software") is a technical tool for algorithmic execution. It does not provide financial, investment, legal, or tax advice. You are solely responsible for configuring the strategy parameters (RSI, Profit Targets, etc.).
-
-        2. HIGH RISK WARNING
-        Trading in financial markets (Stocks, Options, Derivatives) involves a high degree of risk. You could lose some or all of your capital. Past performance of any strategy does not guarantee future results.
-
-        3. SOFTWARE "AS IS"
-        This Software is provided "AS IS", without warranty of any kind. The developers make no guarantees regarding uptime, bug-free operation, or profit generation. We are not liable for any financial losses incurred due to software errors, broker API failures, internet connectivity issues, or market volatility.
-
-        4. USER RESPONSIBILITY
-        By clicking "I ACCEPT", you acknowledge that:
-        - You understand the risks of algorithmic trading.
-        - You are using this tool at your own discretion.
-        - You agree to test strategies in "Paper Trading" mode before risking real capital.
+        1. NOT FINANCIAL ADVICE
+        The ARUN Trading Bot is a SOFTWARE TOOL ONLY. It does NOT provide investment, financial, legal, or tax advice. You are solely responsible for:
+        • Configuring all strategy parameters
+        • Deciding which stocks to trade
+        • Determining position sizes and risk levels
+        
+        2. HIGH RISK - POTENTIAL TOTAL LOSS
+        Trading stocks and derivatives involves significant risk. You could lose SOME or ALL of your invested capital. Past performance does NOT guarantee future results.
+        
+        3. USER RESPONSIBILITY & LIABILITY
+        By using this software, you acknowledge:
+        • YOU are responsible for all trading decisions
+        • YOU accept full liability for any profits OR losses
+        • The developers are NOT liable for any financial losses
+        • Software bugs, API failures, or connectivity issues may occur
+        
+        4. SOFTWARE PROVIDED "AS IS"
+        No warranties of any kind. No guarantees of uptime, accuracy, or profitability.
+        
+        5. PAPER TRADING FIRST
+        You MUST test your strategies in "Paper Trading" mode before risking real money.
+        
+        By clicking "I ACCEPT", you confirm you understand these risks and accept full responsibility for your trading activities.
         """
 
-        textbox = ctk.CTkTextbox(text_frame, wrap="word", font=("Arial", 13))
+        textbox = ctk.CTkTextbox(text_frame, wrap="word", font=("Arial", 12))
         textbox.insert("0.0", disclaimer_text)
         textbox.configure(state="disabled")
         textbox.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Buttons
         btn_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        btn_frame.pack(pady=30)
+        btn_frame.pack(pady=20)
 
         self.accept_btn = ctk.CTkButton(
             btn_frame,
@@ -91,9 +97,9 @@ class DisclaimerGUI:
             command=self.accept,
             fg_color="#27AE60",
             hover_color="#1E8449",
-            width=250,
-            height=40,
-            font=("Arial", 13, "bold")
+            width=280,
+            height=45,
+            font=("Arial", 14, "bold")
         )
         self.accept_btn.grid(row=0, column=0, padx=10)
 
@@ -104,12 +110,13 @@ class DisclaimerGUI:
             fg_color="#C0392B",
             hover_color="#922B21",
             width=150,
-            height=40
+            height=45,
+            font=("Arial", 12, "bold")
         )
         self.decline_btn.grid(row=0, column=1, padx=10)
 
     def accept(self):
-        self.settings_mgr.set("app_settings.disclaimer_accepted", True)
+        # Remove settings save - just proceed to app
         self.root.destroy()
         self.on_accept()
 

@@ -112,3 +112,51 @@ if __name__ == "__main__":
     result = flaky_function()
     print(f"Result: {result}")
     print(f"Took {attempt_count} attempts")
+
+
+def setup_logging(log_file="bot.log", level=logging.INFO):
+    """
+    Configure standardized logging for the entire application.
+    - Console Handler: Easy-to-read format
+    - File Handler: Detailed format with rotation
+    """
+    import os
+    from logging.handlers import RotatingFileHandler
+    
+    # ensure log dir exists
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+        
+    full_path = os.path.join(log_dir, log_file)
+    
+    # Create Logger
+    logger = logging.getLogger()
+    logger.setLevel(level)
+    
+    # Remove existing handlers to avoid duplicates
+    if logger.handlers:
+        logger.handlers.clear()
+        
+    # Formatters
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(module)s:%(funcName)s:%(lineno)d | %(message)s'
+    )
+    console_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    
+    # File Handler (10MB per file, max 5 backups)
+    file_handler = RotatingFileHandler(full_path, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+    file_handler.setFormatter(file_formatter)
+    
+    # Console Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(console_formatter)
+    
+    # Add Handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    logging.info(f"✅ Logging initialized. Writing to {full_path}")

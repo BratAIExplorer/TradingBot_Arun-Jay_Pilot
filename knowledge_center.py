@@ -117,6 +117,19 @@ STRATEGY_GUIDES = {
             "Long-term wealth creation: Best for blue-chip stocks (Nifty 50).",
             "This bot can automate daily 'Buy at Market Open' logic."
         ]
+    },
+    "STARTUP_GUIDE": {
+        "title": "👋 Welcome to ARUN Bot - Quick Tour",
+        "summary": "Everything you need to know to get started.",
+        "how_it_works": [
+            "1. 📊 Dashboard: Your Command Center. See live positions, market status, and active RSI signals.",
+            "2. 📖 Orders: The Order Book. Tracks every pending and executed trade.",
+            "3. 🧪 Simulation: The Lab. Test strategies on historical data without risking money.",
+            "4. 📜 Logs: The Black Box. Detailed technical records of what the bot is thinking.",
+            "5. ⚙️ Settings: The Controls. Set your capital, strategies, and safety limits here.",
+            "",
+            "⚠️ IMPORTANT: Please read the 'Knowledge Center' guides before trading with real money!"
+        ]
     }
 }
 
@@ -130,3 +143,30 @@ TOOLTIPS = {
 
 def get_strategy_guide(name):
     return STRATEGY_GUIDES.get(name, STRATEGY_GUIDES["RSI Mean Reversion"])
+
+def get_contextual_tip(metric_type, value):
+    """
+    Returns a smart tip based on the context of a metric.
+    Used by the Knowledge Tab in the new UI.
+    """
+    if metric_type == "RSI":
+        if value > 70:
+            return "💡 Tip: RSI is OVERBOUGHT (>70). Consider tightening your stop-loss or taking partial profits."
+        elif value < 30:
+            return "💡 Tip: RSI is OVERSOLD (<30). This could be a good buying opportunity if the trend reverses."
+        else:
+            return "💡 Tip: RSI is neutral. Wait for a clear signal before entering a new trade."
+    
+    elif metric_type == "SENTIMENT":
+        if "FEAR" in value:
+            return "💡 Tip: Market is Fearful. Historically, this is when smart money accumulates quality stocks."
+        elif "GREED" in value:
+            return "💡 Tip: Market is Greedy. Be cautious. Avoid chasing rallies and stick to your profit targets."
+            
+    elif metric_type == "PNL":
+        if value < 0:
+            return "💡 Tip: Don't panic. Stick to your Stop-Loss rules. Emotional exits often lead to regret."
+        elif value > 0:
+            return "💡 Tip: You're in profit! Consider enabling 'Trailing Stop Loss' to lock in gains."
+
+    return "💡 Tip: Always trade with a plan. Check the 'Strategies' tab for more details."

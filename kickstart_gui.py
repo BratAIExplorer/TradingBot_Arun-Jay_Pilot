@@ -122,6 +122,74 @@ except ImportError:
     DATABASE_AVAILABLE = False
     print("⚠️ Database not available, trade history disabled")
 
+class StartupTour:
+    def __init__(self, parent_root, on_close_callback=None):
+        self.root = ctk.CTkToplevel(parent_root)
+        self.root.title("👋 Welcome to ARUN")
+        self.root.geometry("600x500")
+        self.root.resizable(False, False)
+        # Make it modal
+        self.root.transient(parent_root)
+        self.root.grab_set()
+        
+        self.on_close_callback = on_close_callback
+        self.steps = [
+            ("👋 Welcome!", "Welcome to the ARUN Trading Bot.\n\nThis tool is designed to help you automate your trading strategies safely and efficiently.\n\nClick 'Next' to take a quick tour of the features."),
+            ("📊 Dashboard", "The Dashboard is your main Command Center.\n\n• Live Positions: See your active trades and P&L.\n• Market Status: Check if the market is Open/Closed.\n• RSI Monitor: Watch momentum signals in real-time."),
+            ("📖 Orders", "The Orders Tab is your Ledger.\n\nIt tracks every single order sent to the broker.\n• Open Orders: Waiting to be filled.\n• Executed: Trades that happened.\n• Use 'Resync' if you trade on your phone."),
+            ("🧪 Simulation", "The Simulation Tab (Backtester) is your Lab.\n\n• Test ideas without risking a rupee.\n• Run strategies on past data (e.g., 'What if I traded Reliance last year?').\n• Always backtest before going live!"),
+            ("⚙️ Safety & Settings", "Safety First!\n\n• Capital Limits: Set max loss per day.\n• Panic Button: One-click exit for emergencies.\n• Paper Trading: Enabled by default. Switching to REAL money requires conscious effort in Settings."),
+            ("🚀 Ready?", "You are all set!\n\nWe highly recommend reading the 'Knowledge Center' guides for detailed strategy explanations.\n\nHappy Trading!")
+        ]
+        self.current_step = 0
+        
+        # UI Elements
+        self.title_label = ctk.CTkLabel(self.root, text="", font=("Arial", 24, "bold"))
+        self.title_label.pack(pady=(30, 20))
+        
+        self.desc_label = ctk.CTkLabel(self.root, text="", font=("Arial", 16), wraplength=500, justify="left")
+        self.desc_label.pack(pady=20, padx=40, fill="both", expand=True)
+        
+        # Navigation
+        self.btn_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        self.btn_frame.pack(pady=30, fill="x", padx=40)
+        
+        self.next_btn = ctk.CTkButton(self.btn_frame, text="Next ▶", command=self.next_step, width=120)
+        self.next_btn.pack(side="right")
+        
+        self.skip_btn = ctk.CTkButton(self.btn_frame, text="Skip Tour", command=self.close_tour, fg_color="transparent", border_width=1, text_color=("gray10", "gray90"))
+        self.skip_btn.pack(side="left")
+        
+        # Don't show again checkbox
+        self.dont_show_var = ctk.BooleanVar(value=True)
+        self.dont_show_checkbox = ctk.CTkCheckBox(self.root, text="Don't show this again", variable=self.dont_show_var)
+        self.dont_show_checkbox.pack(pady=(0, 20))
+        
+        self.update_slide()
+
+    def update_slide(self):
+        title, text = self.steps[self.current_step]
+        self.title_label.configure(text=title)
+        self.desc_label.configure(text=text)
+        
+        if self.current_step == len(self.steps) - 1:
+            self.next_btn.configure(text="Finish 🏁")
+        else:
+            self.next_btn.configure(text="Next ▶")
+
+    def next_step(self):
+        if self.current_step < len(self.steps) - 1:
+            self.current_step += 1
+            self.update_slide()
+        else:
+            self.close_tour()
+
+    def close_tour(self):
+        if self.dont_show_var.get():
+            if self.on_close_callback:
+                self.on_close_callback()
+        self.root.destroy()
+
 class TradingGUI:
     def __init__(self):
         # Theme
@@ -138,6 +206,9 @@ class TradingGUI:
         # Initialize Settings Manager (needed for capital allocation, etc.)
         from settings_manager import SettingsManager
         self.settings_mgr = SettingsManager()
+        
+        # CHECK FOR FIRST RUN TOUR
+        self.root.after(1000, self.check_first_run)
 
         # Configure Treeview style to disable selection highlight
         style = ttk.Style()
@@ -477,6 +548,22 @@ class TradingGUI:
         
         # Start dashboard updates
         self.update_dashboard()
+
+    def check_first_run(self):
+        """Check if we need to show the Welcome Tour"""
+        try:
+            # Check settings
+            prompts_shown = self.settings_mgr.get("app_settings.first_run_prompts_shown", False)
+            if not prompts_shown:
+                # Callback to save settings when tour finishes
+                def save_tour_complete():
+                    self.settings_mgr.set("app_settings.first_run_prompts_shown", True)
+                    self.settings_mgr.save()
+                    print("✅ Tour completed, marked as shown.")
+                
+                StartupTour(self.root, save_tour_complete)
+        except Exception as e:
+            print(f"⚠️ Error checking first run: {e}")
 
     def write_log(self, text):
         self.log_area.configure(state="normal")

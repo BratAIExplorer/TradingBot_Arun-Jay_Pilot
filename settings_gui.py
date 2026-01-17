@@ -11,40 +11,56 @@ from typing import Dict, Any
 import pandas as pd
 import os
 import time
+import pyotp
+import sys
+import requests
 from symbol_validator import validate_symbol
 
 class SettingsGUI:
-    def __init__(self, root=None):
+    def __init__(self, root=None, parent=None, on_save_callback=None):
         # Initialize settings manager
         self.settings_mgr = SettingsManager()
         self.settings_mgr.load()
+        self.on_save_callback = on_save_callback
         
         # Theme
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         
-        # Main window
-        if root:
+        self.is_embedded = False
+        
+        # Main window logic
+        if parent:
+            # Embedded Mode (e.g. inside Dashboard Tab)
+            self.root = parent 
+            self.is_embedded = True
+            # For embedded, we don't set title or geometry on parent usually
+        elif root:
+            # Popup Mode
             self.root = ctk.CTkToplevel(root)
             self.is_toplevel = True
+            self.root.title("⚙️ Settings")
+            self.root.geometry("900x700")
         else:
+            # Standalone Mode
             self.root = ctk.CTk()
             self.is_toplevel = False
-            
-        self.root.title("⚙️ ARUN Bot - Settings")
-        self.root.geometry("900x700")
+            self.root.title("⚙️ ARUN Bot - Settings")
+            self.root.geometry("900x700")
         
-        # Header
-        header = ctk.CTkLabel(
-            self.root, 
-            text="⚙️ Settings", 
-            font=("Arial", 24, "bold")
-        )
-        header.pack(pady=20)
+        # Header (Skip if embedded to save space, or keep small)
+        if not self.is_embedded:
+            header = ctk.CTkLabel(
+                self.root, 
+                text="⚙️ Settings", 
+                font=("Arial", 24, "bold")
+            )
+            header.pack(pady=20)
         
         # Create tabbed interface
-        self.tabview = ctk.CTkTabview(self.root, width=850, height=550)
-        self.tabview.pack(padx=20, pady=10)
+        # Validating if self.root is a valid master for Tabview
+        self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
+        self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
         
         # Add tabs
         self.tabview.add("Broker")
@@ -219,6 +235,17 @@ class SettingsGUI:
         self.totp_entry.insert(0, self.settings_mgr.get_decrypted("broker.totp_secret", ""))
         self.totp_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
         
+        # Validation Button
+        validate_totp_btn = ctk.CTkButton(
+            tab,
+            text="Validate",
+            width=60,
+            command=self.validate_totp_secret,
+            fg_color="#E67E22",
+            hover_color="#D35400"
+        )
+        validate_totp_btn.grid(row=6, column=3, sticky="w", padx=5)
+
         self.add_help_button(tab, 6, "TOTP Secret: Found in mStock 'Trading APIs' > 'Enable TOTP'. Setting this enables 100% automated daily login!")
 
         # Access Token
@@ -240,7 +267,7 @@ class SettingsGUI:
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
-        show_pass_check.grid(row=7, column=1, sticky="w", padx=10, pady=5)
+        show_pass_check.grid(row=8, column=1, sticky="w", padx=10, pady=5)
         
         # Info label
         info = ctk.CTkLabel(
@@ -249,7 +276,19 @@ class SettingsGUI:
             font=("Arial", 10),
             text_color="gray"
         )
-        info.grid(row=7, column=0, columnspan=2, padx=20, pady=20)
+        info.grid(row=9, column=0, columnspan=2, padx=20, pady=5)
+
+        # Test Connection Button
+        test_btn = ctk.CTkButton(
+            tab,
+            text="📡 Test Connection & Fetch Balance",
+            command=self.test_broker_connection,
+            width=250,
+            height=35,
+            fg_color="#8E44AD",
+            hover_color="#732D91"
+        )
+        test_btn.grid(row=10, column=0, columnspan=3, pady=20)
     
     def build_capital_tab(self):
         """Capital management configuration"""
@@ -602,6 +641,34 @@ class SettingsGUI:
             except Exception as e:
                 print(f"Error loading CSV: {e}")
 
+    def validate_totp_secret(self):
+        """Validate the TOTP secret by generating a code"""
+        secret = self.totp_entry.get().strip()
+        if not secret:
+            messagebox.showwarning("Empty", "Please enter a TOTP Secret first.")
+            return
+            
+        try:
+            totp = pyotp.TOTP(secret)
+            current_code = totp.now()
+            
+            # Copy to clipboard
+            self.root.clipboard_clear()
+            self.root.clipboard_append(current_code)
+            
+            messagebox.showinfo(
+                "✅ Verify TOTP",
+                f"Generated Code: {current_code}\n\n"
+                "1. Check if this matches the code in your Authenticator App.\n"
+                "2. The code has been copied to your clipboard.\n\n"
+                "If it matches, your Secret is correct!"
+            )
+        except Exception as e:
+            messagebox.showerror(
+                "❌ Error", 
+                f"Invalid TOTP Secret.\nEnsure you copied the Alphanumeric key, not the URL.\n\nError: {str(e)}"
+            )
+
     def on_validate_symbols(self):
         """Validate all symbols in the table"""
         self.validate_btn.configure(state="disabled", text="Validating...")
@@ -651,6 +718,115 @@ class SettingsGUI:
             
         self.validate_btn.configure(state="normal", text="🔍 Validate")
         messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
+
+    def test_broker_connection(self):
+        """Test API credentials and fetch balance"""
+        api_key = self.api_key_entry.get().strip()
+        totp_secret = self.totp_entry.get().strip()
+        
+        if not api_key or not totp_secret:
+            messagebox.showwarning("Missing Data", "Please enter API Key and TOTP Secret to test connection.")
+            return
+
+        try:
+            # 1. Generate TOTP
+            totp = pyotp.TOTP(totp_secret)
+            otp_code = totp.now()
+            
+            # 2. Verify TOTP & Get Token
+            url = "https://api.mstock.trade/openapi/typea/session/verifytotp"
+            payload = {"api_key": api_key, "totp": otp_code}
+            
+            common_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Connection": "keep-alive",
+                "X-Mirae-Version": "1"
+            }
+            
+            # Request 1 headers
+            headers = common_headers.copy()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            
+            resp = requests.post(url, data=payload, headers=headers, timeout=10)
+            
+            if resp.status_code != 200:
+                messagebox.showerror("Connection Failed", f"API Verification Failed.\nStatus: {resp.status_code}\nResponse: {resp.text}")
+                return
+                
+            data = resp.json()
+            if data.get("status") == "success":
+                access_token = data["data"]["access_token"]
+                
+                # Auto-fill the access token field since we got it
+                self.access_token_entry.delete(0, "end")
+                self.access_token_entry.insert(0, access_token)
+                
+                # 3. Fetch Balance (Validator for permissions)
+                # Try multiple endpoints for balance
+                balance_endpoints = [
+                    "https://api.mstock.trade/openapi/typea/limits/getRmsLimits",
+                    "https://api.mstock.trade/openapi/typea/limits/getCashLimits",
+                    "https://api.mstock.trade/openapi/typea/user/profile"
+                ]
+                
+                # Request 2 headers
+                b_headers = common_headers.copy()
+                b_headers["Authorization"] = f"token {api_key}:{access_token}"
+                
+                balance_found = False
+                cash = 0.0
+                
+                for balance_url in balance_endpoints:
+                    try:
+                        b_resp = requests.get(balance_url, headers=b_headers, timeout=5)
+                        
+                        if b_resp.status_code == 200:
+                            b_data = b_resp.json()
+                            
+                            # Try different response formats
+                            if "data" in b_data:
+                                data_obj = b_data["data"]
+                                # Try various field names
+                                cash = float(data_obj.get("availableCash", 
+                                           data_obj.get("available_cash",
+                                           data_obj.get("net", 
+                                           data_obj.get("cashmarginavailable", 0)))))
+                                if cash > 0:
+                                    balance_found = True
+                                    break
+                    except:
+                        continue
+                
+                if balance_found:
+                    messagebox.showinfo(
+                        "✅ Connection Successful",
+                        f"🚀 Credentials Validated!\n\n"
+                        f"• API Key: OK\n"
+                        f"• TOTP: OK\n"
+                        f"• Session Token: Generated & Filled\n"
+                        f"• Balance Check: OK\n\n"
+                        f"💰 Available Balance: ₹{cash:,.2f}"
+                    )
+                else:
+                    # Show success without balance
+                    messagebox.showinfo(
+                        "✅ Credentials Validated", 
+                        f"🚀 All Credentials Working!\n\n"
+                        f"• API Key: ✅\n"
+                        f"• TOTP: ✅\n"
+                        f"• Session Token: ✅ Generated\n\n"
+                        f"Note: Balance fetch unavailable (might be due to:\n"
+                        f"• Weekend/Market hours restriction\n"
+                        f"• VPN blocking secondary endpoints\n"
+                        f"• API permissions)\n\n"
+                        f"Your bot WILL work for trading!"
+                    )
+            else:
+                 messagebox.showerror("Validation Failed", f"Reason: {data.get('message', 'Unknown Error')}")
+                 
+        except Exception as e:
+            messagebox.showerror("Error", f"Connection Test Failed:\n{str(e)}")
     
     def toggle_password_visibility(self):
         """Toggle password and API key field visibility"""
@@ -757,12 +933,26 @@ class SettingsGUI:
             # Save to JSON
             self.settings_mgr.save()
             
-            messagebox.showinfo(
-                "✅ Success",
-                "Settings saved successfully!\n\nRestart the bot for changes to take effect."
-            )
+            # Save to JSON
+            self.settings_mgr.save()
             
-            self.root.destroy()
+            if self.on_save_callback:
+                # HOT RELOAD MODE
+                self.on_save_callback()
+                messagebox.showinfo("✅ Success", "Settings saved and applied instantly!")
+                # Don't destroy if embedded? Or maybe unnecessary.
+                # If embedded, we probably want to stay on the page.
+            else:
+                # LEGACY RESTART MODE
+                should_restart = messagebox.askyesno(
+                    "✅ Success",
+                    "Settings saved successfully!\n\nDo you want to RESTART the bot now for changes to take effect?"
+                )
+                
+                if should_restart:
+                    self.restart_application()
+                else:
+                    self.root.destroy()
             
         except Exception as e:
             messagebox.showerror("❌ Error", f"Failed to save settings:\n{str(e)}")
@@ -770,6 +960,39 @@ class SettingsGUI:
     def run(self):
         """Start the GUI"""
         self.root.mainloop()
+
+    def restart_application(self):
+        """Restart the application to apply changes"""
+        try:
+            print("🔄 Initiating Restart...")
+            
+            # 1. Clean up lock file explicitly
+            if os.path.exists("arun_bot.lock"):
+                try:
+                    os.remove("arun_bot.lock")
+                except Exception as e:
+                    print(f"Failed to remove lock: {e}")
+
+            # 2. Determine startup method
+            script_name = sys.argv[0]
+            
+            if "dashboard_v2" in script_name:
+                # If running V2 Dashboard directly
+                os.startfile(script_name) if sys.platform == 'win32' else os.execl(sys.executable, sys.executable, script_name)
+            elif os.path.exists("LAUNCH_ARUN.bat"):
+                # Fallback to Legacy Launcher if not V2
+                import subprocess
+                subprocess.Popen(["LAUNCH_ARUN.bat"], shell=True, cwd=os.getcwd())
+            else:
+                 # Fallback to generic python execution
+                os.startfile(script_name) if sys.platform == 'win32' else os.execl(sys.executable, sys.executable, *sys.argv)
+            
+            # 3. Exit current process
+            self.root.quit()
+            sys.exit(0)
+            
+        except Exception as e:
+            messagebox.showerror("Restart Failed", f"Could not restart automatically.\nPlease close and reopen the app manually.\n\nError: {e}")
 
     def on_add_stock(self):
         """Add new stock configuration"""

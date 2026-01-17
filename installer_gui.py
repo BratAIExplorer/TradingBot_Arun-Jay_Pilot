@@ -9,7 +9,17 @@ import subprocess
 import os
 import sys
 import time
+import logging
+import zipfile
 from pathlib import Path
+
+# Configure logging
+logging.basicConfig(
+    filename="install.log",
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filemode="w"
+)
 
 # Set theme
 ctk.set_appearance_mode("dark")
@@ -18,6 +28,8 @@ ctk.set_default_color_theme("blue")
 class InstallerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        logging.info("Installer initialized")
         
         # Window configuration
         self.title("ARUN Bot Installer")
@@ -40,6 +52,24 @@ class InstallerGUI(ctk.CTk):
         # Start installation after brief pause
         self.after(1000, self.start_installation)
     
+    def get_resource_path(self, relative_path):
+        """Get absolute path to resource, works for dev and for PyInstaller"""
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
+    def log(self, message, level="info"):
+        if level == "info":
+            logging.info(message)
+        elif level == "error":
+            logging.error(message)
+        elif level == "debug":
+            logging.debug(message)
+
     def create_widgets(self):
         # Header
         self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -139,9 +169,11 @@ class InstallerGUI(ctk.CTk):
         self.status_label.configure(text=status)
         self.detail_label.configure(text=detail)
         self.update()
+        self.log(f"Step {step}: {status} - {detail}")
     
     def start_installation(self):
         """Start installation in background thread"""
+        self.log("Starting installation thread")
         self.installation_thread = threading.Thread(target=self.install_bot, daemon=True)
         self.installation_thread.start()
     
@@ -162,6 +194,12 @@ class InstallerGUI(ctk.CTk):
             else:
                 self.update_progress(20, 1, "✓ Python detected", "")
             
+            # Step 1.5: Unpack Application Files
+            self.update_progress(25, 1, "Unpacking application files...", "Extracting payload...")
+            if not self.unpack_files():
+                raise Exception("Failed to unpack application files. Payload missing?")
+            self.update_progress(28, 1, "✓ Files unpacked", "")
+
             # Step 2: Create virtual environment
             self.current_step = 2
             self.update_progress(30, 2, "Creating isolated environment...", "")
@@ -197,10 +235,32 @@ class InstallerGUI(ctk.CTk):
             self.on_installation_complete()
             
         except Exception as e:
+            self.log(f"Installation CRITICAL FAILURE: {e}", "error")
             self.installation_failed = True
             self.error_message = str(e)
             self.on_installation_failed()
     
+    def unpack_files(self):
+        """Unpack the bundled source code"""
+        try:
+            payload_path = self.get_resource_path("source_payload.zip")
+            self.log(f"Looking for payload at: {payload_path}")
+            
+            if not os.path.exists(payload_path):
+                self.log("Payload zip not found!", "error")
+                return False
+                
+            self.log("Extracting payload...")
+            with zipfile.ZipFile(payload_path, 'r') as zip_ref:
+                # Extract to current directory
+                zip_ref.extractall(".")
+                self.log(f"Extracted {len(zip_ref.namelist())} files")
+                
+            return True
+        except Exception as e:
+            self.log(f"Unpack failed: {e}", "error")
+            return False
+
     def check_python(self):
         """Check if Python is installed"""
         try:
@@ -210,8 +270,10 @@ class InstallerGUI(ctk.CTk):
                 text=True,
                 timeout=5
             )
+            self.log(f"Python check result: {result.returncode} - {result.stdout}")
             return result.returncode == 0
-        except:
+        except Exception as e:
+            self.log(f"Python check failed: {e}", "error")
             return False
     
     def install_python(self):
@@ -226,14 +288,19 @@ class InstallerGUI(ctk.CTk):
         """Create virtual environment"""
         try:
             if not os.path.exists(".venv"):
+                self.log("Creating venv...")
                 result = subprocess.run(
                     ["python", "-m", "venv", ".venv"],
                     capture_output=True,
                     timeout=30
                 )
+                if result.returncode != 0:
+                    self.log(f"Venv creation failed: {result.stderr}", "error")
                 return result.returncode == 0
+            self.log("Venv already exists")
             return True
-        except:
+        except Exception as e:
+            self.log(f"Venv creation exception: {e}", "error")
             return False
     
     def install_dependencies(self):
@@ -241,29 +308,48 @@ class InstallerGUI(ctk.CTk):
         try:
             venv_pip = os.path.join(".venv", "Scripts", "pip.exe")
             if not os.path.exists(venv_pip):
+                self.log(f"Pip not found at {venv_pip}", "error")
                 return False
             
-            # Simulate progress
-            packages = 15  # Approximate number of packages
-            for i in range(packages):
-                time.sleep(0.3)
-                percent = 45 + int((i / packages) * 35)
-                self.update_progress(
-                    percent, 
-                    3, 
-                    "Installing dependencies...", 
-                    f"Package {i+1}/{packages}"
-                )
+            # GET CORRECT PATH TO REQUIREMENTS.TXT
+            req_file = self.get_resource_path("requirements.txt")
+            if not os.path.exists(req_file):
+                self.log(f"Requirements file not found at {req_file}", "error")
+                self.log(f"Current dir: {os.getcwd()}")
+                self.log(f"MEIPASS: {getattr(sys, '_MEIPASS', 'Not set')}")
+                return False
+
+            self.log(f"Using requirements file: {req_file}")
+            
+            # Simulate progress for UX
+            packages = 15
+            for i in range(5): # Faster simulation
+                time.sleep(0.1)
+                percent = 45 + int((i / 5) * 5) # Go up to 50%
+                self.update_progress(percent, 3, "Installing dependencies...", "Preparing...")
             
             # Actual install
+            # Use abspath for pip to be safe
+            abs_pip = os.path.abspath(venv_pip)
+            self.log(f"Running pip install with {abs_pip}")
+            
             result = subprocess.run(
-                [venv_pip, "install", "--prefer-binary", "-r", "requirements.txt"],
+                [abs_pip, "install", "--prefer-binary", "-r", req_file],
                 capture_output=True,
-                timeout=300
+                text=True, # Capture as text for logging
+                timeout=600 # 5 min timeout
             )
-            return result.returncode == 0
+            
+            if result.returncode != 0:
+                self.log(f"Pip install failed. Return code: {result.returncode}", "error")
+                self.log(f"Stdout: {result.stdout}", "error")
+                self.log(f"Stderr: {result.stderr}", "error")
+                return False
+                
+            self.log("Pip install successful")
+            return True
         except Exception as e:
-            print(f"Dependencies error: {e}")
+            self.log(f"Dependencies exception: {e}", "error")
             return False
     
     def create_shortcuts(self):
@@ -291,17 +377,20 @@ oLink.Save
                 os.remove("CreateShortcut.vbs")
                 
             return True
-        except:
+        except Exception as e:
+            self.log(f"Shortcut creation error: {e}", "error")
             return True  # Non-critical
     
     def on_installation_complete(self):
         """Handle successful installation"""
+        self.log("Installation completed successfully")
         self.cancel_btn.configure(state="disabled")
         self.finish_btn.configure(state="normal", fg_color="#2ECC71")
         self.status_label.configure(text_color="#2ECC71")
     
     def on_installation_failed(self):
         """Handle failed installation"""
+        self.log("Installation process aborted due to failure")
         self.update_progress(
             0, 
             self.current_step, 
@@ -313,6 +402,7 @@ oLink.Save
     
     def cancel_installation(self):
         """Cancel installation"""
+        self.log("User cancelled installation")
         self.quit()
     
     def finish_installation(self):
@@ -320,12 +410,29 @@ oLink.Save
         self.quit()
         # Launch bot
         try:
-            if not os.path.exists("settings.json"):
-                subprocess.Popen([".venv\\Scripts\\python.exe", "setup_wizard.py"])
-            else:
-                subprocess.Popen([".venv\\Scripts\\pythonw.exe", "kickstart_gui.py"])
-        except:
-            pass
+            # Prepare clean environment
+            env = os.environ.copy()
+            # Remove PyInstaller-specific environment variables that confuse new Python processes
+            env.pop('PYTHONHOME', None)
+            env.pop('PYTHONPATH', None)
+            env.pop('MEIPASS', None)
+            
+            venv_python = os.path.join(".venv", "Scripts", "pythonw.exe")
+            target_script = "setup_wizard.py" if not os.path.exists("settings.json") else "kickstart_gui.py"
+            
+            # Use Popen with DETACHED_PROCESS flags on Windows to ensure it survives installer closing
+            creationflags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            
+            if os.path.exists(venv_python):
+                subprocess.Popen(
+                    [venv_python, target_script],
+                    cwd=os.getcwd(),
+                    env=env,
+                    creationflags=creationflags,
+                    close_fds=True
+                )
+        except Exception as e:
+            self.log(f"Launch error: {e}", "error")
 
 if __name__ == "__main__":
     app = InstallerGUI()

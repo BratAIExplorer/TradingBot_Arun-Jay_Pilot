@@ -8,6 +8,9 @@ echo.
 if exist "build_installer" rmdir /s /q "build_installer"
 if exist "dist\ARUN_Bot_Installer.exe" del "dist\ARUN_Bot_Installer.exe"
 
+echo [0/3] Packing source code...
+python pack_source.py
+
 echo [1/3] Activating virtual environment...
 call .venv\Scripts\activate
 
@@ -31,6 +34,7 @@ pyinstaller --noconfirm ^
     --name "ARUN_Bot_Installer" ^
     %ICON_PARAM% ^
     --add-data "requirements.txt;." ^
+    --add-data "source_payload.zip;." ^
     --hidden-import=customtkinter ^
     --clean ^
     installer_gui.py

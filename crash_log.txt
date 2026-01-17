@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "C:\Antigravity\TradingBots-Aruns Project\dashboard_v2.py", line 416, in <module>
+    app = DashboardV2()
+  File "C:\Antigravity\TradingBots-Aruns Project\dashboard_v2.py", line 100, in __init__
+    self.start_background_threads()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardV2' object has no attribute 'start_background_threads'

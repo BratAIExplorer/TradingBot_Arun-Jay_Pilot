@@ -1,20 +1,12 @@
-# 🎯 Current Tasks & Roadmap (Phase 4)
+# 🎯 Developer Task Scratchpad
 
-## Objective
-Transition from stable Desktop MVP to a smart, mobile-aware trading platform.
+## Immediate Focus
+- [ ] Review `Documentation/Product/BACKLOG.md` for full requirements.
+- [ ] Prepare `kickstart.py` for headless extraction testing.
 
-## Checklist
-
-### 🏗️ Phase 4: Mobile Companion (Infrastructure)
-- [ ] Initialize `streamlit_app.py` for read-only mobile view.
-- [ ] Connect Streamlit to `database/trades_db.py`.
-- [ ] Deploy headless `kickstart.py` to a test VPS.
-- [ ] Implement secure login for the web dashboard.
-
-### 🧠 Phase 5: Intelligence Enhancements
-- [ ] **Smart Order Suggestions**: Add logic to check LTP/Bid-Ask before confirming a buy.
-- [ ] **Hybrid Mode**: Complete the "Human-in-the-Loop" toggle for existing holdings.
-- [ ] **News Sentiment**: Integrate basic RSS/News feed into the reasoning engine.
+## Active Sprint (Phase 4)
+- [ ] Initialize `streamlit_app.py` prototype.
+- [ ] Test Database connectivity from a separate process.
 
 ### 🛠️ Maintenance & Excellence
 - [ ] Clean up legacy files (`kickstart_gui.py`, old test scripts).

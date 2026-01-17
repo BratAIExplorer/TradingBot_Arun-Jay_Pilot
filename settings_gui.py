@@ -16,6 +16,9 @@ import sys
 import requests
 from symbol_validator import validate_symbol
 
+# UI Color Constants
+COLOR_ACCENT = "#00F0FF"  # Cyber Cyan
+
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
         # Initialize settings manager
@@ -32,33 +35,38 @@ class SettingsGUI:
         # Main window logic
         if parent:
             # Embedded Mode (e.g. inside Dashboard Tab)
-            self.root = parent 
             self.is_embedded = True
             # For embedded, we don't set title or geometry on parent usually
         elif root:
             # Popup Mode
-            self.root = ctk.CTkToplevel(root)
             self.is_toplevel = True
+        
+        self.on_save_callback = on_save_callback
+        
+        if self.is_embedded:
+            # When embedded in dashboard, use parent as root and make it scrollable
+            self.root = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+            self.root.pack(fill="both", expand=True, padx=10, pady=10)
+        elif self.is_toplevel:
+            # Popup Mode
+            self.root = ctk.CTkToplevel(root)
             self.root.title("⚙️ Settings")
             self.root.geometry("900x700")
         else:
-            # Standalone Mode
+            # Standalone window mode
             self.root = ctk.CTk()
-            self.is_toplevel = False
             self.root.title("⚙️ ARUN Bot - Settings")
             self.root.geometry("900x700")
-        
-        # Header (Skip if embedded to save space, or keep small)
-        if not self.is_embedded:
+            
+            # Header (only for standalone)
             header = ctk.CTkLabel(
-                self.root, 
-                text="⚙️ Settings", 
-                font=("Arial", 24, "bold")
+                self.root,
+                text="⚙️ ARUN Trading Bot - Configuration",
+                font=("Arial", 20, "bold")
             )
             header.pack(pady=20)
         
         # Create tabbed interface
-        # Validating if self.root is a valid master for Tabview
         self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
         self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
         
@@ -297,12 +305,21 @@ class SettingsGUI:
         capital = self.settings_mgr.get("capital", {})
         
         # Total capital
-        total_label = ctk.CTkLabel(tab, text="Total Capital (₹):", font=("Arial", 14, "bold"))
-        total_label.grid(row=0, column=0, sticky="w", padx=20, pady=15)
+        # --- CAPITAL SEPARATION (SAFETY BOX) ---
+        cap_frame = ctk.CTkFrame(tab, fg_color="#111", border_color=COLOR_ACCENT, border_width=1)
+        cap_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=15)
         
-        self.total_capital_entry = ctk.CTkEntry(tab, width=200, placeholder_text="50000")
-        self.total_capital_entry.insert(0, str(capital.get("total_capital", 50000)))
-        self.total_capital_entry.grid(row=0, column=1, sticky="w", padx=10, pady=15)
+        lbl_safety = ctk.CTkLabel(cap_frame, text="🔒 SAFETY BOX (Allocated Capital)", font=("Arial", 14, "bold"), text_color=COLOR_ACCENT)
+        lbl_safety.pack(anchor="w", padx=15, pady=(10, 0))
+        
+        lbl_desc = ctk.CTkLabel(cap_frame, text="Limit the funds available to the bot. Your main broker balance is safe.", font=("Arial", 11), text_color="#AAA")
+        lbl_desc.pack(anchor="w", padx=15, pady=(0, 10))
+        
+        self.allocated_capital_entry = ctk.CTkEntry(cap_frame, width=200, placeholder_text="50000", font=("Arial", 14))
+        self.allocated_capital_entry.insert(0, str(capital.get("allocated_limit", 50000)))
+        self.allocated_capital_entry.pack(anchor="w", padx=15, pady=(0, 15))
+        
+        # --- STRATEGY LIMITS ---
         
         # Per-trade capital %
         per_trade_label = ctk.CTkLabel(tab, text="Per-Trade Capital (%):", font=("Arial", 12))
@@ -905,9 +922,9 @@ class SettingsGUI:
                     "totp_secret": self.totp_entry.get()
                 },
                 "capital": {
-                    "total_capital": float(self.total_capital_entry.get()),
+                    "allocated_limit": float(self.allocated_capital_entry.get()),
                     "max_per_stock_type": self.sizing_method_var.get(),
-                    "max_per_stock_value": self.per_trade_var.get(),
+                    "per_trade_pct": self.per_trade_var.get(), # Updated key name to match load
                     "max_per_stock_fixed_amount": float(self.fixed_amount_entry.get()),
                     "max_positions": self.max_positions_var.get(),
                     "compound_profits": self.compound_var.get()

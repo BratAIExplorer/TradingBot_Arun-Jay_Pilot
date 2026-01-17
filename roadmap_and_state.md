@@ -34,28 +34,49 @@ The ARUN Trading Bot has evolved from a basic script into a robust, user-friendl
 
 ---
 
-## 3. The Future: Phase 2 Roadmap (Enhancement & UX)
+## 3. Phase 2: UX Intelligence (COMPLETED)
+**Status: Delivered (Jan 18, 2026)**
 
-Our goal is to transform the bot from a "functional tool" into a "smart assistant".
+We have successfully transformed the bot into a "Smart Assistant".
 
-### A. The "Knowledge Tab" (Smart Help)
-*   **Problem:** Users are overwhelmed by technical terms (RSI, Drawdown).
-*   **Solution:** A dedicated "Knowledge Intelligence" tab.
-    *   **Features:** Interactive guides, "What is this?" tooltips, and strategy explainers.
-    *   **Goal:** Teach the user *how* to trade while they use the bot.
+### A. The "Knowledge Tab" (Smart Help) [DONE]
+*   **Delivered:** a dedicated `KNOWLEDGE` tab with "Tip of the Day" and Trading Library.
+*   **Dynamic:** Loads content from `strategies/trading_tips.json`.
 
-### B. UI/UX Overhaul (Modern & Seamless)
-*   **Design Philosophy:** "Bento Grid" / Card-based UI. 
-    *   **Visuals:** Dark mode, glassmorphism, clean typography (Inter/Roboto).
-    *   **Flow:** Dashboard-first approach. Important info (P&L, Active Actions) front and center.
-*   **Market Sentiment Meter:**
-    *   A visual "Mood Meter" (Fear/Greed) on the dashboard.
-    *   **Reasoning Engine:** Explains *why* the market is fearful (e.g., "NIFTY down 2%").
+### B. UI/UX Overhaul (Modern & Seamless) [DONE]
+*   **Bento Grid:** Strategy Tab now groups stocks by Sector (Financials, IT, etc.).
+    *   **Panic Button:** "Sell All" available per sector.
+*   **Reasoning Engine:** Market Sentiment meter now explains *why* (e.g., "VIX Spiking").
+*   **Simulation Refinement:** Prices and charts now move realistically in Paper Mode (Random Walk).
 
-### C. Advanced Portfolio Management
-*   **Hybrid Mode:** Manage existing long-term holdings alongside active trading.
-*   **Smart Order Suggestions:** "Grammarly for Trading" - validates user inputs against the order book to save money (e.g., "Bid ₹1 lower?").
-*   **Basket Performance:** View performance by sector (e.g., "Banking Stocks are down 5%, sell all?").
+### C. Advanced Portfolio Management [DONE]
+*   **Capital Safety:** `ALLOCATED_CAPITAL` setting ensures the bot only touches assigned funds.
+*   **Source tagging:** Positions table clearly marks `BOT` vs `MANUAL` trades.
+
+## 4. Deferred Scope (Phase 4)
+
+### Mobile Companion App
+**Status**: Architecture defined, implementation deferred
+
+The current ARUN bot is a **desktop GUI** (CustomTkinter), not a web app. To enable mobile access, we will build a **parallel web dashboard** using Streamlit:
+
+**Architecture**:
+- Core trading logic (`kickstart.py`) runs **headless** on a VPS
+- Streamlit dashboard provides **read-only** mobile view
+- User accesses via phone browser: `https://bot-server:8501`
+- Settings changes still require desktop GUI
+
+**Why Streamlit**:
+- Python-based (matches existing stack)
+- Mobile-responsive by default
+- Can reuse `database/trades_db.py` for real-time data
+- Easy to deploy on cloud (AWS, DigitalOcean)
+
+See `mobile_architecture.md` for full technical plan.
+
+### Other Future Items
+*   **Smart Order Suggestions:** "Grammarly for Trading" - validates orders before placement.
+*   **Smart SIP:** Auto-investing module for long-term holdings.
 
 ### D. Engineering Excellence (Under the Hood)
 *   **Code Management:** Strict version control, rollback capabilities, and "Do No Harm" policy.

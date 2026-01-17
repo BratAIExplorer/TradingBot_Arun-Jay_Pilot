@@ -296,12 +296,51 @@ def reload_config():
             ACCESS_TOKEN = settings.get_decrypted("broker.access_token")
             
             log_ok("✅ Configuration Reloaded Successfully")
+            log_ok("✅ Configuration Reloaded Successfully")
             return True
     except Exception as e:
         log_ok(f"❌ Failed to reload config: {e}")
         return False
+
+# --- CAPITAL & RISK GLOBALS ---
 portfolio_state = {}
 RSI_PERIOD = 14
+ALLOCATED_CAPITAL = 50000.0 # Default Safety Limit (₹50k)
+
+if settings:
+    try:
+        # Load User's "Safety Box" Limit
+        ALLOCATED_CAPITAL = float(settings.get("capital.allocated_limit", 50000.0))
+        log_ok(f"💰 Bot Capital Limit Set to: ₹{ALLOCATED_CAPITAL:,.2f}")
+    except: pass
+
+def check_capital_safety(required_amount):
+    """
+    Returns True if we have enough ALLOCATED funds for this trade.
+    This separates 'Bot Funds' from 'Life Savings'.
+    """
+    try:
+        # Calculate currently used capital by BOT (sum of active positions cost)
+        used_capital = 0.0
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Only count OPEN trades initiated by BOT
+        cursor.execute("SELECT entry_price, quantity FROM trades WHERE status='OPEN' AND source='BOT'")
+        rows = cursor.fetchall()
+        for p, q in rows:
+            used_capital += (p * q)
+        conn.close()
+        
+        remaining = ALLOCATED_CAPITAL - used_capital
+        
+        if remaining >= required_amount:
+            return True, remaining
+        else:
+            log_ok(f"🚫 Capital Limit Reached! Allocated: ₹{ALLOCATED_CAPITAL}, Used: ₹{used_capital}. Needed: ₹{required_amount}")
+            return False, remaining
+    except Exception as e:
+        log_ok(f"⚠️ Capital Check Error: {e}. Defaulting to Safe Mode (Block).")
+        return False, 0.0
 
 # Consolidate Access Token
 ACCESS_TOKEN = settings.get_decrypted("broker.access_token") if settings else None
@@ -343,33 +382,55 @@ def fetch_market_data(symbol, exchange):
                 result = (data.get("data") or {}).get(params["i"])
                 if result:
                     return result, exchange
-        except Exception:
+        except Exception as e:
+            # If simulaton is allowed, suppress the error to avoid log spam
+            if not should_simulate:
+                log_ok(f"❌ API Error for {symbol}: {e}")
             pass # Fallthrough to simulation if allowed
 
     # 2. Generate Fabricated Data if Allowed
     if should_simulate:
-        # Generate a "Realistic" random walk price based on previous close or arbitrary start
+        # Generate a "Realistic" random walk price based on persistent state
         import random
-        base_price = 1000.0 # Default if no history
-        if symbol == "NIFTY": base_price = 24000.0
-        elif symbol == "BANKNIFTY": base_price = 52000.0
         
-        # Add random fluctuation (+/- 0.5%)
-        # In a real scenario, we'd cache the last price to make it continuous.
-        # For now, just return a valid structure so the bot RUNS.
-        fluctuation = base_price * (random.uniform(-0.005, 0.005))
-        sim_price = base_price + fluctuation
+        # Initialize Mock State if needed
+        if 'MOCK_PRICES' not in globals():
+            global MOCK_PRICES
+            MOCK_PRICES = {}
+            
+        # Get last known mock price or seed
+        if symbol not in MOCK_PRICES:
+            base_seed = 1000.0
+            if symbol == "NIFTY 50": base_seed = 24500.0
+            elif symbol == "NIFTY BANK": base_seed = 52000.0
+            elif symbol == "RELIANCE": base_seed = 2600.0
+            elif symbol == "HDFCBANK": base_seed = 1650.0
+            elif symbol == "TCS": base_seed = 3900.0
+            MOCK_PRICES[symbol] = base_seed
+            
+        current_price = MOCK_PRICES[symbol]
+        
+        # Random Walk: drift 0, vol 0.02% per tick
+        import random
+        change = current_price * random.gauss(0, 0.0002) 
+        new_price = current_price + change
+        MOCK_PRICES[symbol] = new_price
+        
+        # Calculate daily change mock
+        open_price = MOCK_PRICES[symbol] * 0.995 # Mock open
+        change_pct = ((new_price - open_price) / open_price) * 100
         
         # Mock Response Structure matching mStock
         return {
-            "last_price": sim_price,
+            "last_price": new_price,
             "ohlc": {
-                "open": base_price,
-                "high": base_price * 1.01,
-                "low": base_price * 0.99,
-                "close": sim_price
+                "open": open_price,
+                "high": max(open_price, new_price * 1.001),
+                "low": min(open_price, new_price * 0.999),
+                "close": open_price # Prev close
             },
-            "change_percent": random.uniform(-1.5, 1.5)
+            "change_percent": change_pct,
+            "instrument_token": "999999" # Mock Token
         }, exchange
 
     if not is_offline():
@@ -899,14 +960,33 @@ def merge_positions_and_orders():
     holdings = get_positions()
     executed = get_orders_today()
     
+    # Fetch BOT-initiated positions from DB to tag them
+    bot_keys = set()
+    if db:
+        try:
+            # Check paper/real mode from settings or logic
+            is_paper = False 
+            if settings and settings.get("app_settings.paper_trading_mode") == "1":
+                is_paper = True
+            
+            # Fetch DB positions
+            db_positions = db.get_open_positions(is_paper=is_paper)
+            for p in db_positions:
+                bot_keys.add((p['symbol'], p['exchange']))
+        except: pass
+    
     merged = {}
     for sym, pos in holdings.items():
-        merged[(sym, pos.get("exchange", "NSE"))] = {
+        key = (sym, pos.get("exchange", "NSE"))
+        source = "BOT" if key in bot_keys else "MANUAL"
+        
+        merged[key] = {
             "qty": int(pos.get("qty", 0)),
             "used_quantity": int(pos.get("used_quantity", 0)),
             "price": float(pos.get("price", 0.0)),
             "ltp": float(pos.get("ltp", 0.0)),
             "pnl": float(pos.get("pnl", 0.0)),
+            "source": source
         }
     net = {}
     for o in executed:
@@ -927,6 +1007,8 @@ def merge_positions_and_orders():
             n["net_qty"] -= qty
     for key, n in net.items():
         sym, ex = key
+        source = "BOT" if key in bot_keys else "MANUAL"
+        
         if key not in merged and n["net_qty"] != 0:
             wap_buy = (n["wap_buy_num"] / n["gross_buy_qty"]) if n["gross_buy_qty"] > 0 else 0.0
             merged[key] = {
@@ -934,12 +1016,16 @@ def merge_positions_and_orders():
                 "used_quantity": 0,
                 "price": wap_buy,
                 "ltp": 0.0,
-                "pnl": 0.0
+                "pnl": 0.0,
+                "source": source
             }
         elif key in merged:
             merged[key]["qty"] += n["net_qty"]
             if merged[key]["qty"] < 0:
                 merged[key]["qty"] = 0
+            # If it became merged, we keep source as BOT if it was ever BOT, usually safe assumption
+            if source == "BOT": merged[key]["source"] = "BOT"
+            
     return merged
 
 def safe_get_live_positions_merged():

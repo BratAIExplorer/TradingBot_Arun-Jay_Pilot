@@ -1,0 +1,22 @@
+[
+    {
+        "title": "What is RSI?",
+        "content": "The Relative Strength Index (RSI) measures the speed and change of price movements. RSI > 70 is 'Overbought' (Sell signal?), RSI < 30 is 'Oversold' (Buy signal?)."
+    },
+    {
+        "title": "Understanding Drawdown",
+        "content": "Drawdown is the reduction in equity from a peak to a trough. A 10% drawdown requires an 11% gain to recover. Manage position sizing to limit this!"
+    },
+    {
+        "title": "The Golden Rule of Risk",
+        "content": "Never risk more than 1-2% of your capital on a single trade. This ensures you can survive a losing streak."
+    },
+    {
+        "title": "Stop Loss vs Trailing Stop",
+        "content": "A fixed Stop Loss limits loss to X%. A Trailing Stop moves UP with the price, locking in profits while protecting against reversals."
+    },
+    {
+        "title": "What is VIX?",
+        "content": "India VIX is the 'Fear Gauge'. High VIX (>20) means high volatility and fear. Low VIX (<12) means complacency. Option premiums shoot up when VIX is high."
+    }
+]

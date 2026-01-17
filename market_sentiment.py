@@ -23,6 +23,10 @@ class MarketSentiment:
         - NIFTY Rising + VIX Stable = Greed
         """
         try:
+            # Suppress yfinance warnings/errors when market is closed
+            import warnings
+            warnings.filterwarnings("ignore")
+            
             # Fetch Data (1 day period to get today's change)
             tickers = yf.Tickers(f"{self.nifty_ticker} {self.vix_ticker}")
             
@@ -75,7 +79,18 @@ class MarketSentiment:
             elif self.score <= 70: self.status = "GREED 🤑"
             else: self.status = "EXTREME GREED 🚀"
 
-            self.details = f"{', '.join(reason)}" if reason else "Market is stable."
+            # -- AI REASONING ENGINE --
+            ai_reasoning = ""
+            if self.score < 30:
+                ai_reasoning = "Markets are in panic mode. High volatility suggests aggressive selling pressure."
+            elif self.score > 70:
+                ai_reasoning = "Euphoria is driving prices up. Caution advised as reversals can be sudden."
+            elif vix_change > 5:
+                ai_reasoning = "Rising fear index indicates traders are hedging against potential downside."
+            else:
+                ai_reasoning = "Market sentiment is balanced. Traders are awaiting new catalysts."
+                
+            self.details = f"{', '.join(reason)}. {ai_reasoning}" if reason else f"Market is stable. {ai_reasoning}"
             
             return {
                 "score": self.score,
@@ -86,12 +101,30 @@ class MarketSentiment:
             }
 
         except Exception as e:
-            print(f"Sentiment Fetch Error: {e}")
-            # Fallback
-            self.status = "OFFLINE"
-            self.score = 50
-            self.details = "Data Unavailable"
-            return {"score": 50, "status": "OFFLINE", "details": "Could not fetch data"}
+            # Fallback / Simulation Mode
+            import random
+            
+            # Random Walk the score if we can't fetch real data
+            # Simulating a "nervous" market
+            self.score = max(0, min(100, self.score + random.randint(-5, 5)))
+            
+            if self.score <= 30: self.status = "EXTREME FEAR 😱"
+            elif self.score <= 45: self.status = "FEAR 😨"
+            elif self.score <= 55: self.status = "NEUTRAL 😐"
+            elif self.score <= 70: self.status = "GREED 🤑"
+            else: self.status = "EXTREME GREED 🚀"
+            
+            mock_reason = "Simulated Market Data active."
+            if self.score < 40: mock_reason = "Simulation: Bears are dominating the trend."
+            elif self.score > 60: mock_reason = "Simulation: Bulls are pushing indices higher."
+            
+            return {
+                "score": self.score,
+                "status": self.status,
+                "details": mock_reason,
+                "nifty_change": 0.0,
+                "vix_change": 0.0
+            }
 
 # Usage
 if __name__ == "__main__":

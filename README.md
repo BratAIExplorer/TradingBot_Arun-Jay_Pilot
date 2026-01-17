@@ -35,13 +35,12 @@ You need **Python** installed to run this bot.
 ---
 
 ## 4. Launching the Bot
-1.  Double-click the file **`kickstart_gui.py`** (if you have Python set to open .py files).
-2.  OR, in the terminal, run:
-    ```bash
-    python kickstart_gui.py
-    ```
-3.  The Dashboard will open.
-4.  Click **▶ Start Bot**.
+1.  Double-click the file **`dashboard_v2.py`** (if you have Python set to open .py files).
+2.  OR, better yet, use the provided launcher:
+    - Double-click **`LAUNCH_ARUN.bat`** (This ensures Python is found correctly).
+3.  The **Titan V2 Dashboard** will open.
+4.  Click **▶ Start Engine**.
+
 
 ---
 

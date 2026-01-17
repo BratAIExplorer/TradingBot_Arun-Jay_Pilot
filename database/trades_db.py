@@ -65,6 +65,7 @@ class TradesDatabase:
                 pnl_pct_net REAL,
                 reason TEXT,
                 broker TEXT,
+                source TEXT DEFAULT 'BOT', -- 'BOT' or 'MANUAL'
                 
                 -- Additional fields
                 entry_timestamp TEXT,
@@ -90,7 +91,6 @@ class TradesDatabase:
         Run schema migrations for existing databases
         """
         try:
-            # Check if 'broker' column exists
             self.cursor.execute("PRAGMA table_info(trades)")
             columns = [info[1] for info in self.cursor.fetchall()]
 
@@ -98,7 +98,13 @@ class TradesDatabase:
                 print("🔄 Migrating database: Adding 'broker' column...")
                 self.cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
                 self.conn.commit()
-                print("✅ Migration complete")
+
+            if 'source' not in columns:
+                print("🔄 Migrating database: Adding 'source' column...")
+                self.cursor.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'BOT'")
+                self.conn.commit()
+                print("✅ Migration 'source' complete")
+
         except Exception as e:
             print(f"⚠️ Migration warning: {e}")
     
@@ -114,6 +120,7 @@ class TradesDatabase:
                     strategy: str = "RSI",
                     reason: str = "",
                     broker: str = "mstock",
+                    source: str = "BOT",
                     fee_breakdown: Optional[Dict] = None) -> int:
         """
         Insert a trade record
@@ -135,13 +142,13 @@ class TradesDatabase:
                 timestamp, symbol, exchange, action, quantity, price,
                 gross_amount, brokerage_fee, stt_fee, exchange_fee,
                 gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
-                strategy, reason, broker
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                strategy, reason, broker, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             timestamp, symbol, exchange, action, quantity, price,
             gross_amount, brokerage, stt, exchange_fee,
             gst, sebi, stamp, total_fees, net_amount,
-            strategy, reason, broker
+            strategy, reason, broker, source
         ))
         
         self.conn.commit()

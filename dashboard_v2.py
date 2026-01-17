@@ -8,6 +8,7 @@ import queue
 import customtkinter as ctk
 from tkinter import END, ttk, messagebox
 import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
@@ -87,10 +88,12 @@ class DashboardV2:
         self.view_dashboard = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_strategies = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_settings = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_knowledge = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
         self.build_dashboard_view()
         self.build_strategies_view()
         self.build_settings_view()
+        self.build_knowledge_view()
         
         # Default View
         self.show_view("DASHBOARD")
@@ -98,6 +101,10 @@ class DashboardV2:
         # Start Logic
         self.start_background_threads()
         self.update_ui_loop()
+    
+    def start_background_threads(self):
+        """Start background worker threads for data fetching"""
+        threading.Thread(target=self.sentiment_worker, daemon=True).start()
 
     # ... (Rest of class methods remain same, will rely on backup or merge context) ...
 
@@ -127,7 +134,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "STRATEGIES", "SETTINGS"],
+            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS"],
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -142,15 +149,11 @@ class DashboardV2:
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
 
-        # User Profile & Notification
+        # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
-        user_frame.pack(side="right", padx=20)
+        user_frame.pack(side="right", padx=10)
         
-        # PERSISTENT STOP BUTTON
-        self.btn_stop_global = ctk.CTkButton(header, text="🛑 STOP", command=self.stop_bot, fg_color=COLOR_DANGER, hover_color="#D50000", width=80, font=("Roboto", 12, "bold"))
-        self.btn_stop_global.pack(side="left", padx=(0, 20))
-        
-        ctk.CTkLabel(user_frame, text="John Doe", font=("Roboto", 12), text_color="#AAA").pack(side="left", padx=10)
+        ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
 
     def refresh_bot_settings(self):
@@ -168,6 +171,7 @@ class DashboardV2:
         self.view_dashboard.pack_forget()
         self.view_strategies.pack_forget()
         self.view_settings.pack_forget()
+        self.view_knowledge.pack_forget()
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -176,6 +180,8 @@ class DashboardV2:
             self.view_strategies.pack(fill="both", expand=True)
         elif view_name == "SETTINGS":
             self.view_settings.pack(fill="both", expand=True)
+        elif view_name == "KNOWLEDGE":
+            self.view_knowledge.pack(fill="both", expand=True)
 
     def build_dashboard_view(self):
         """Replicates the Titan Mockup Grid"""
@@ -198,6 +204,17 @@ class DashboardV2:
         self.graph_canvas = ctk.CTkCanvas(self.card_profit, height=80, bg=COLOR_CARD, highlightthickness=0)
         self.graph_canvas.pack(fill="x", padx=2, pady=10, side="bottom")
         self.draw_mock_graph(self.graph_canvas, COLOR_SUCCESS) # Initial draw
+
+        # Safety Box / Capital Usage Bar
+        self.cap_frame = ctk.CTkFrame(self.card_profit, fg_color="transparent")
+        self.cap_frame.place(relx=0.95, rely=0.1, anchor="ne")
+        
+        ctk.CTkLabel(self.cap_frame, text="SAFETY BOX USED", font=("Roboto", 10, "bold"), text_color="#AAA").pack(anchor="e")
+        self.cap_bar = ctk.CTkProgressBar(self.cap_frame,width=120, height=8, progress_color=COLOR_ACCENT)
+        self.cap_bar.set(0.1) # Mock 10%
+        self.cap_bar.pack(anchor="e", pady=2)
+        self.lbl_cap_usage = ctk.CTkLabel(self.cap_frame, text="₹15k / ₹50k", font=("Roboto", 10), text_color="#888")
+        self.lbl_cap_usage.pack(anchor="e")
 
         # 2. Market Sentiment (Meter)
         self.card_sentiment = TitanCard(row1, title="MARKET SENTIMENT METER", width=400, height=220, border_color="#FF9800")
@@ -259,8 +276,95 @@ class DashboardV2:
         self.log_area.pack(side="right", fill="x", expand=True, padx=(20, 0))
 
     def build_strategies_view(self):
-        """Strategies View Content"""
-        TitanCard(self.view_strategies, title="STRATEGY CONFIGURATION (Coming Soon)").pack(fill="both", expand=True, padx=20, pady=20)
+        """Strategies View Content - Baskets & Strategies"""
+        
+        scroll_frame = ctk.CTkScrollableFrame(self.view_strategies, fg_color="transparent")
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # --- SECTION 1: SECTOR BASKETS ---
+        ctk.CTkLabel(scroll_frame, text="SECTOR BASKETS (BUCKETS)", font=("Roboto", 16, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
+        
+        basket_grid = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        basket_grid.pack(fill="x", pady=(0, 20))
+        basket_grid.grid_columnconfigure(0, weight=1)
+        basket_grid.grid_columnconfigure(1, weight=1)
+        basket_grid.grid_columnconfigure(2, weight=1)
+        
+        sectors = ["FINANCIALS", "IT", "ENERGY", "AUTO", "PHARMA", "FMCG"]
+        
+        def make_basket_card(parent, title, col, row):
+            card = TitanCard(parent, title=title, height=140, border_color="#444")
+            card.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+            
+            # Stats Placeholder
+            ctk.CTkLabel(card, text="Exposure: ₹0", font=("Roboto", 11), text_color="#AAA").pack(anchor="w", padx=15, pady=(5,0))
+            ctk.CTkLabel(card, text="PnL: 0.0%", font=("Roboto", 14, "bold"), text_color="white").pack(anchor="w", padx=15, pady=2)
+            
+            btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+            btn_frame.pack(fill="x", padx=15, pady=10)
+            ctk.CTkSwitch(btn_frame, text="Trade", width=40).pack(side="right")
+            ctk.CTkButton(btn_frame, text="Sell All", width=60, height=20, fg_color=COLOR_DANGER, hover_color="#B71C1C", 
+                          command=lambda: self.sell_sector_positions(title)).pack(side="left")
+
+        for i, sec in enumerate(sectors):
+            r = i // 3
+            c = i % 3
+            make_basket_card(basket_grid, sec, c, r)
+            
+    def sell_sector_positions(self, sector_name):
+        """Sell all positions belonging to a specific sector"""
+        if not messagebox.askyesno("Confirm Sell", f"Sell ALL positions in {sector_name} sector?"):
+            return
+            
+        try:
+            from strategies.sector_map import get_sector
+            positions = safe_get_live_positions_merged() # from kickstart
+            count = 0
+            
+            for key, pos in positions.items():
+                sym = key[0] if isinstance(key, tuple) else key
+                ex = key[1] if isinstance(key, tuple) else "NSE"
+                qty = pos.get("qty", 0)
+                
+                if qty > 0 and get_sector(sym) == sector_name:
+                    self.write_log(f"📉 SELLING {sym} ({sector_name}) - Panic Exit\n")
+                    place_order(sym, ex, qty, "SELL", "0") # market order
+                    count += 1
+            
+            if count > 0:
+                self.write_log(f"✅ Sold {count} positions in {sector_name}\n")
+            else:
+                self.write_log(f"⚠️ No active positions found in {sector_name}\n")
+                
+        except Exception as e:
+            self.write_log(f"❌ Error selling sector {sector_name}: {e}\n")
+
+        # --- SECTION 2: ALGO STRATEGIES ---
+        ctk.CTkLabel(scroll_frame, text="ALGO STRATEGIES", font=("Roboto", 16, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
+        
+        algo_grid = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        algo_grid.pack(fill="x")
+        algo_grid.grid_columnconfigure(0, weight=1)
+        algo_grid.grid_columnconfigure(1, weight=1)
+
+        # Helper to make cards
+        def make_strat_card(parent, title, desc, col, row):
+            card = TitanCard(parent, title=title, height=150)
+            card.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
+            
+            ctk.CTkLabel(card, text=desc, font=("Roboto", 12), text_color="#CCC", wraplength=300, justify="left").pack(anchor="w", padx=15, pady=5)
+            
+            btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+            btn_frame.pack(fill="x", padx=15, pady=10)
+            
+            ctk.CTkSwitch(btn_frame, text="Active").pack(side="right")
+            ctk.CTkButton(btn_frame, text="Configure", width=80, height=24, fg_color="#333", hover_color="#444").pack(side="left")
+
+        # Strategies
+        make_strat_card(algo_grid, "RSI MEAN REVERSION", "Classic Overbought/Oversold logic.", 0, 0)
+        make_strat_card(algo_grid, "MOMENTUM CHASER", "Trend following on volume breakouts.", 1, 0)
+        make_strat_card(algo_grid, "DEEP DIP BUYER", "Buys aggressive dips below Bollinger bands.", 0, 1)
+        make_strat_card(algo_grid, "SCALP MASTER", "Quick in-out trades.", 1, 1)
 
     def build_settings_view(self):
         """Settings View Content"""
@@ -271,12 +375,50 @@ class DashboardV2:
         except Exception as e:
              ctk.CTkLabel(self.view_settings, text=f"Error: {e}").pack()
 
+    def build_knowledge_view(self):
+        """Knowledge Base / Help Tab"""
+        scroll = ctk.CTkScrollableFrame(self.view_knowledge, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ctk.CTkLabel(scroll, text="🧠 KNOWLEDGE INTELLIGENCE", font=("Roboto", 24, "bold"), text_color="white").pack(anchor="w", pady=(0, 20))
+        
+        # Load Tips
+        tips = []
+        try:
+            import json
+            with open("strategies/trading_tips.json", "r") as f:
+                tips = json.load(f)
+        except Exception:
+            tips = [{"title": "Welcome", "content": "Trading tips will appear here."}]
+            
+        import random
+        daily_tip = random.choice(tips)
+        
+        # Tip of the Day
+        tip_card = TitanCard(scroll, title=f"💡 TIP OF THE DAY: {daily_tip['title']}", height=150, border_color="#FFD700")
+        tip_card.pack(fill="x", pady=10)
+        
+        ctk.CTkLabel(tip_card, text=daily_tip['content'], font=("Roboto", 14), text_color="#EEE", 
+                     wraplength=800, justify="left").pack(padx=20, pady=20, anchor="w")
+                     
+        # Library
+        ctk.CTkLabel(scroll, text="TRADING LIBRARY", font=("Roboto", 18, "bold"), text_color="#AAA").pack(anchor="w", pady=(20, 10))
+        
+        for tip in tips:
+            if tip == daily_tip: continue
+            
+            card = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=6, border_width=1, border_color="#333")
+            card.pack(fill="x", pady=5)
+            
+            ctk.CTkLabel(card, text=tip['title'], font=("Roboto", 12, "bold"), text_color="white").pack(anchor="w", padx=10, pady=(10,0))
+            ctk.CTkLabel(card, text=tip['content'], font=("Roboto", 11), text_color="#888", wraplength=800, justify="left").pack(anchor="w", padx=10, pady=(0,10))
+
     def build_positions_table(self, parent):
         # Table Frame
         table_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=0)
         table_frame.pack(fill="both", expand=True, padx=2, pady=10)
         
-        cols = ("Symbol", "Status", "Entry", "LTP", "PnL", "Action")
+        cols = ("Symbol", "Source", "Status", "Entry", "LTP", "PnL", "Action")
         
         style = ttk.Style()
         style.theme_use("clam")
@@ -287,6 +429,9 @@ class DashboardV2:
         for col in cols:
             self.pos_table.heading(col, text=col.upper())
             self.pos_table.column(col, anchor="center")
+            
+        self.pos_table.column("Source", width=80) 
+        self.pos_table.column("Symbol", width=120)
             
         self.pos_table.pack(fill="both", expand=True)
         self.pos_table.tag_configure("green", foreground=COLOR_SUCCESS)
@@ -393,13 +538,35 @@ class DashboardV2:
     def update_positions(self, data):
         for item in self.pos_table.get_children(): self.pos_table.delete(item)
         total_pnl = 0
+        used_capital = 0
+        
         for sym, pos in data.items():
             s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
             pnl = pos.get("pnl", 0)
+            qty = pos.get("qty", 0)
+            avg = pos.get("price", 0)
+            source = pos.get("source", "BOT") # Default to BOT for now
+            
+            # Calculate metrics
+            invested = qty * avg
+            if source == "BOT": used_capital += invested
+            
             total_pnl += pnl
             tag = "green" if pnl >= 0 else "red"
-            self.pos_table.insert("", END, values=(s, "OPEN", pos.get("qty"), pos.get("price"), pos.get("ltp"), f"{pnl:.2f}", "MANAGE"), tags=(tag,))
+            
+            self.pos_table.insert("", END, values=(s, source, "OPEN", qty, avg, pos.get("ltp"), f"{pnl:.2f}", "MANAGE"), tags=(tag,))
+            
         self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
+        
+        # Update Safety Box Bar
+        try:
+            from kickstart import ALLOCATED_CAPITAL
+            limit = ALLOCATED_CAPITAL
+            if limit > 0:
+                pct = min(1.0, used_capital / limit)
+                self.cap_bar.set(pct)
+                self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
+        except: pass
 
     def update_sentiment(self, data):
         self.draw_meter(data['score'])
@@ -407,13 +574,40 @@ class DashboardV2:
         self.lbl_sentiment_reason.configure(text=f"WHY? {data['details']}")
 
     def write_log(self, text):
-        self.log_area.configure(state="normal")
-        self.log_area.insert(END, text)
-        self.log_area.see(END)
-        self.log_area.configure(state="disabled")
-        # Also add to Alert box if critical
-        if "ERROR" in text or "TRIGGER" in text:
-             self.alert_box.insert("0.0", f"⚠ {text}")
+        """Redirect print/logs to UI Console and Alert Box"""
+        if not text.strip(): return
+        
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        formatted = f"{timestamp} | {text}"
+        
+        # 1. Technical Log (Bottom) - Show Everything
+        try:
+            self.log_area.configure(state="normal")
+            self.log_area.insert("end", formatted + "\n")
+            self.log_area.see("end")
+            self.log_area.configure(state="disabled")
+        except: pass
+        
+        # 2. Recent Alerts (Top Left) - FILTERED
+        # Only show High-Level Events: Trades, Signals, System Changes
+        # Filter out: "ERROR", "Failed", "Exception", "delisted" (unless critical)
+        should_alert = False
+        is_error = any(x in text for x in ["ERROR", "Exception", "Failed", "Expecting value", "delisted", "No price data"])
+        
+        if any(x in text for x in ["✅", "🚨", "BUY", "SELL", "Order", "Triggered", "System", "Engine"]):
+             should_alert = True
+        elif "⚠" in text and not is_error:
+             # Show warnings like "Circuit Breaker" or "High Volatility", but hide API spam
+             should_alert = True
+             
+        if should_alert:
+            try:
+                self.alert_box.insert("0.0", f"{text}\n")
+                # Optional: Limit length
+                content = self.alert_box.get("0.0", "end")
+                if len(content.splitlines()) > 50:
+                    self.alert_box.delete("50.0", "end")
+            except: pass
     
     def emergency_exit(self):
         if messagebox.askyesno("CONFIRM", "Panic Sell All?"):

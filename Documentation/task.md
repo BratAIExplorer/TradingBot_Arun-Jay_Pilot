@@ -1,37 +1,25 @@
-# Task: Backup and Enhance ARUN Trading Bot
+# 🎯 Current Tasks & Roadmap (Phase 4)
 
 ## Objective
-Safely enhance the trading bot with new features while preserving current working functionality through proper backups.
+Transition from stable Desktop MVP to a smart, mobile-aware trading platform.
 
 ## Checklist
 
-### Phase 1: Safety & Documentation
-- [/] Create complete backup of current working bot
-- [ ] Create PowerPoint pitch deck from markdown
-- [ ] Document backup restore procedure
+### 🏗️ Phase 4: Mobile Companion (Infrastructure)
+- [ ] Initialize `streamlit_app.py` for read-only mobile view.
+- [ ] Connect Streamlit to `database/trades_db.py`.
+- [ ] Deploy headless `kickstart.py` to a test VPS.
+- [ ] Implement secure login for the web dashboard.
 
-### Phase 2: New Trading Strategies
-- [ ] Implement QGLP Filter (Raamdeo Agrawal style)
-- [ ] Implement High Growth Screener (Basant Maheshwari)
-- [ ] Implement Magic Formula (Mohnish Pabrai)
-- [ ] Add strategy selection to config system
-- [ ] Test all strategies in isolation
+### 🧠 Phase 5: Intelligence Enhancements
+- [ ] **Smart Order Suggestions**: Add logic to check LTP/Bid-Ask before confirming a buy.
+- [ ] **Hybrid Mode**: Complete the "Human-in-the-Loop" toggle for existing holdings.
+- [ ] **News Sentiment**: Integrate basic RSS/News feed into the reasoning engine.
 
-### Phase 3: Web Dashboard (Streamlit)
-- [ ] Create Streamlit dashboard prototype
-- [ ] Implement live position display
-- [ ] Add strategy performance metrics
-- [ ] Build visual configuration interface
-- [ ] Add paper trading mode toggle
+### 🛠️ Maintenance & Excellence
+- [ ] Clean up legacy files (`kickstart_gui.py`, old test scripts).
+- [ ] Expand `strategies/trading_tips.json` with more technical education.
+- [ ] Optimize yfinance data fetching for faster sentiment updates.
 
-### Phase 4: Integration & Testing
-- [ ] Integrate new strategies with existing bot
-- [ ] Create unified launcher (choose GUI or Web)
-- [ ] Test backward compatibility
-- [ ] Document new features
-
-## Success Criteria
-- Original bot still works exactly as before
-- New strategies can run independently
-- Web dashboard provides same info as desktop GUI
-- User can choose between old and new interface
+---
+*Status: Phase 2 (Titan UI) 100% Complete. Phase 4 (Mobile) in Planning.*

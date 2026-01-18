@@ -2,7 +2,8 @@
 
 **Purpose**: Fast validation of Phase 4 work (both Claude AI + Google AI)
 **Time**: ~15 minutes
-**For**: Comprehensive test plan, see `Documentation/TEST_PLAN.md`
+**Where**: 🏠 **Your Local Machine** (laptop/desktop) - **NO VPS NEEDED!**
+**For Comprehensive Testing**: See `Documentation/TEST_PLAN.md` or `LOCAL_TEST_GUIDE.md`
 
 ---
 
@@ -184,4 +185,10 @@ print(f'RELIANCE: {result}')  # Should be True
 
 **Quick Test Complete!** 🎉
 
-For comprehensive testing (recommended before production), see `Documentation/TEST_PLAN.md`.
+## 📚 More Testing Resources
+
+- **Local Testing (No VPS)**: See `LOCAL_TEST_GUIDE.md` - Most users start here!
+- **Comprehensive Testing**: See `Documentation/TEST_PLAN.md`
+- **VPS Deployment** (Optional): See `Documentation/VPS_DEPLOYMENT.md`
+
+**Remember**: VPS is ONLY needed for 24/7 automated trading. Everything else works on your local machine! 🏠

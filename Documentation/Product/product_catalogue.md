@@ -1,7 +1,7 @@
 # ARUN Trading Bot - Product Catalogue & Technical Specifications (Titan V2)
 
 **Version:** 2.0 (Titan)
-**Date:** January 2026
+**Date:** January 18, 2026
 **Confidentiality:** Internal Use Only
 
 ---
@@ -80,7 +80,7 @@ The bot is fully configurable via the **Settings Tab** or `settings.json`. Below
 
 ## 5. Workflow & Architecture
 
-1.  **Launch**: User starts `LAUNCH_V2.bat`.
+1.  **Launch**: User starts `LAUNCH_ARUN.bat`.
 2.  **Authentication**: Bot auto-logs in using API Key + TOTP.
 3.  **Data Stream**: Bot subscribes to real-time quotes for watchlist symbols.
 4.  **Signal Generation**:

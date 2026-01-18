@@ -1618,10 +1618,253 @@ Total: 8 hours (1 day)
 
 ---
 
-**Document Version:** 1.1
-**Last Updated:** January 17, 2026 (Added Section 10: Collaborative Development)
-**Next Review:** End of Week 2 (after Phase 1 completion)
+---
 
-**Status:** ✅ READY FOR IMPLEMENTATION
+## 12. CURRENT IMPLEMENTATION SESSION
+
+**Session Date:** January 18, 2026
+**Developer:** Claude Code + Google Gemini collaboration
+**Current Branch:** claude/review-codebase-status-sIrLt
+**Phase:** Week 1-2 - Critical Foundation (P0 Tasks)
+
+### 🎯 Active Implementation: Phase 1 Critical Components
+
+We are implementing the three P0-CRITICAL items from Section 4 (Implementation Roadmap):
+
+#### Task 1: Regime Monitor Implementation ⚡ IN PROGRESS
+
+**File to Create:** `regime_monitor.py`
+**Lines Expected:** ~300 lines
+**Priority:** P0 - CRITICAL
+**Estimated Time:** 3-4 days manual, 2-3 hours with AI
+
+**Implementation Approach:**
+```python
+# Following Section 5.1 specification exactly
+class RegimeMonitor:
+    """
+    Market regime detection for Nifty 50 index
+    Returns: BULLISH, BEARISH, SIDEWAYS, VOLATILE, or CRISIS
+    """
+
+    def __init__(self, symbol='^NSEI', cache_duration=3600):
+        # 1-hour cache to avoid API spam
+
+    def get_market_regime(self) -> dict:
+        # Returns full regime analysis with:
+        # - regime: MarketRegime enum
+        # - should_trade: bool (HALT if BEARISH/CRISIS)
+        # - position_size_multiplier: float (0.0-1.0)
+        # - confidence: int (0-100)
+        # - reason: str (human-readable explanation)
+        # - indicators: {...} (all calculated values)
+        # - timestamp: datetime
+```
+
+**Decision Logic Implementation:**
+1. **CRISIS Detection** (Priority 1)
+   - Condition: Drawdown > -15% OR Volatility > 35%
+   - Action: `should_trade = False`, multiplier = 0.0
+   - Example: 2020 COVID crash (-38% drop)
+
+2. **BEARISH Detection** (Priority 2)
+   - Condition: Price < 200 DMA AND slope < 0
+   - Action: `should_trade = False`, multiplier = 0.0
+   - Example: 2022 bear market
+
+3. **VOLATILE Detection** (Priority 3)
+   - Condition: ADX < 20 AND Volatility > 25%
+   - Action: `should_trade = True`, multiplier = 0.5
+   - Reason: No clear trend, reduce risk
+
+4. **SIDEWAYS Detection** (Priority 4)
+   - Condition: ADX < 25 AND |Drawdown| < 5%
+   - Action: `should_trade = True`, multiplier = 0.75
+   - Reason: Range-bound, moderate positions
+
+5. **BULLISH Detection** (Default)
+   - Condition: Price > 200 DMA AND slope > 0
+   - Action: `should_trade = True`, multiplier = 1.0
+   - Reason: Strong uptrend, full positions
+
+**Data Source:**
+- Yahoo Finance via yfinance library
+- Symbol: ^NSEI (Nifty 50 index)
+- Timeframe: 1-year daily data (250 trading days)
+- Indicators: 50 DMA, 200 DMA, ADX(14), 30-day volatility, max drawdown
+
+**Files to Modify:**
+- ✅ CREATE: `regime_monitor.py` (new file in project root)
+- ⏳ MODIFY: `kickstart.py` (add regime check before trading)
+- ⏳ CREATE: `tests/test_regime_monitor.py` (unit tests)
+
+**Integration Points:**
+```python
+# In kickstart.py main loop (after line 1250):
+from regime_monitor import RegimeMonitor
+
+regime_mon = RegimeMonitor()
+
+# Before processing signals:
+regime = regime_mon.get_market_regime()
+if not regime['should_trade']:
+    logger.info(f"⛔ Trading HALTED: Market regime is {regime['regime']} - {regime['reason']}")
+    continue  # Skip trading this cycle
+
+# Apply position size adjustment:
+base_amount = 5000  # ₹5,000 per trade
+adjusted_amount = base_amount * regime['position_size_multiplier']
+```
+
+**Success Criteria:**
+- ✅ Class instantiates without errors
+- ✅ Fetches Nifty 50 data from yfinance
+- ✅ Calculates all 5 indicators correctly
+- ✅ Returns proper regime classification
+- ✅ Cache prevents API spam (max 1 call per hour)
+- ✅ Would have detected 2020 COVID crash as CRISIS
+- ✅ Halts trading when `should_trade == False`
+
+---
+
+#### Task 2: Backtest Engine Implementation ⏳ NEXT
+
+**File to Create:** `backtesting/backtest_engine.py`
+**Lines Expected:** ~400 lines
+**Priority:** P0 - CRITICAL
+**Estimated Time:** 4-5 days manual, 3-4 hours with AI
+
+**Implementation Approach:**
+Following Section 5.2 specification for event-driven backtesting.
+
+**Files to Create:**
+- `backtesting/backtest_engine.py` (main engine)
+- `backtesting/performance_metrics.py` (Sharpe, drawdown, win rate)
+- `backtesting/realistic_costs.py` (Indian stock market fees)
+- `tests/test_backtest_engine.py`
+
+**Success Criteria:**
+- Simulates RSI strategy on 3-5 years of historical data
+- Calculates realistic costs (0.98% round-trip)
+- Generates performance report with Sharpe ratio, max drawdown, win rate
+- Strategy must pass: Sharpe >1.0, Max DD <15%, Win Rate >55%
+
+---
+
+#### Task 3: Stop-Loss Auto-Execution Fix ⏳ PENDING
+
+**File to Modify:** `kickstart.py`
+**Lines to Change:** ~30 lines (around lines 1150-1200)
+**Priority:** P0 - CRITICAL (Safety Issue)
+**Estimated Time:** 1-2 hours
+
+**Current Issue:**
+- Stop-loss detection works (lines 1165-1180)
+- But does NOT execute sell orders automatically
+- Logs warning but trader must manually intervene
+
+**Fix Required:**
+```python
+# Current code (lines 1170-1175):
+if current_price <= stop_loss_price:
+    logger.warning(f"⚠️ Stop-loss triggered for {symbol}! Current: {current_price}, SL: {stop_loss_price}")
+    # TODO: Execute sell order here  ← THIS IS THE PROBLEM
+
+# Fixed code:
+if current_price <= stop_loss_price:
+    logger.warning(f"🛑 STOP-LOSS TRIGGERED: {symbol} at {current_price} (SL: {stop_loss_price})")
+
+    # Execute immediate market sell
+    sell_order = mstock_client.place_order(
+        symbol=symbol,
+        quantity=position['quantity'],
+        side='SELL',
+        order_type='MARKET',
+        reason='STOP_LOSS_HIT'
+    )
+
+    # Log execution
+    db.log_trade(symbol, 'SELL', current_price, position['quantity'], 'STOP_LOSS_HIT')
+    notifier.send_alert(f"🛑 STOP LOSS EXECUTED: {symbol} sold at {current_price}")
+```
+
+**Success Criteria:**
+- Stop-loss triggers automatically execute sell orders
+- No manual intervention required
+- Logged to database with reason='STOP_LOSS_HIT'
+- Telegram notification sent immediately
+
+---
+
+### 📋 Implementation Sequence
+
+**Step-by-Step Execution:**
+
+1. **Build Regime Monitor** (2-3 hours)
+   - Create `regime_monitor.py` with full RegimeMonitor class
+   - Implement all 5 detection methods
+   - Add yfinance integration and caching
+   - Test with current Nifty 50 data
+
+2. **Integrate Regime Monitor** (1 hour)
+   - Modify `kickstart.py` to import and use RegimeMonitor
+   - Add regime check before signal processing
+   - Apply position size multipliers
+   - Test with paper trading flag
+
+3. **Fix Stop-Loss Bug** (1 hour)
+   - Modify stop-loss detection code in `kickstart.py`
+   - Add automatic sell order execution
+   - Add database logging and notifications
+   - Test with test account (small position)
+
+4. **Build Backtest Engine** (3-4 hours)
+   - Create `backtesting/` directory structure
+   - Implement BacktestEngine class
+   - Add realistic cost calculations
+   - Implement performance metrics
+   - Run backtest on 3-5 years of data
+
+5. **Validate Results** (1 hour)
+   - Run comprehensive tests
+   - Verify regime detection accuracy
+   - Confirm stop-loss executes correctly
+   - Review backtest performance report
+   - Document results in Section 13 (to be added)
+
+---
+
+### 🔄 For Google AI Continuation
+
+**If implementation is incomplete, continue from the last completed step above.**
+
+**Context for Next Session:**
+- All specifications are in Sections 5.1, 5.2, 5.3 of this document
+- Regime Monitor spec: Section 5.1 (lines 580-650)
+- Backtest Engine spec: Section 5.2 (lines 655-750)
+- Code style: Follow existing patterns in `kickstart.py`
+- Testing: All critical code must have pytest unit tests
+
+**Current Branch:**
+- Branch: `claude/review-codebase-status-sIrLt`
+- All commits should go to this branch
+- Push regularly to enable handoff to Google AI
+
+**Dependencies Already Installed:**
+- yfinance (for market data)
+- pandas (for data manipulation)
+- numpy (for calculations)
+- mstock (broker API - already configured)
+
+**Environment Variables Required:**
+- None new - all existing credentials in .env file
+
+---
+
+**Document Version:** 1.2
+**Last Updated:** January 18, 2026 (Added Section 12: Current Implementation Session)
+**Next Review:** After Phase 1 completion (3-4 hours from now)
+
+**Status:** 🚀 IMPLEMENTATION IN PROGRESS - Regime Monitor (Task 1 of 3)
 
 ---

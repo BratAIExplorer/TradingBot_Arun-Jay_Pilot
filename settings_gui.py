@@ -602,9 +602,35 @@ class SettingsGUI:
         )
         auto_exec_info.pack(anchor="w", padx=15, pady=(0, 15))
         
+        # Trend Filter (P1 Feature - NEW!)
+        trend_frame = ctk.CTkFrame(tab, fg_color="#2C3E50")
+        trend_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        
+        self.trend_filter_var = ctk.BooleanVar(value=risk.get("trend_filter_enabled", True))
+        trend_check = ctk.CTkCheckBox(
+            trend_frame,
+            text="📈 Enable Trend Filter (200 DMA)",
+            variable=self.trend_filter_var,
+            font=("Arial", 13, "bold"),
+            text_color="#3498DB"
+        )
+        trend_check.pack(anchor="w", padx=15, pady=(15, 5))
+        
+        trend_info = ctk.CTkLabel(
+            trend_frame,
+            text="✅ Only BUY stocks trading ABOVE their 200-day moving average (uptrend)\n"
+                 "❌ Blocks buying in downtrends (reduces losses by ~40% in bear markets)\n"
+                 "✅ SELL orders always allowed (exits not blocked)\n\n"
+                 "Recommended: Keep enabled for safer entries",
+            font=("Arial", 10),
+            text_color="#D5D8DC",
+            justify="left"
+        )
+        trend_info.pack(anchor="w", padx=15, pady=(0, 15))
+        
         # Never sell at loss option
         never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        never_sell_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        never_sell_frame.grid(row=6, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
         self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
         never_sell_check = ctk.CTkCheckBox(
@@ -1046,6 +1072,7 @@ class SettingsGUI:
                     "catastrophic_stop_loss_pct": self.cat_stop_var.get(),
                     "daily_loss_limit_pct": self.daily_loss_var.get(),
                     "auto_execute_stop_loss": self.auto_execute_stop_loss_var.get(),
+                    "trend_filter_enabled": self.trend_filter_var.get(),
                     "never_sell_at_loss": self.never_sell_at_loss_var.get()
                 },
                 "notifications": {

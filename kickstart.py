@@ -1703,11 +1703,45 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                     qty = adjusted_qty  # Use adjusted quantity
         
         except ImportError:
-            # Volume filter module  not available - proceed without check
+            # Volume filter module not available - proceed without check
             log_ok(f"⚠️ Volume filter not available, proceeding without check")
         except Exception as e:
             # Volume filter error - log but don't block trade (fail-open)
             log_ok(f"⚠️ Volume filter error: {e}. Proceeding with trade.")
+    
+    # --- TREND FILTER CHECK (P1 Feature) ---
+    # Only check for BUY orders (SELL always allowed for exits)
+    if side.upper() == "BUY" and market_data:
+        try:
+            from trend_filter import check_trend_filter
+            
+            current_price = float(market_data.get("last_price", 0))
+            
+            if current_price > 0:
+                can_buy, reason = check_trend_filter(symbol, exchange, current_price, settings)
+                
+                if not can_buy:
+                    # Trend filter blocked the trade
+                    log_ok(f"🛑 TREND FILTER BLOCKED: {symbol} - {reason}", force=True)
+                    
+                    # Send notification if available
+                    if notifier:
+                        try:
+                            notifier.send_alert(
+                                f"Trade Blocked: {symbol}\n{reason}\n\n"
+                                f"💡 Stock in downtrend. Waiting for price to cross above 200 DMA.\n"
+                                f"Disable Trend Filter in Settings → Risk if you want to override."
+                            )
+                        except:
+                            pass
+                    
+                    return False
+        
+        except ImportError:
+            log_ok(f"⚠️ Trend filter not available, proceeding without check")
+        except Exception as e:
+            # Trend filter error - fail-open
+            log_ok(f"⚠️ Trend filter error: {e}. Proceeding with trade.")
     
     # Check Paper Trading Mode
     if settings and settings.get("app_settings.paper_trading_mode"):

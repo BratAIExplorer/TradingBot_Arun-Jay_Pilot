@@ -520,9 +520,34 @@ class SettingsGUI:
         daily_value_label = ctk.CTkLabel(tab, text=f"{self.daily_loss_var.get():.1f}%", font=("Arial", 12, "bold"))
         daily_value_label.grid(row=3, column=2, sticky="w", padx=5)
         
+        # Auto-execute stop-loss option (NEW!)
+        auto_exec_frame = ctk.CTkFrame(tab, fg_color="#1E3A5F")
+        auto_exec_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        
+        self.auto_execute_stop_loss_var = ctk.BooleanVar(value=risk.get("auto_execute_stop_loss", True))
+        auto_exec_check = ctk.CTkCheckBox(
+            auto_exec_frame,
+            text="⚡ Auto-Execute Stop-Loss (Recommended)",
+            variable=self.auto_execute_stop_loss_var,
+            font=("Arial", 13, "bold"),
+            text_color="#2ECC71"
+        )
+        auto_exec_check.pack(anchor="w", padx=15, pady=(15, 5))
+        
+        auto_exec_info = ctk.CTkLabel(
+            auto_exec_frame,
+            text="✅ When enabled, bot automatically sells positions when stop-loss triggers.\n"
+                 "❌ When disabled, you must manually execute sells (risk of missing exits).\n\n"
+                 "Recommended: Keep enabled for automated protection.",
+            font=("Arial", 10),
+            text_color="#D5D8DC",
+            justify="left"
+        )
+        auto_exec_info.pack(anchor="w", padx=15, pady=(0, 15))
+        
         # Never sell at loss option
         never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        never_sell_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        never_sell_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
         self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
         never_sell_check = ctk.CTkCheckBox(
@@ -960,6 +985,7 @@ class SettingsGUI:
                     "profit_target_pct": self.profit_target_var.get(),
                     "catastrophic_stop_loss_pct": self.cat_stop_var.get(),
                     "daily_loss_limit_pct": self.daily_loss_var.get(),
+                    "auto_execute_stop_loss": self.auto_execute_stop_loss_var.get(),
                     "never_sell_at_loss": self.never_sell_at_loss_var.get()
                 },
                 "notifications": {

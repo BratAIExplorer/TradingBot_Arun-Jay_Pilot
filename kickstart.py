@@ -1683,26 +1683,50 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                     market_data, _ = fetch_market_data_once(symbol, exchange)
                     estimated_price = float(market_data.get("last_price", 0)) if market_data else 0
 
-                gross_amount = estimated_price * qty
+                # Simulate realistic slippage (as per Senior Architect recommendations)
+                import random
+                if side.upper() == "BUY":
+                    # Buy orders typically execute 0.05-0.15% higher
+                    slippage_pct = random.uniform(0.05, 0.15)
+                    execution_price = estimated_price * (1 + slippage_pct/100)
+                else:  # SELL
+                    # Sell orders execute 0.05-0.15% lower
+                    slippage_pct = random.uniform(0.05, 0.15)
+                    execution_price = estimated_price * (1 - slippage_pct/100)
 
-                # Zero fees for paper trading simulation (or could simulate them)
-                total_fees = 0
-                net_amount = gross_amount if side.upper() == "BUY" else gross_amount
+                gross_amount = execution_price * qty
+
+                # Simulate realistic Indian brokerage fees (same as real trading)
+                # This makes paper trading performance more accurate
+                brokerage = min(20, gross_amount * 0.0003)  # ₹20 or 0.03%
+                stt = gross_amount * 0.001  # Securities Transaction Tax
+                exchange_fee = gross_amount * 0.00003
+                gst = brokerage * 0.18
+                
+                if side.upper() == "SELL":
+                    sebi_fee = gross_amount * 0.000001
+                    stamp_duty = gross_amount * 0.00015
+                else:
+                    sebi_fee = 0
+                    stamp_duty = 0
+                
+                total_fees = brokerage + stt + exchange_fee + sebi_fee + stamp_duty + gst
+                net_amount = gross_amount + total_fees if side.upper() == "BUY" else gross_amount - total_fees
 
                 db.insert_trade(
                     symbol=symbol,
                     exchange=exchange,
                     action=side.upper(),
                     quantity=qty,
-                    price=estimated_price,
+                    price=execution_price,  # Use execution price (with slippage)
                     gross_amount=gross_amount,
-                    total_fees=total_fees,
+                    total_fees=total_fees,  # Realistic fees
                     net_amount=net_amount,
                     strategy="RSI (Paper)",
-                    reason=f"Paper Trade {side.upper()}",
+                    reason=f"Paper Trade {side.upper()} (Slippage: {slippage_pct:.2f}%)",
                     broker="PAPER"
                 )
-                log_ok("✅ Paper trade logged to DB")
+                log_ok(f"✅ Paper trade logged (execution: ₹{execution_price:.2f}, fees: ₹{total_fees:.2f})")
                 return True
             except Exception as e:
                 log_ok(f"❌ Failed to log paper trade: {e}")
@@ -1781,6 +1805,9 @@ def run_cycle():
             # Check all positions for risk triggers before trading
             actions = risk_mgr.check_all_positions()
             
+            # Check if user wants auto-execution (default: True for safety)
+            auto_execute = settings.get("risk.auto_execute_stop_loss", True) if settings else True
+            
             # Execute risk-triggered actions
             for action in actions:
                 symbol = action['symbol']
@@ -1790,6 +1817,37 @@ def run_cycle():
                 
                 log_ok(f"🚨 RISK TRIGGER: {reason}", force=True)
                 
+                if not auto_execute:
+                    # User disabled auto-execution - just alert, don't sell
+                    log_ok(f"⚠️ AUTO-EXECUTION DISABLED - Manual action required!", force=True)
+                    log_ok(f"   You must manually SELL {qty} shares of {symbol} at market", force=True)
+                    log_ok(f"   Enable auto-execution in Settings → Risk Controls for automatic protection", force=True)
+                    
+                    # Still send notification if available
+                    if notifier:
+                        try:
+                            notif_data = {
+                                'symbol': symbol,
+                                'exchange': exchange,
+                                'action': 'SELL (MANUAL REQUIRED)',
+                                'quantity': qty,
+                                'reason': reason + " - AUTO-EXECUTION DISABLED",
+                                'profit_amount': action.get('pnl_amount', 0),
+                                'profit_pct': action.get('pnl_pct', 0),
+                                'current_price': action.get('current_price', 0)
+                            }
+                            
+                            if "Stop Loss" in reason:
+                                notifier.send_stop_loss_alert(notif_data)
+                            elif "Profit Target" in reason:
+                                notifier.send_profit_target_alert(notif_data)
+                            else:
+                                notifier.send_circuit_breaker_alert(notif_data)
+                        except Exception as e:
+                            log_ok(f"⚠️ Failed to send alert: {e}")
+                    continue  # Skip to next action without executing
+                
+                # Auto-execution is enabled - proceed with sell
                 # Get instrument token for sell order
                 market_data, _ = fetch_market_data_once(symbol, exchange)
                 instrument_token = market_data.get("instrument_token") if market_data else None

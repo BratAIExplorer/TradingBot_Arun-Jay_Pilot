@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2  
-**Last Updated**: January 17, 2026  
-**Status**: Phase 2 Complete (UX Intelligence)  
+**Project**: ARUN Trading Bot Titan V2
+**Last Updated**: January 18, 2026
+**Status**: Phase 2 Complete + Critical Compliance Fix
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -21,11 +21,21 @@ Build a **safe, smart, and user-friendly** algorithmic trading bot for the India
    - Capital Allocation ("Safety Box") - limits bot to specific funds
    - Position Tagging (BOT vs MANUAL trades)
    - Stop Loss / Profit Target automation
+   - **NEW**: "Never Sell Below Entry Price" enforcement (kickstart.py:1584-1590)
 4. **Smart UX**:
    - Market Sentiment Meter with AI Reasoning
    - Knowledge Tab (trading education)
    - Sector-based "Baskets" for panic exits
 5. **Simulation Mode**: Realistic random-walk prices for paper trading
+
+### Recent Critical Fix (Jan 18, 2026) 🔧
+**Issue**: RSI sell signals could trigger even when price was below entry (potential loss)
+**Fix**: Added strict enforcement of `risk.never_sell_at_loss` setting
+- Location: `kickstart.py:1584-1590`
+- Behavior: When RSI ≥ sell_threshold but current_price ≤ entry_price, bot HOLDS
+- User Control: Configurable via `settings.json` (`risk.never_sell_at_loss`, default: `true`)
+- Compliance: Satisfies trading conditions requirement "Never sell below entry price"
+- Gap Analysis: See `Documentation/GAP_ANALYSIS.md` for full details
 
 ### File Structure
 ```

@@ -38,6 +38,14 @@ try:
 except ImportError:
     NIFTY_50 = set()
 
+# ---------------- Regime Monitor (P0-CRITICAL Safety Feature) ----------------
+try:
+    from regime_monitor import RegimeMonitor
+    REGIME_MONITOR_AVAILABLE = True
+except ImportError:
+    print("⚠️ regime_monitor not found, market regime checking disabled")
+    REGIME_MONITOR_AVAILABLE = False
+
 # ---------------- New Module Imports (Phase 0A) ----------------
 try:
     from settings_manager import SettingsManager
@@ -797,6 +805,16 @@ if STATE_MANAGER_AVAILABLE:
 
 # Initialize Strategy Engines
 sip_engine = NiftySIPStrategy(settings)
+
+# Initialize Regime Monitor (P0-CRITICAL Safety Feature)
+regime_monitor = None
+if REGIME_MONITOR_AVAILABLE:
+    try:
+        regime_monitor = RegimeMonitor()
+        log_ok("✅ Regime Monitor initialized (Nifty 50 market analysis)", force=True)
+    except Exception as e:
+        log_ok(f"⚠️ Regime Monitor init failed: {e}", force=True)
+        regime_monitor = None
 
 # Initialize Notification Manager
 if NOTIFICATIONS_AVAILABLE and settings:
@@ -1817,6 +1835,42 @@ def run_cycle():
     
     reset_cycle_quotes()
     log_ok(f"---------------------------------------------------------------------------------------------------------------{datetime.now()}")
+    
+    # ---------------- REGIME MONITOR CHECK (P0-CRITICAL Safety Feature) ----------------
+    # Check Nifty 50 market regime before allowing any trades
+    if regime_monitor:
+        try:
+            regime = regime_monitor.get_market_regime()
+            regime_type = regime['regime'].value
+            should_trade = regime['should_trade']
+            reason = regime['reason']
+            
+            log_ok(f"📊 Market Regime: {regime_type} (Confidence: {regime['confidence']}%)", force=True)
+            log_ok(f"   → {reason}", force=True)
+            
+            if not should_trade:
+                log_ok(f"⛔ TRADING HALTED: {reason}", force=True)
+                log_ok(f"   Bot will resume when market regime improves.", force=True)
+                return  # Skip all trading for this cycle
+            
+            # If regime allows trading but with reduced positions
+            if regime['position_size_multiplier'] < 1.0:
+                log_ok(f"⚠️ Trading with REDUCED positions: {regime['position_size_multiplier']*100:.0f}% of normal size", force=True)
+                # Note: Position size adjustment will be handled in place_order logic
+                # Store multiplier globally for this cycle
+                globals()['REGIME_POSITION_MULTIPLIER'] = regime['position_size_multiplier']
+            else:
+                globals()['REGIME_POSITION_MULTIPLIER'] = 1.0
+                
+        except Exception as e:
+            log_ok(f"⚠️ Regime Monitor check failed: {e}. Proceeding with caution (50% positions).", force=True)
+            globals()['REGIME_POSITION_MULTIPLIER'] = 0.5  # Default to reduced size on error
+    else:
+        # No regime monitor available, proceed normally
+        globals()['REGIME_POSITION_MULTIPLIER'] = 1.0
+    
+    # ---------------- END REGIME MONITOR CHECK ----------------
+    
     processed = set()
     nifty_only = settings.get("app_settings.nifty_50_only", False) if settings else False
 

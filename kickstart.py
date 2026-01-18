@@ -1670,6 +1670,45 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
     if is_offline():
         return False
 
+    # --- VOLUME FILTER CHECK (P1 Feature) ---
+    # Only check volume for BUY orders (not SELL - always allow exits)
+    if side.upper() == "BUY":
+        try:
+            from volume_filter import check_volume_filter
+            
+            # Fetch market data for volume check
+            market_data, _ = fetch_market_data_once(symbol, exchange)
+            
+            if market_data:
+                can_trade, reason, adjusted_qty = check_volume_filter(
+                    symbol, exchange, qty, market_data, settings
+                )
+                
+                if not can_trade:
+                    # Volume filter blocked the trade
+                    log_ok(f"🛑 VOLUME FILTER BLOCKED: {symbol} - {reason}", force=True)
+                    
+                    # Send notification if available
+                    if notifier:
+                        try:
+                            notifier.send_alert(f"Trade Blocked: {symbol}\n{reason}\n\nEnable override in Settings → Stocks if you want to trade this symbol.")
+                        except:
+                            pass
+                    
+                    return False
+                
+                if adjusted_qty is not None:
+                    # Quantity was auto-reduced
+                    log_ok(f"⚠️ VOLUME FILTER: {reason}", force=True)
+                    qty = adjusted_qty  # Use adjusted quantity
+        
+        except ImportError:
+            # Volume filter module  not available - proceed without check
+            log_ok(f"⚠️ Volume filter not available, proceeding without check")
+        except Exception as e:
+            # Volume filter error - log but don't block trade (fail-open)
+            log_ok(f"⚠️ Volume filter error: {e}. Proceeding with trade.")
+    
     # Check Paper Trading Mode
     if settings and settings.get("app_settings.paper_trading_mode"):
         log_ok(f"🧪 PAPER TRADE: {side} {symbol} Qty: {qty} @ {price or 'MKT'}")

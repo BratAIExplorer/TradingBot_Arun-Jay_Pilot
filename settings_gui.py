@@ -411,9 +411,66 @@ class SettingsGUI:
         )
         compound_check.grid(row=4, column=0, columnspan=2, sticky="w", padx=20, pady=10)
         
+        # --- VOLUME FILTER (Liquidity Protection) - NEW P1 Feature ---
+        volume_frame = ctk.CTkFrame(tab, fg_color="#1E3A5F", border_color="#3498DB", border_width=1)
+        volume_frame.grid(row=5, column=0, columnspan=3, sticky="ew", padx=20, pady=15)
+        
+        lbl_volume = ctk.CTkLabel(volume_frame, text="🔊 VOLUME FILTER (Liquidity Protection)", font=("Arial", 14, "bold"), text_color="#3498DB")
+        lbl_volume.pack(anchor="w", padx=15, pady=(10, 0))
+        
+        lbl_volume_desc = ctk.CTkLabel(
+            volume_frame, 
+            text="Prevents trading low-liquidity stocks that may have wide spreads and exit difficulties.",
+            font=("Arial", 10), 
+            text_color="#AAA",
+            wraplength=600
+        )
+        lbl_volume_desc.pack(anchor="w", padx=15, pady=(0, 10))
+        
+        # Enable/Disable Toggle
+        self.volume_filter_var = ctk.BooleanVar(value=capital.get("volume_filter_enabled", True))
+        volume_check = ctk.CTkCheckBox(
+            volume_frame,
+            text="✅ Enable Volume Filter (Recommended)",
+            variable=self.volume_filter_var,
+            font=("Arial", 12, "bold"),
+            text_color="#2ECC71"
+        )
+        volume_check.pack(anchor="w", padx=15, pady=5)
+        
+        # Min Volume (Shares)
+        vol_shares_frame = ctk.CTkFrame(volume_frame, fg_color="transparent")
+        vol_shares_frame.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkLabel(vol_shares_frame, text="Min Daily Volume (shares):", font=("Arial", 11), text_color="#CCC").pack(side="left")
+        
+        self.min_volume_shares_entry = ctk.CTkEntry(vol_shares_frame, width=120, placeholder_text="50000")
+        self.min_volume_shares_entry.insert(0, str(capital.get("min_volume_shares", 50000)))
+        self.min_volume_shares_entry.pack(side="left", padx=10)
+        
+        # Min Value (Rupees)
+        vol_value_frame = ctk.CTkFrame(volume_frame, fg_color="transparent")
+        vol_value_frame.pack(fill="x", padx=15, pady=5)
+        
+        ctk.CTkLabel(vol_value_frame, text="Min Daily Turnover (₹):", font=("Arial", 11), text_color="#CCC").pack(side="left", padx=(0, 8))
+        
+        self.min_volume_value_entry = ctk.CTkEntry(vol_value_frame, width=120, placeholder_text="500000")
+        self.min_volume_value_entry.insert(0, str(capital.get("min_volume_value", 500000)))
+        self.min_volume_value_entry.pack(side="left", padx=10)
+        
+        # Help/Recommendations
+        vol_help = ctk.CTkLabel(
+            volume_frame,
+            text="💡 Recommended: Small Caps: 50K shares | Mid Caps: 1L shares | Large Caps: 5L shares",
+            font=("Arial", 9),
+            text_color="#888",
+            wraplength=600
+        )
+        vol_help.pack(anchor="w", padx=15, pady=(5, 15))
+        
         # Info section
         info_frame = ctk.CTkFrame(tab)
-        info_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        info_frame.grid(row=6, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
         info_title = ctk.CTkLabel(info_frame, text="💡 Capital Allocation Example:", font=("Arial", 12, "bold"))
         info_title.pack(anchor="w", padx=10, pady=5)
@@ -978,7 +1035,10 @@ class SettingsGUI:
                     "per_trade_pct": self.per_trade_var.get(), # Updated key name to match load
                     "max_per_stock_fixed_amount": float(self.fixed_amount_entry.get()),
                     "max_positions": self.max_positions_var.get(),
-                    "compound_profits": self.compound_var.get()
+                    "compound_profits": self.compound_var.get(),
+                    "volume_filter_enabled": self.volume_filter_var.get(),
+                    "min_volume_shares": int(self.min_volume_shares_entry.get()),
+                    "min_volume_value": float(self.min_volume_value_entry.get())
                 },
                 "risk": {
                     "stop_loss_pct": self.stop_loss_var.get(),

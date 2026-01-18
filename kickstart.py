@@ -1567,6 +1567,9 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         if pos["active"] and pos["price"] > 0:
             can_consider_sell = current_close > pos["price"]
 
+            # Get "never sell at loss" setting (default: True per trading conditions)
+            never_sell_at_loss = settings.get("risk.never_sell_at_loss", True) if settings else True
+
             # --- SELL LOGIC ---
             should_sell = False
             sell_reason = ""
@@ -1578,9 +1581,13 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
 
             # Check RSI Sell (Only for TRADE strategy)
             elif strategy_type == "TRADE":
-                if last_rsi >= sell_rsi and can_consider_sell:
-                    should_sell = True
-                    sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
+                if last_rsi >= sell_rsi:
+                    # CRITICAL FIX: Enforce "Never Sell Below Entry" if enabled
+                    if never_sell_at_loss and current_close <= pos["price"]:
+                        log_ok(f"⏸️ HOLD {symbol}: RSI={last_rsi:.1f} ≥ {sell_rsi} (sell signal), but price ₹{current_close:.2f} ≤ entry ₹{pos['price']:.2f} (Never Sell at Loss enabled)")
+                    elif can_consider_sell:
+                        should_sell = True
+                        sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
 
             # Accumulation Mode (INVEST): We SKIP RSI-based selling
             elif strategy_type == "INVEST":

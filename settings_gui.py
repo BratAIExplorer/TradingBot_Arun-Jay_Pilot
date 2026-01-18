@@ -67,17 +67,19 @@ class SettingsGUI:
             header.pack(pady=20)
         
         # Create tabbed interface
-        self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
+        self.tabview = ctk.CTkTabview(self.main_content, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
         self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
         
-        # Add tabs
+        # Add tabs (Order matters!)
+        self.tabview.add("Start Here")   # NEW: Guide & Setup
         self.tabview.add("Broker")
         self.tabview.add("Capital")
         self.tabview.add("Risk Controls")
         self.tabview.add("Notifications")
         self.tabview.add("Stocks")
         
-        # Build each tab
+        # Build individual tab content
+        self.build_start_here_tab()     # NEW
         self.build_broker_tab()
         self.build_capital_tab()
         self.build_risk_tab()

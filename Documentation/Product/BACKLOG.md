@@ -35,9 +35,23 @@ This document tracks all pending features, enhancements, and long-term vision it
   - Fixed: `symbol_validator.py` - Now properly validates NSE stocks
   - Agent: Google AI
 
-**📋 BACKLOG:**
+**📋 BACKLOG (Post Collaboration Testing - Jan 18, 2026 Evening):**
+- [ ] **Launcher Consolidation**: Simplify 11 .bat files to 1 smart launcher
+  - Current: 11 different .bat files (confusing for non-technical users)
+  - Target: 1 `START_ARUN.bat` with smart first-run setup
+  - Features:
+    - First run: Install dependencies + create desktop shortcut
+    - Subsequent runs: Quick validation (2s) + launch
+    - Launches Desktop GUI + Web Dashboard simultaneously
+  - Cleanup:
+    - Delete: `LAUNCH_ARUN.bat`, `LAUNCH_V1_BACKUP.bat`, `LAUNCH_V2.bat`, `LAUNCH_BOT_DAEMON.bat`, `LAUNCH_DASHBOARD.bat`, `LAUNCH_DESKTOP_GUI.bat`, `CHECK_BOT_STATUS.bat`, `STOP_BOT.bat`
+    - Move to `_dev_tools/`: `build_installer.bat`, `test_installer_gui.bat`
+  - Result: True "single-click" experience
+  - Priority: High (UX blocker for non-technical users)
+
 - [ ] **Hybrid Holding Management**: Logic to manage existing user stocks with "Take Over" toggle.
 - [ ] **Smart Order Suggestions**: Real-time Bid/Ask validation to optimize entry prices ("Grammarly for Trading").
+
 
 ## 🟡 Phase 5: Medium Priority (The "Intelligence" Sprint)
 *Goal: Enhance the bot's reasoning and safety capabilities.*

@@ -768,6 +768,24 @@ class DashboardV2:
                 elif dtype == "regime": self.update_regime(data)  # NEW
                 elif dtype == "rsi": pass # Update rsi list if we had one
         except queue.Empty: pass
+        
+        # Update Safety Box dynamically (non-breaking)
+        try:
+            allocated_limit = float(self.settings_mgr.get("capital.allocated_limit", 0))
+            # Calculate used capital from active positions
+            positions = safe_get_live_positions_merged()
+            used = sum([pos.get("value", 0) for pos in positions.values()])
+            
+            self.lbl_cap_usage.configure(text=f"₹{used:,.0f} / ₹{allocated_limit:,.0f}")
+            
+            if allocated_limit > 0:
+                usage_pct = used / allocated_limit
+                self.cap_bar.set(usage_pct)
+            else:
+                self.cap_bar.set(0)
+        except:
+            pass  # Fail silently to avoid breaking UI loop
+        
         finally: self.root.after(1000, self.update_ui_loop)
 
     def update_positions(self, data):

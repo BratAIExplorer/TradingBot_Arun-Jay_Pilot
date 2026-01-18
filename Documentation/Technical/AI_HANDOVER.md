@@ -201,12 +201,55 @@ Documentation/
 **Dependencies Added**: streamlit>=1.30.0, psutil>=5.9.0
 **Implementation Plan**: See `Documentation/Technical/OPTION_B_IMPLEMENTATION_PLAN.md`
 
+### ✅ Collaboration Testing Session (Jan 18, 2026 - Evening)
+**Purpose**: Testing collaboration workflow, resolver branch conflicts, define launcher architecture
+
+**Key Decisions**:
+1. **Branch Strategy**:
+   - Main branch: `claude/sync-github-remote-3461O` (contains all latest features)
+   - User's working directory: `C:\Antigravity\TradingBots-Aruns Project`
+   - Branch switching requires: `git stash` → `git checkout` → `git stash pop`
+   
+2. **Launcher Simplification** (BACKLOG - Post Testing):
+   - **Current State**: 11 different .bat files (confusing for users)
+   - **Target State**: 1-2 essential launchers
+   - **Solution**: `START_ARUN.bat` with smart first-run setup
+     - First run: Install dependencies + create desktop shortcut
+     - Subsequent runs: Quick validation (2s) + launch
+   - **Cleanup Plan**: Move dev tools to `_dev_tools/`, delete deprecated launchers
+
+3. **Architecture: Hybrid Foreground Bot + Web Dashboard**:
+   - **Decision**: NO daemon mode (for now)
+   - **Rationale**: 
+     - User doesn't need 24/7 bot operation
+     - Simpler UX: Close GUI = Bot stops
+     - Mobile monitoring via web dashboard (read-only)
+   - **Components**:
+     - `START_ARUN.bat`: Launches desktop GUI + web dashboard simultaneously
+     - Desktop GUI: Full control (read-write)
+     - Web dashboard: Mobile monitoring via local WiFi (read-only)
+     - Access from phone: `http://192.168.x.x:8501` (same WiFi)
+   - **No STOP_ARUN.bat needed**: Just close GUI window
+
+4. **Dependency Conflicts Fixed**:
+   - Issue: `cachetools` version conflict (python-telegram-bot 13.15 requires 4.2.2, streamlit 1.53.0 requires >=5.5)
+   - Status: Known conflict, both packages installed and working
+   - Future: Consider updating python-telegram-bot or isolating dependencies
+
+**Files to Clean Up** (Post-Testing Backlog):
+- Remove: `LAUNCH_ARUN.bat`, `LAUNCH_V1_BACKUP.bat`, `LAUNCH_V2.bat`, `LAUNCH_BOT_DAEMON.bat`, `LAUNCH_DASHBOARD.bat`, `LAUNCH_DESKTOP_GUI.bat`, `CHECK_BOT_STATUS.bat`
+- Keep: `START_ARUN.bat` (unified launcher)
+- Move to `_dev_tools/`: `build_installer.bat`, `test_installer_gui.bat`
+
 ### 🔜 Phase 4.1 (Next)
+- [ ] Implement unified `START_ARUN.bat` launcher
+- [ ] Clean up deprecated .bat files
 - [ ] Smart Order Suggestions ("Grammarly for Trading")
 - [ ] Hybrid Holding Management
 - [ ] Mobile push notifications
 
 ### 🔜 Phase 5 (Future)
+- [ ] Daemon mode (optional checkbox in settings)
 - [ ] Confluence Scoring Engine (0-100 stock scoring)
 - [ ] Smart SIP module
 - [ ] News Sentiment Engine

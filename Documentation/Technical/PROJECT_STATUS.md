@@ -23,6 +23,7 @@ Here is the updated breakdown of the Titan V2 codebase.
 |------|---------|--------|
 | `database/trades_db.py`| **The Ledger.** SQLite database for trade history (tagged BOT vs MANUAL). | ✅ Active |
 | `risk_manager.py` | Enforces circuit breakers, stop-losses, and "Safety Box" capital limits. | ✅ Active |
+| `API_Reference.md` | **The Integration.** Detailed map of mStock Open API endpoints used by the bot. | ✅ Active |
 | `strategies/` | Folder containing `sector_map.py` and `trading_tips.json` for the Knowledge Tab. | ✅ Active |
 
 ---

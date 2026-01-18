@@ -12,6 +12,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
+from ui_logger import UILogger
 
 # --- Core Logic Imports ---
 try:
@@ -66,6 +67,11 @@ class DashboardV2:
         
         self.settings_mgr = SettingsManager()
         self.sentiment_engine = MarketSentiment()
+        try:
+            from regime_monitor import RegimeMonitor
+            self.regime_monitor = RegimeMonitor()
+        except ImportError:
+             self.regime_monitor = None
         
         # Internals
         self.stop_update_flag = threading.Event()
@@ -89,18 +95,101 @@ class DashboardV2:
         self.view_strategies = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_settings = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_knowledge = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_logs = ctk.CTkFrame(self.main_container, fg_color="transparent")  # NEW
         
-        self.build_dashboard_view()
-        self.build_strategies_view()
-        self.build_settings_view()
-        self.build_knowledge_view()
+        UILogger.log_section("Building Dashboard Views")
+        
+        try:
+            UILogger.log_component_start("Dashboard View")
+            self.build_dashboard_view()
+            UILogger.log_component_success("Dashboard View")
+        except Exception as e:
+            UILogger.log_component_error("Dashboard View", e)
+
+        try:
+            UILogger.log_component_start("Strategies View")
+            self.build_strategies_view()
+            UILogger.log_component_success("Strategies View")
+        except Exception as e:
+            UILogger.log_component_error("Strategies View", e)
+
+        try:
+            UILogger.log_component_start("Settings View")
+            self.build_settings_view()
+            UILogger.log_component_success("Settings View")
+        except Exception as e:
+            UILogger.log_component_error("Settings View", e)
+
+        try:
+            UILogger.log_component_start("Knowledge View")
+            self.build_knowledge_view()
+            UILogger.log_component_success("Knowledge View")
+        except Exception as e:
+            UILogger.log_component_error("Knowledge View", e)
+
+        try:
+            UILogger.log_component_start("Logs View")
+            self.build_logs_view()  # NEW
+            UILogger.log_component_success("Logs View")
+        except Exception as e:
+            UILogger.log_component_error("Logs View", e)
         
         # Default View
         self.show_view("DASHBOARD")
 
         # Start Logic
         self.start_background_threads()
+        self.after(2000, self.check_first_time_user)  # Check for first-time user
         self.update_ui_loop()
+
+    def check_first_time_user(self):
+        """Show welcome popup if capital is not configured"""
+        try:
+            val = self.settings_mgr.get("capital.allocated_limit", 0)
+            capital = float(val)
+        except (ValueError, TypeError):
+            capital = 0.0
+            
+        if capital <= 0:
+            self.show_welcome_popup()
+
+    def show_welcome_popup(self):
+        """First-Time User Guide Popup"""
+        try:
+            top = ctk.CTkToplevel(self.root)
+            top.title("🚀 Welcome to ARUN Titan V2")
+            top.geometry("500x400")
+            
+            # Make it modal/on top
+            top.attributes("-topmost", True)
+            top.lift()
+            top.focus_force()
+            
+            # Content
+            frame = ctk.CTkFrame(top, fg_color="#1a1a1a")
+            frame.pack(fill="both", expand=True, padx=20, pady=20)
+            
+            ctk.CTkLabel(frame, text="✅ SAFETY FIRST!", font=("Arial", 20, "bold"), text_color="#00F0FF").pack(pady=(20, 10))
+            
+            msg = (
+                "Welcome to the new Titan V2 Dashboard.\n\n"
+                "⚠️ CRITICAL: Capital Limit is set to ₹0 for safety.\n\n"
+                "Please go to the SETTINGS tab and:\n"
+                "1. Read the 'Start Here' Guide\n"
+                "2. Configure your Broker\n"
+                "3. Allocate Capital (Safety Box)"
+            )
+            
+            ctk.CTkLabel(frame, text=msg, font=("Arial", 13), justify="left", wraplength=400).pack(pady=20)
+            
+            def close_and_go():
+                top.destroy()
+                self.show_view("SETTINGS")
+                
+            ctk.CTkButton(frame, text="⚙️ Go to Settings", command=close_and_go, fg_color="#00F0FF", text_color="black", font=("Arial", 14, "bold")).pack(pady=20)
+            
+        except Exception as e:
+            print(f"Error showing popup: {e}")
     
     def start_background_threads(self):
         """Start background worker threads for data fetching"""
@@ -135,7 +224,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS"],
+            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -145,7 +234,7 @@ class DashboardV2:
             text_color="white",
             fg_color="#000",
             height=32,
-            width=400
+            width=500
         )
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
@@ -173,6 +262,7 @@ class DashboardV2:
         self.view_strategies.pack_forget()
         self.view_settings.pack_forget()
         self.view_knowledge.pack_forget()
+        self.view_logs.pack_forget()  # FIX: Hide Logs view
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -183,6 +273,42 @@ class DashboardV2:
             self.view_settings.pack(fill="both", expand=True)
         elif view_name == "KNOWLEDGE":
             self.view_knowledge.pack(fill="both", expand=True)
+        elif view_name == "LOGS":
+            self.view_logs.pack(fill="both", expand=True)
+            self.refresh_technical_logs()
+
+    def build_logs_view(self):
+        """Technical Logs View"""
+        # Header
+        header = ctk.CTkFrame(self.view_logs, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(header, text="📜 TECHNICAL LOGS", font=("Roboto", 20, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        
+        ctk.CTkButton(header, text="🔄 Refresh", width=100, command=self.refresh_technical_logs).pack(side="right")
+        ctk.CTkButton(header, text="📂 Open Log File", width=120, command=lambda: os.startfile("logs\\bot.log") if os.name == 'nt' else None, fg_color="#333").pack(side="right", padx=10)
+
+        # Log Content
+        self.log_viewer = ctk.CTkTextbox(self.view_logs, font=("Consolas", 12), text_color="#DDD", fg_color="#111")
+        self.log_viewer.pack(fill="both", expand=True)
+        
+    def refresh_technical_logs(self):
+        """Read 500 lines from bot.log"""
+        try:
+            log_path = os.path.join("logs", "bot.log")
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    # Read all, keep last 200 lines
+                    lines = f.readlines()
+                    last_lines = lines[-200:]
+                    content = "".join(last_lines)
+                    self.log_viewer.delete("1.0", "end")
+                    self.log_viewer.insert("1.0", content)
+                    self.log_viewer.see("end")
+            else:
+                self.log_viewer.insert("1.0", "No log file found at logs/bot.log")
+        except Exception as e:
+            self.log_viewer.insert("end", f"\nError reading logs: {e}")
 
     def build_dashboard_view(self):
         """Replicates the Titan Mockup Grid"""
@@ -214,7 +340,8 @@ class DashboardV2:
         self.cap_bar = ctk.CTkProgressBar(self.cap_frame,width=120, height=8, progress_color=COLOR_ACCENT)
         self.cap_bar.set(0.1) # Mock 10%
         self.cap_bar.pack(anchor="e", pady=2)
-        self.lbl_cap_usage = ctk.CTkLabel(self.cap_frame, text="₹15k / ₹50k", font=("Roboto", 10), text_color="#888")
+        # Dynamic label, updated by update_ui_loop
+        self.lbl_cap_usage = ctk.CTkLabel(self.cap_frame, text="₹0 / ₹0", font=("Roboto", 10), text_color="#888")
         self.lbl_cap_usage.pack(anchor="e")
 
         # 2. Market Sentiment (Meter)
@@ -305,7 +432,7 @@ class DashboardV2:
         self.card_alerts.pack(fill="x", pady=(0, 10))
         self.alert_box = ctk.CTkTextbox(self.card_alerts, height=150, fg_color="transparent", font=("Roboto", 11), text_color="#CCC")
         self.alert_box.pack(fill="both", padx=10, pady=5)
-        self.alert_box.insert("0.0", "⚠ System Initialized\n⚠ Connecting to Market Data...\n")
+        self.alert_box.insert("0.0", f"⚠ System Initialized (v{VERSION})\n⚠ Connecting to Market Data...\n")
         
         # Knowledge Intelligence
         self.card_knowledge = TitanCard(left_col, title="KNOWLEDGE INTELLIGENCE", height=200, border_color=COLOR_ACCENT)
@@ -313,14 +440,45 @@ class DashboardV2:
         
         # glowing bulb icon placeholder (text for now)
         ctk.CTkLabel(self.card_knowledge, text="💡", font=("Arial", 48)).pack(pady=10)
-        self.lbl_tip = ctk.CTkLabel(self.card_knowledge, text="AI Tip: Market is choppy. Consider tightening stops.", wraplength=250, font=("Roboto", 12), text_color="#DDD")
+        
+        # Default to a general tip if no metric specific
+        tip_text = "AI Tip: " + get_contextual_tip("GENERAL", 0)
+        self.lbl_tip = ctk.CTkLabel(self.card_knowledge, text=tip_text, wraplength=250, font=("Roboto", 12), text_color="#DDD")
         self.lbl_tip.pack(pady=10)
 
-        # Right Column (Active Positions)
-        self.card_positions = TitanCard(row2, title="ACTIVE POSITIONS", border_color=COLOR_ACCENT)
-        self.card_positions.pack(side="left", fill="both", expand=True, padx=(10, 0))
-        
+        # Right Column (Active Positions + Recent Trades)
+        right_col = ctk.CTkFrame(row2, fg_color="transparent")
+        right_col.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+        # Active Positions
+        self.card_positions = TitanCard(right_col, title="ACTIVE POSITIONS", height=250, border_color=COLOR_ACCENT)
+        self.card_positions.pack(fill="x", pady=(0, 10))
         self.build_positions_table(self.card_positions)
+        
+        # Recent Trades (History) - NEW
+        self.card_history = TitanCard(right_col, title="RECENT TRADES", height=200, border_color="#666")
+        self.card_history.pack(fill="both", expand=True)
+        
+        # Simple text view for now, or table
+        self.history_list = ctk.CTkTextbox(self.card_history, font=("Consolas", 11), text_color="#AAA", fg_color="transparent")
+        self.history_list.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Load initial history
+        try:
+            if DATABASE_AVAILABLE and db:
+                trades = db.get_recent_trades(limit=5)
+                if trades:
+                    txt = ""
+                    for t in trades:
+                        # symbol, type, quantity, price, timestamp
+                        txt += f"[{t[4]}] {t[1]} {t[0]} x{t[2]} @ ₹{t[3]}\n"
+                    self.history_list.insert("0.0", txt)
+                else:
+                    self.history_list.insert("0.0", "No recent trades recorded.")
+            else:
+                 self.history_list.insert("0.0", "Database not connected.")
+        except Exception as e:
+            self.history_list.insert("0.0", f"Error loading trades: {e}")
 
         # --- ROW 3: ACTIONS & PERFORMANCE ---
         row3 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
@@ -634,12 +792,14 @@ class DashboardV2:
         
         # Update Safety Box Bar
         try:
-            from kickstart import ALLOCATED_CAPITAL
-            limit = ALLOCATED_CAPITAL
+            limit = self.settings_mgr.get("capital.allocated_limit", 0.0)
             if limit > 0:
                 pct = min(1.0, used_capital / limit)
                 self.cap_bar.set(pct)
                 self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
+            else:
+                self.cap_bar.set(0)
+                self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹0")
         except: pass
 
     def update_sentiment(self, data):
@@ -816,7 +976,12 @@ if __name__ == "__main__":
         check_single_instance()
         
         # Initialize Root ONCE
-        ctk.set_appearance_mode("dark")
+        # Configuration
+        VERSION = "2.1 (Titan V2)"
+        ctk.set_appearance_mode("Dark")
+        ctk.set_default_color_theme("blue")
+
+        print(f"🚀 Initializing ARUN Dashboard {VERSION}...")
         root = ctk.CTk()
         root.title("ARUN TITAN V2 - Launcher")
         

@@ -6,6 +6,7 @@ Visual configuration interface using CustomTkinter
 import customtkinter as ctk
 from tkinter import messagebox, ttk
 from settings_manager import SettingsManager
+from ui_logger import UILogger
 import json
 from typing import Dict, Any
 import pandas as pd
@@ -47,13 +48,15 @@ class SettingsGUI:
             # When embedded in dashboard, use parent as root and make it scrollable
             self.root = ctk.CTkScrollableFrame(parent, fg_color="transparent")
             self.root.pack(fill="both", expand=True, padx=10, pady=10)
-        elif self.is_toplevel:
-            # Popup Mode
+        elif root:
+            # Popup Mode (CTkToplevel)
+            self.is_embedded = False # Not embedded in another frame, but a separate window
             self.root = ctk.CTkToplevel(root)
             self.root.title("⚙️ Settings")
             self.root.geometry("900x700")
         else:
-            # Standalone window mode
+            # Standalone window mode (CTk)
+            self.is_embedded = False
             self.root = ctk.CTk()
             self.root.title("⚙️ ARUN Bot - Settings")
             self.root.geometry("900x700")
@@ -67,7 +70,7 @@ class SettingsGUI:
             header.pack(pady=20)
         
         # Create tabbed interface
-        self.tabview = ctk.CTkTabview(self.main_content, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
+        self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
         self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
         
         # Add tabs (Order matters!)
@@ -79,12 +82,24 @@ class SettingsGUI:
         self.tabview.add("Stocks")
         
         # Build individual tab content
-        self.build_start_here_tab()     # NEW
-        self.build_broker_tab()
-        self.build_capital_tab()
-        self.build_risk_tab()
-        self.build_notifications_tab()
-        self.build_stocks_tab()
+        UILogger.log_section("Building Settings Tabs")
+        
+        tabs_to_build = [
+            ("Start Here Tab", self.build_start_here_tab),
+            ("Broker Tab", self.build_broker_tab),
+            ("Capital Tab", self.build_capital_tab),
+            ("Risk Tab", self.build_risk_tab),
+            ("Notifications Tab", self.build_notifications_tab),
+            ("Stocks Tab", self.build_stocks_tab)
+        ]
+
+        for name, build_func in tabs_to_build:
+            try:
+                UILogger.log_component_start(name)
+                build_func()
+                UILogger.log_component_success(name)
+            except Exception as e:
+                UILogger.log_component_error(name, e)
         
         # Bottom buttons
         button_frame = ctk.CTkFrame(self.root)
@@ -122,6 +137,56 @@ class SettingsGUI:
             text_color="gray"
         )
         disclaimer_label.pack(side="bottom", pady=10)
+
+    def build_start_here_tab(self):
+        """Build the 'Read Me First' guide tab"""
+        tab = self.tabview.tab("Start Here")
+        
+        # Scrollable frame for guide
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True)
+        
+        # Header
+        ctk.CTkLabel(scroll, text="🚀 WELCOME TO ARUN BOT", font=("Arial", 20, "bold"), text_color="cyan").pack(pady=(10, 5))
+        ctk.CTkLabel(scroll, text="Please complete these 3 steps to start trading safely.", font=("Arial", 12)).pack(pady=(0, 20))
+        
+        # STEP 1: SECURITY
+        step1 = ctk.CTkFrame(scroll, fg_color="#1a1a1a", border_color="gray", border_width=1)
+        step1.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(step1, text="1. SECURITY & PRIVACY", font=("Arial", 14, "bold"), text_color="#F1C40F").pack(anchor="w", padx=15, pady=10)
+        ctk.CTkLabel(step1, text="• All data (API keys, passwords) is encrypted and stored LOCALLY on your PC only.\n• We do not have access to your funds or credentials.\n• You are 100% responsible for your trading activity.", justify="left", wraplength=600).pack(anchor="w", padx=15, pady=(0, 10))
+        
+        # STEP 2: SETUP
+        step2 = ctk.CTkFrame(scroll, fg_color="#1a1a1a", border_color="gray", border_width=1)
+        step2.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(step2, text="2. CONFIGURE BROKER", font=("Arial", 14, "bold"), text_color="#3498DB").pack(anchor="w", padx=15, pady=10)
+        ctk.CTkLabel(step2, text="• Go to the 'Broker' tab.\n• Enter your mStock credentials (Client Code, Password, API Key).\n• API Keys can be generated from your broker's developer portal.", justify="left", wraplength=600).pack(anchor="w", padx=15, pady=(0, 10))
+
+        # STEP 3: CAPITAL (ZERO DEFAULT EXPLANATION)
+        step3 = ctk.CTkFrame(scroll, fg_color="#1a1a1a", border_color="gray", border_width=1)
+        step3.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(step3, text="3. ALLOCATE CAPITAL (Required)", font=("Arial", 14, "bold"), text_color="#E74C3C").pack(anchor="w", padx=15, pady=10)
+        ctk.CTkLabel(step3, text="• For safety, default capital is set to ₹0.\n• Go to 'Capital' tab and explicitly set your limit (e.g., ₹50,000).\n• The bot will NOT trade until you do this.", justify="left", wraplength=600).pack(anchor="w", padx=15, pady=(0, 10))
+        
+        # FEATURES DECISION
+        step4 = ctk.CTkFrame(scroll, fg_color="#1a1a1a", border_color="gray", border_width=1)
+        step4.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(step4, text="4. ENABLE FEATURES (Your Decision)", font=("Arial", 14, "bold"), text_color="#2ECC71").pack(anchor="w", padx=15, pady=10)
+        
+        ctk.CTkLabel(step4, text="Choose which safety modules to use:", justify="left").pack(anchor="w", padx=15, pady=(0, 5))
+        
+        # Feature toggles explanation
+        f1 = ctk.CTkFrame(step4, fg_color="transparent")
+        f1.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(f1, text="✅ Regime Monitor:", width=120, anchor="w", font=("Arial", 11, "bold")).pack(side="left")
+        ctk.CTkLabel(f1, text="Halts trading in bear markets/crashes. (Recommended: ON)", font=("Arial", 11)).pack(side="left")
+
+        f2 = ctk.CTkFrame(step4, fg_color="transparent")
+        f2.pack(fill="x", padx=15, pady=2)
+        ctk.CTkLabel(f2, text="✅ Volume Filter:", width=120, anchor="w", font=("Arial", 11, "bold")).pack(side="left")
+        ctk.CTkLabel(f2, text="Blocks illiquid stocks (<50k vol). (Recommended: ON)", font=("Arial", 11)).pack(side="left")
+
+        ctk.CTkLabel(step4, text="You can enable/disable these in the Broker and Capital tabs.", font=("Arial", 10, "italic"), text_color="gray").pack(anchor="w", padx=15, pady=10)
     
     def build_broker_tab(self):
         """Broker credentials configuration"""
@@ -342,8 +407,8 @@ class SettingsGUI:
         lbl_desc = ctk.CTkLabel(cap_frame, text="Limit the funds available to the bot. Your main broker balance is safe.", font=("Arial", 11), text_color="#AAA")
         lbl_desc.pack(anchor="w", padx=15, pady=(0, 10))
         
-        self.allocated_capital_entry = ctk.CTkEntry(cap_frame, width=200, placeholder_text="50000", font=("Arial", 14))
-        self.allocated_capital_entry.insert(0, str(capital.get("allocated_limit", 50000)))
+        self.allocated_capital_entry = ctk.CTkEntry(cap_frame, width=200, placeholder_text="0", font=("Arial", 14))
+        self.allocated_capital_entry.insert(0, str(capital.get("allocated_limit", 0)))
         self.allocated_capital_entry.pack(anchor="w", padx=15, pady=(0, 15))
         
         # --- STRATEGY LIMITS ---
@@ -399,8 +464,8 @@ class SettingsGUI:
         ctk.CTkRadioButton(sizing_frame, text="Fixed Amount (₹)", variable=self.sizing_method_var, value="fixed").grid(row=0, column=1, padx=5)
         
         # Fixed Amount entry
-        self.fixed_amount_entry = ctk.CTkEntry(tab, width=120, placeholder_text="5000")
-        self.fixed_amount_entry.insert(0, str(capital.get("max_per_stock_fixed_amount", 5000)))
+        self.fixed_amount_entry = ctk.CTkEntry(tab, width=120, placeholder_text="0")
+        self.fixed_amount_entry.insert(0, str(capital.get("max_per_stock_fixed_amount", 0)))
         self.fixed_amount_entry.grid(row=3, column=2, sticky="w", padx=5)
 
         # Compound profits
@@ -430,7 +495,7 @@ class SettingsGUI:
         lbl_volume_desc.pack(anchor="w", padx=15, pady=(0, 10))
         
         # Enable/Disable Toggle
-        self.volume_filter_var = ctk.BooleanVar(value=capital.get("volume_filter_enabled", True))
+        self.volume_filter_var = ctk.BooleanVar(value=capital.get("volume_filter_enabled", False))
         volume_check = ctk.CTkCheckBox(
             volume_frame,
             text="✅ Enable Volume Filter (Recommended)",
@@ -446,8 +511,8 @@ class SettingsGUI:
         
         ctk.CTkLabel(vol_shares_frame, text="Min Daily Volume (shares):", font=("Arial", 11), text_color="#CCC").pack(side="left")
         
-        self.min_volume_shares_entry = ctk.CTkEntry(vol_shares_frame, width=120, placeholder_text="50000")
-        self.min_volume_shares_entry.insert(0, str(capital.get("min_volume_shares", 50000)))
+        self.min_volume_shares_entry = ctk.CTkEntry(vol_shares_frame, width=120, placeholder_text="0")
+        self.min_volume_shares_entry.insert(0, str(capital.get("min_volume_shares", 0)))
         self.min_volume_shares_entry.pack(side="left", padx=10)
         
         # Min Value (Rupees)
@@ -456,8 +521,8 @@ class SettingsGUI:
         
         ctk.CTkLabel(vol_value_frame, text="Min Daily Turnover (₹):", font=("Arial", 11), text_color="#CCC").pack(side="left", padx=(0, 8))
         
-        self.min_volume_value_entry = ctk.CTkEntry(vol_value_frame, width=120, placeholder_text="500000")
-        self.min_volume_value_entry.insert(0, str(capital.get("min_volume_value", 500000)))
+        self.min_volume_value_entry = ctk.CTkEntry(vol_value_frame, width=120, placeholder_text="0")
+        self.min_volume_value_entry.insert(0, str(capital.get("min_volume_value", 0)))
         self.min_volume_value_entry.pack(side="left", padx=10)
         
         # Help/Recommendations
@@ -478,7 +543,11 @@ class SettingsGUI:
         info_title.pack(anchor="w", padx=10, pady=5)
         
         # Calculate example
-        total_cap = float(self.total_capital_entry.get() or 50000)
+        # Calculate example
+        try:
+             total_cap = float(self.allocated_capital_entry.get() or 50000)
+        except ValueError:
+             total_cap = 50000.0
         per_trade_pct = self.per_trade_var.get()
         per_trade_amount = total_cap * (per_trade_pct / 100)
         
@@ -583,7 +652,7 @@ class SettingsGUI:
         auto_exec_frame = ctk.CTkFrame(tab, fg_color="#1E3A5F")
         auto_exec_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
-        self.auto_execute_stop_loss_var = ctk.BooleanVar(value=risk.get("auto_execute_stop_loss", True))
+        self.auto_execute_stop_loss_var = ctk.BooleanVar(value=risk.get("auto_execute_stop_loss", False))
         auto_exec_check = ctk.CTkCheckBox(
             auto_exec_frame,
             text="⚡ Auto-Execute Stop-Loss (Recommended)",

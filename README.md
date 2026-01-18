@@ -52,3 +52,10 @@ You need **Python** installed to run this bot.
 
 **Questions?**
 Check the "Knowledge Center" tab inside the application for detailed logic explanations.
+
+## 📄 Technical Documentation
+For developers and advanced users:
+- [System Architecture](Documentation/Technical/system_architecture_and_flow.md)
+- [Project Status](Documentation/Technical/PROJECT_STATUS.md)
+- [mStock API Reference](Documentation/Technical/API_Reference.md)
+- [Product Roadmap](Documentation/Product/BACKLOG.md)

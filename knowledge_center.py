@@ -144,7 +144,7 @@ TOOLTIPS = {
 def get_strategy_guide(name):
     return STRATEGY_GUIDES.get(name, STRATEGY_GUIDES["RSI Mean Reversion"])
 
-def get_contextual_tip(metric_type, value):
+def get_contextual_tip(metric_type="GENERAL", value=0):
     """
     Returns a smart tip based on the context of a metric.
     Used by the Knowledge Tab in the new UI.

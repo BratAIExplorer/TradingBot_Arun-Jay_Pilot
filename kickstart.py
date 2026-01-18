@@ -1837,8 +1837,10 @@ def run_cycle():
     log_ok(f"---------------------------------------------------------------------------------------------------------------{datetime.now()}")
     
     # ---------------- REGIME MONITOR CHECK (P0-CRITICAL Safety Feature) ----------------
-    # Check Nifty 50 market regime before allowing any trades
-    if regime_monitor:
+    # Check Nifty 50 market regime before allowing any trades (IF USER ENABLED IT)
+    use_regime_monitor = settings.get("app_settings.use_regime_monitor", True) if settings else True
+    
+    if regime_monitor and use_regime_monitor:
         try:
             regime = regime_monitor.get_market_regime()
             regime_type = regime['regime'].value
@@ -1851,11 +1853,13 @@ def run_cycle():
             if not should_trade:
                 log_ok(f"⛔ TRADING HALTED: {reason}", force=True)
                 log_ok(f"   Bot will resume when market regime improves.", force=True)
+                log_ok(f"   💡 To disable this safety feature, go to Settings → Broker → Uncheck 'Enable Regime Monitor'", force=True)
                 return  # Skip all trading for this cycle
             
             # If regime allows trading but with reduced positions
             if regime['position_size_multiplier'] < 1.0:
                 log_ok(f"⚠️ Trading with REDUCED positions: {regime['position_size_multiplier']*100:.0f}% of normal size", force=True)
+                log_ok(f"   💡 To trade at full size, disable Regime Monitor in Settings.", force=True)
                 # Note: Position size adjustment will be handled in place_order logic
                 # Store multiplier globally for this cycle
                 globals()['REGIME_POSITION_MULTIPLIER'] = regime['position_size_multiplier']
@@ -1865,6 +1869,10 @@ def run_cycle():
         except Exception as e:
             log_ok(f"⚠️ Regime Monitor check failed: {e}. Proceeding with caution (50% positions).", force=True)
             globals()['REGIME_POSITION_MULTIPLIER'] = 0.5  # Default to reduced size on error
+    elif not use_regime_monitor:
+        # User disabled regime monitoring - log this and proceed normally
+        log_ok("ℹ️ Regime Monitor DISABLED by user (via Settings). Trading normally.", force=True)
+        globals()['REGIME_POSITION_MULTIPLIER'] = 1.0
     else:
         # No regime monitor available, proceed normally
         globals()['REGIME_POSITION_MULTIPLIER'] = 1.0

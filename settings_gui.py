@@ -181,6 +181,31 @@ class SettingsGUI:
         )
         help_btn_2.pack(side="left", padx=(0, 15), pady=10)
 
+        # Regime Monitor Toggle (New Feature)
+        self.regime_monitor_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.use_regime_monitor", True))
+        regime_check = ctk.CTkCheckBox(
+            paper_frame,
+            text="📊 Enable Regime Monitor (Bear Market Protection)",
+            variable=self.regime_monitor_var,
+            font=("Arial", 13, "bold"),
+            text_color="#E74C3C"
+        )
+        regime_check.pack(side="left", padx=(15, 5), pady=10)
+        
+        # Help button for Regime Monitor
+        help_btn_3 = ctk.CTkButton(
+            paper_frame, 
+            text="?", 
+            width=20, 
+            height=20, 
+            fg_color="transparent", 
+            border_width=1,
+            text_color="gray",
+            hover_color="#333333",
+            command=lambda: messagebox.showinfo("Regime Monitor", "Analyzes Nifty 50 index to detect market conditions.\n\nWhen enabled, the bot will:\n• HALT trading during bear markets (BEARISH/CRISIS)\n• REDUCE position sizes during uncertain markets (VOLATILE/SIDEWAYS)\n• TRADE normally during bull markets (BULLISH)\n\nRecommended: Keep enabled for safety.")
+        )
+        help_btn_3.pack(side="left", padx=(0, 15), pady=10)
+
         # Broker selection
         broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
         broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
@@ -910,7 +935,8 @@ class SettingsGUI:
             new_settings = {
                 "app_settings": {
                     "paper_trading_mode": self.paper_mode_var.get(),
-                    "nifty_50_only": self.nifty_filter_var.get()
+                    "nifty_50_only": self.nifty_filter_var.get(),
+                    "use_regime_monitor": self.regime_monitor_var.get()
                 },
                 "broker": {
                     "name": self.broker_var.get(),

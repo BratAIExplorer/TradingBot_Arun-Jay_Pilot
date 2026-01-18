@@ -105,6 +105,7 @@ class DashboardV2:
     def start_background_threads(self):
         """Start background worker threads for data fetching"""
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
+        threading.Thread(target=self.regime_worker, daemon=True).start()  # NEW
 
     # ... (Rest of class methods remain same, will rely on backup or merge context) ...
 
@@ -229,6 +230,67 @@ class DashboardV2:
         
         self.lbl_sentiment_reason = ctk.CTkLabel(self.card_sentiment, text="WHY? Low Volatility", text_color="#FF9800", font=("Roboto", 11))
         self.lbl_sentiment_reason.pack(pady=5)
+
+        # 3. Regime Monitor Status (NEW!)
+        self.card_regime = TitanCard(row1, title="MARKET REGIME", width=350, height=220, border_color="#9C27B0")
+        self.card_regime.pack(side="left", fill="both", expand=True, padx=(10, 0))
+        
+        # Try to import regime monitor
+        try:
+            from regime_monitor import RegimeMonitor
+            self.regime_monitor = RegimeMonitor()
+            self.regime_available = True
+        except ImportError:
+            self.regime_monitor = None
+            self.regime_available = False
+        
+        # Regime Display
+        self.lbl_regime_name = ctk.CTkLabel(
+            self.card_regime, 
+            text="LOADING...", 
+            font=("Roboto", 28, "bold"), 
+            text_color="#AAA"
+        )
+        self.lbl_regime_name.pack(pady=(25, 5))
+        
+        self.lbl_regime_confidence = ctk.CTkLabel(
+            self.card_regime, 
+            text="Confidence: --", 
+            font=("Roboto", 12), 
+            text_color="#888"
+        )
+        self.lbl_regime_confidence.pack(pady=2)
+        
+        # Trading Status Indicator
+        self.regime_status_frame = ctk.CTkFrame(self.card_regime, fg_color="transparent")
+        self.regime_status_frame.pack(pady=10)
+        
+        self.lbl_trading_status = ctk.CTkLabel(
+            self.regime_status_frame,
+            text="⏸ UNKNOWN",
+            font=("Roboto", 14, "bold"),
+            text_color="#888"
+        )
+        self.lbl_trading_status.pack()
+        
+        self.lbl_regime_reason = ctk.CTkLabel(
+            self.card_regime,
+            text="Analyzing market conditions...",
+            font=("Roboto", 10),
+            text_color="#AAA",
+            wraplength=300,
+            justify="center"
+        )
+        self.lbl_regime_reason.pack(pady=5)
+        
+        # Last Update Time
+        self.lbl_regime_update = ctk.CTkLabel(
+            self.card_regime,
+            text="Last update: Never",
+            font=("Roboto", 9),
+            text_color="#666"
+        )
+        self.lbl_regime_update.pack(side="bottom", pady=10)
 
         # --- ROW 2: ALERTS/TIPS & POSITIONS ---
         row2 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
@@ -524,6 +586,17 @@ class DashboardV2:
                 if data: self.data_queue.put(("sentiment", data))
             except: pass
             time.sleep(300)
+    
+    def regime_worker(self):
+        """Background worker to fetch regime status every hour"""
+        while not self.stop_update_flag.is_set():
+            try:
+                if self.regime_monitor:
+                    regime_data = self.regime_monitor.get_market_regime()
+                    self.data_queue.put(("regime", regime_data))
+            except Exception as e:
+                print(f"Regime fetch error: {e}")
+            time.sleep(3600)  # Update every hour (regime monitor has 1h cache)
 
     def update_ui_loop(self):
         try:
@@ -531,6 +604,7 @@ class DashboardV2:
                 dtype, data = self.data_queue.get_nowait()
                 if dtype == "positions": self.update_positions(data)
                 elif dtype == "sentiment": self.update_sentiment(data)
+                elif dtype == "regime": self.update_regime(data)  # NEW
                 elif dtype == "rsi": pass # Update rsi list if we had one
         except queue.Empty: pass
         finally: self.root.after(1000, self.update_ui_loop)
@@ -568,10 +642,59 @@ class DashboardV2:
                 self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
         except: pass
 
-    def update_sentiment(self, data):
+    def update_sentiment(self):
         self.draw_meter(data['score'])
         self.lbl_sentiment_val.configure(text=str(int(data['score'])))
         self.lbl_sentiment_reason.configure(text=f"WHY? {data['details']}")
+    
+    def update_regime(self, data):
+        """Update regime status widget with latest data"""
+        try:
+            regime_name = data['regime'].value
+            should_trade = data['should_trade']
+            confidence = data['confidence']
+            reason = data['reason']
+            multiplier = data['position_size_multiplier']
+            
+            # Color mapping for regimes
+            regime_colors = {
+                "BULLISH": COLOR_SUCCESS,
+                "BEARISH": COLOR_DANGER,
+                "SIDEWAYS": COLOR_WARN,
+                "VOLATILE": "#FF9800",
+                "CRISIS": "#D50000",
+                "UNKNOWN": "#888"
+            }
+            
+            color = regime_colors.get(regime_name, "#AAA")
+            
+            # Update regime name
+            self.lbl_regime_name.configure(text=regime_name, text_color=color)
+            self.lbl_regime_confidence.configure(text=f"Confidence: {confidence}%")
+            
+            # Update trading status
+            if should_trade:
+                if multiplier < 1.0:
+                    status_text = f"⚠️ REDUCED ({int(multiplier*100)}%)"
+                    status_color = COLOR_WARN
+                else:
+                    status_text = "✅ TRADING"
+                    status_color = COLOR_SUCCESS
+            else:
+                status_text = "⛔ HALTED"
+                status_color = COLOR_DANGER
+            
+            self.lbl_trading_status.configure(text=status_text, text_color=status_color)
+            self.lbl_regime_reason.configure(text=reason)
+            
+            # Update timestamp
+            now = datetime.now().strftime("%H:%M")
+            self.lbl_regime_update.configure(text=f"Last update: {now}")
+            
+        except Exception as e:
+            print(f"Regime update error: {e}")
+            self.lbl_regime_name.configure(text="ERROR", text_color="#888")
+            self.lbl_trading_status.configure(text="⚠️ UNAVAILABLE", text_color="#888")
 
     def write_log(self, text):
         """Redirect print/logs to UI Console and Alert Box"""

@@ -4,6 +4,12 @@ API Test Tab - Run API Integration Tests from GUI
 Part of Enhanced Settings GUI for MVP v1.0
 """
 
+import sys
+import os
+# Add parent directory to path for standalone testing
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
 import customtkinter as ctk
 from tkinter import messagebox
 import subprocess

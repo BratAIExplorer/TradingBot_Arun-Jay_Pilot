@@ -141,11 +141,37 @@ strategies/          → sector_map.py, trading_tips.json
 - [x] Capital Safety Box
 - [x] Position Tagging
 - [x] Simulation Refinement
+- [x] "Never Sell Below Entry" compliance fix (Jan 18, 2026)
 
-### 🔜 Phase 4 (Deferred)
-- [ ] Mobile Companion App (Streamlit)
+### 🚧 Phase 4: Infrastructure Sprint (IN PROGRESS - Jan 18, 2026)
+**Current Work**: Headless Core + Mobile Dashboard (Option B)
+
+**Active Tasks**:
+- [⏳] **bot_daemon.py**: Headless daemon for VPS deployment
+  - Runs kickstart.py without GUI
+  - Systemd service integration
+  - Graceful start/stop controls
+
+- [⏳] **mobile_dashboard.py**: Streamlit web UI for mobile monitoring
+  - Real-time P&L and positions
+  - Trades history with filters
+  - Password-protected read-only access
+
+- [⏳] **VPS_DEPLOYMENT.md**: Step-by-step cloud deployment guide
+  - AWS/DigitalOcean setup
+  - Security best practices
+
+**Implementation Plan**: See `Documentation/Technical/OPTION_B_IMPLEMENTATION_PLAN.md`
+
+### 🔜 Phase 4.1 (Next)
 - [ ] Smart Order Suggestions ("Grammarly for Trading")
+- [ ] Hybrid Holding Management
+- [ ] Mobile push notifications
+
+### 🔜 Phase 5 (Future)
+- [ ] Confluence Scoring Engine (0-100 stock scoring)
 - [ ] Smart SIP module
+- [ ] News Sentiment Engine
 
 ---
 

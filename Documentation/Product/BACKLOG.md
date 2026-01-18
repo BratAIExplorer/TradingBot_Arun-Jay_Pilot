@@ -5,11 +5,21 @@ This document tracks all pending features, enhancements, and long-term vision it
 ## 🔴 Phase 4: High Priority (The "Infrastructure" Sprint)
 *Goal: Move from Local Desktop to 24/7 Cloud/Mobile Presence.*
 
-- [ ] **Headless Core**: Extract `run_cycle` from GUI dependency to allow VPS deployment.
-- [ ] **Mobile Dashboard (Streamlit)**: Read-only web UI for P&L and status monitoring.
+**🚧 IN PROGRESS (Jan 18, 2026):**
+- [⏳] **Headless Core**: Extract `run_cycle` from GUI dependency to allow VPS deployment.
+  - Status: Building `bot_daemon.py` - standalone headless runner
+  - ETA: 1-2 days
+- [⏳] **Mobile Dashboard (Streamlit)**: Read-only web UI for P&L and status monitoring.
+  - Status: Building `mobile_dashboard.py` - real-time monitoring UI
+  - Features: P&L, positions, trades, system status
+  - ETA: 1-2 days
+- [⏳] **VPS Deployment Guide**: Documentation for setting up on AWS/DigitalOcean.
+  - Status: Creating `VPS_DEPLOYMENT.md`
+  - ETA: 1 day
+
+**📋 BACKLOG:**
 - [ ] **Hybrid Holding Management**: Logic to manage existing user stocks with "Take Over" toggle.
 - [ ] **Smart Order Suggestions**: Real-time Bid/Ask validation to optimize entry prices ("Grammarly for Trading").
-- [ ] **VPS Deployment Guide**: Documentation for setting up on AWS/DigitalOcean.
 
 ## 🟡 Phase 5: Medium Priority (The "Intelligence" Sprint)
 *Goal: Enhance the bot's reasoning and safety capabilities.*
@@ -30,4 +40,5 @@ This document tracks all pending features, enhancements, and long-term vision it
 - [ ] **Interactive Charts**: Lightweight plotting of RSI/Price directly in the "Active Positions" view.
 
 ---
-**Status**: Titan V2 (Phase 2) is currently **LIVE**. Backlog items are scheduled for Phase 4.
+**Status**: Titan V2 (Phase 2) is **LIVE**. Phase 4 infrastructure work **IN PROGRESS** (Jan 18, 2026).
+**Current Sprint**: Headless Core + Mobile Dashboard (Option B - VPS/Mobile Monitoring)

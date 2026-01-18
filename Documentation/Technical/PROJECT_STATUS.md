@@ -1,7 +1,7 @@
 # 🏗️ ARUN Project Status & Architecture (Titan V2)
 
 **Last Updated:** January 18, 2026
-**Version:** Titan V2 (Phase 2 Complete)
+**Version:** Titan V2 (Phase 2 Complete) + Phase 4 Infrastructure Sprint (IN PROGRESS)
 
 ---
 
@@ -36,10 +36,35 @@ Here is the updated breakdown of the Titan V2 codebase.
 - **Capital Safety Box**: Precise slider-based fund allocation to protect your primary bankroll.
 - **Realistic Simulation**: Refined Paper Trading mode with dynamic random-walk pricing.
 
-### 🚧 Works in Progress / Deferred
-1. **Mobile Companion (Phase 4)**: Architecture defined for a Headless + Streamlit web dashboard.
-2. **Smart Order Suggestions**: "Grammarly for Trading" validation (Planned).
-3. **Hybrid Holding Management**: Logic to allow the bot to manage existing manual stocks.
+### 🚧 Phase 4: Infrastructure Sprint (IN PROGRESS - Jan 18, 2026)
+**Goal**: Enable 24/7 VPS deployment and mobile monitoring
+
+**Active Development**:
+1. **⏳ Headless Core** (`bot_daemon.py`): Standalone daemon for VPS deployment
+   - Runs kickstart.py without GUI
+   - Systemd service integration
+   - Graceful start/stop controls
+   - Status: Building (ETA: 1-2 days)
+
+2. **⏳ Mobile Dashboard** (`mobile_dashboard.py`): Streamlit web UI for remote monitoring
+   - Real-time P&L and positions display
+   - Trades history with filters
+   - System logs viewer
+   - Password-protected read-only access
+   - Status: Building (ETA: 1-2 days)
+
+3. **⏳ VPS Deployment Guide** (`VPS_DEPLOYMENT.md`): Step-by-step cloud setup
+   - AWS/DigitalOcean instructions
+   - Systemd service configuration
+   - Security best practices
+   - Status: Planned (ETA: 1 day)
+
+**See**: `Documentation/Technical/OPTION_B_IMPLEMENTATION_PLAN.md` for full details
+
+### 📋 Deferred to Future Phases
+1. **Smart Order Suggestions**: "Grammarly for Trading" bid/ask validation (Phase 4.1)
+2. **Hybrid Holding Management**: Bot management of existing manual stocks (Phase 4.1)
+3. **Confluence Scoring Engine**: 0-100 stock scoring system (Phase 5)
 
 ---
 

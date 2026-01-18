@@ -284,7 +284,69 @@ Please check your registered phone for an OTP and enter it in the bot window to 
 <b>Bot is currently PAUSED.</b>
         """
         self._send_telegram(message)
+    
+    def send_alert(self, message: str):
+        """
+        Send generic alert (used by volume/trend filters)
+        P2 Feature - Simple wrapper
+        """
+        if self.telegram_enabled:
+            self._send_telegram(f"⚠️ {message}")
+    
+    def send_regime_change_alert(self, old_regime: str, new_regime: str, reason: str):
+        """
+        Send notification when market regime changes
+        P2 Feature
+        """
+        regime_emojis = {
+            "BULLISH": "🟢",
+            "BEARISH": "🔴",
+            "SIDEWAYS": "🟡",
+            "VOLATILE": "🟠",
+            "CRISIS": "⚫"
+        }
+        
+        emoji = regime_emojis.get(new_regime, "⚪")
+        
+        message = f"""
+{emoji} <b>REGIME CHANGE ALERT</b>
 
+Market: {old_regime} → {new_regime}
+
+{reason}
+
+{'⛔ Trading HALTED' if new_regime in ['BEARISH', 'CRISIS'] else '✅ Trading continues'}
+        """
+        
+        if self.telegram_enabled:
+            self._send_telegram(message)
+    
+    def send_daily_summary(self, analytics: dict):
+        """
+        Send end-of-day performance summary
+        P2 Feature
+        """
+        today_pnl = analytics.get('net_profit', 0)
+        pnl_emoji = "🟢" if today_pnl >= 0 else "🔴"
+        
+        message = f"""
+📊 <b>DAILY SUMMARY</b> ({datetime.now().strftime('%Y-%m-%d')})
+
+{pnl_emoji} P&L: ₹{today_pnl:,.2f}
+Trades: {analytics.get('total_trades', 0)} ({analytics.get('winning_trades', 0)}W / {analytics.get('losing_trades', 0)}L)
+Win Rate: {analytics.get('win_rate', 0):.1f}%
+Fees Paid: ₹{analytics.get('total_fees', 0):,.2f}
+
+Sharpe Ratio: {analytics.get('sharpe_ratio', 0):.2f}
+vs Nifty 50: {'+' if analytics.get('outperformance', 0) > 0 else ''}{analytics.get('outperformance', 0):.2f}%
+
+---
+ARUN Trading Bot
+        """
+        
+        if self.telegram_enabled:
+            self._send_telegram(message)
+    
     def _send_telegram_circuit_breaker(self, details: Dict[str, Any]):
         """Send Telegram notification for circuit breaker"""
         message = f"""

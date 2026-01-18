@@ -642,7 +642,7 @@ class DashboardV2:
                 self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
         except: pass
 
-    def update_sentiment(self):
+    def update_sentiment(self, data):
         self.draw_meter(data['score'])
         self.lbl_sentiment_val.configure(text=str(int(data['score'])))
         self.lbl_sentiment_reason.configure(text=f"WHY? {data['details']}")

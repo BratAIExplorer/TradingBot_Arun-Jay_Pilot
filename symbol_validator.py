@@ -13,11 +13,29 @@ def validate_symbol(symbol: str, exchange: str) -> bool:
     
     try:
         ticker = yf.Ticker(yf_symbol)
-        info = ticker.fast_info
-        # If we can get a price, it's valid
-        if info and 'last_price' in info:
-             return True
+        
+        # Try to get historical data (more reliable than fast_info)
+        hist = ticker.history(period="5d")
+        
+        # Symbol is valid if we got some historical data
+        if hist is not None and not hist.empty and len(hist) > 0:
+            return True
+            
+        # Fallback: Try fast_info method
+        try:
+            info = ticker.fast_info
+            # Check if we have a valid last price (not None, not 0)
+            if hasattr(info, 'last_price'):
+                last_price = getattr(info, 'last_price', None)
+                if last_price and last_price > 0:
+                    return True
+        except Exception:
+            pass  # fast_info failed, rely on history check
+            
+        # No valid data found
+        logging.warning(f"Symbol {yf_symbol} exists but has no trading data")
         return False
+        
     except Exception as e:
         logging.error(f"Error validating {yf_symbol}: {e}")
         return False

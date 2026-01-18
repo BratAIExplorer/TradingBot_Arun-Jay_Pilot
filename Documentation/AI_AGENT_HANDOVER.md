@@ -2726,10 +2726,158 @@ if behavior['action'] == 'HALT' and not settings.has_active_override():
 
 ---
 
-**Document Version:** 1.4
-**Last Updated:** January 18, 2026, 08:30 IST (Added Section 14: Session 3 - Settings Layer v2.0 Complete)
-**Next Review:** After onboarding wizard completion
+---
 
-**Status:** ✅ SETTINGS LAYER V2.0 COMPLETE | ⏳ ONBOARDING WIZARD NEXT
+## 📜 Section 15: Parallel Development Strategy (Session 4 - Coordination Plan)
+
+**Date:** January 18, 2026, 10:00 IST
+**Status:** 🤝 PARALLEL DEVELOPMENT ACTIVE
+**Participants:** Claude AI + Google AI
+
+### 🎯 Parallel Development Approach
+
+To maximize development speed while minimizing merge conflicts, we're splitting Week 1 remaining work between two AI agents:
+
+**Google AI Track:**
+- Task: Enhanced Settings GUI
+- Branch: `google/enhanced-settings-gui`
+- Duration: 3 hours
+- Files: 5 NEW files (no modifications to existing code)
+- Risk: ✅ LOW (no conflicts with Claude AI work)
+
+**Claude AI Track:**
+- Task: Regime Monitor Integration
+- Branch: `claude/review-codebase-status-sIrLt` (continue)
+- Duration: 6 hours
+- Files: 3 NEW files + MODIFY kickstart.py
+- Risk: ✅ LOW (different files than Google AI)
+
+### 📋 Task Specifications
+
+**GOOGLE AI TASK: Enhanced Settings GUI**
+
+**Files to Create:**
+```
+gui/settings_tabs/__init__.py         # Package initialization
+gui/settings_tabs/regime_tab.py       # Risk profile selection (350 lines)
+gui/settings_tabs/stop_loss_tab.py    # Stop-loss mode config (380 lines)
+gui/settings_tabs/paper_live_tab.py   # Paper/Live toggle (320 lines)
+gui/settings_tabs/api_test_tab.py     # API test runner (200 lines)
+```
+
+**Files to NOT Touch:**
+- ❌ kickstart.py (Claude AI is modifying)
+- ❌ settings_manager_v2.py (complete, don't change)
+- ❌ regime_monitor.py (Claude AI integrating)
+
+**Detailed Specification:** `Documentation/GOOGLE_AI_TASK_SPEC.md`
+
+**CLAUDE AI TASK: Regime Monitor Integration**
+
+**Files to Create:**
+```
+regime_engine.py                       # User-controlled regime logic (400 lines)
+gui/widgets/regime_status_widget.py    # Always-visible status (200 lines)
+gui/dialogs/regime_alert_dialog.py     # Smart alerts (250 lines)
+```
+
+**Files to Modify:**
+```
+kickstart.py                           # Add regime checks before trading
+```
+
+### 🔄 Integration Plan
+
+**Phase 1: Parallel Work (Now)**
+- Google AI builds GUI tabs on branch `google/enhanced-settings-gui`
+- Claude AI builds Regime integration on branch `claude/review-codebase-status-sIrLt`
+- Both work independently, no conflicts
+
+**Phase 2: Merge (When Both Done)**
+```bash
+# Claude AI merges Google AI's work
+git checkout claude/review-codebase-status-sIrLt
+git fetch origin google/enhanced-settings-gui
+git merge origin/google/enhanced-settings-gui
+
+# Resolve any conflicts (unlikely, different files)
+# Test integration
+# Continue with Stop-Loss Enhancement
+```
+
+**Phase 3: Integration Testing**
+- Test all tabs load in Settings Window
+- Test regime monitor integrates with kickstart.py
+- Test end-to-end flow
+
+### 🎫 Task Assignment Matrix
+
+| Component | Owner | Branch | Files Modified | Conflicts? |
+|-----------|-------|--------|----------------|------------|
+| Enhanced Settings GUI | Google AI | google/enhanced-settings-gui | 5 new files | ✅ None |
+| Regime Monitor Integration | Claude AI | claude/review-codebase-status-sIrLt | 3 new + kickstart.py | ✅ None |
+| Stop-Loss Enhancement | Claude AI | claude/review-codebase-status-sIrLt | 2 new + kickstart.py | ⏳ After merge |
+
+### 📝 Coordination Requirements
+
+**Google AI Must:**
+1. Create branch: `google/enhanced-settings-gui`
+2. Follow spec in `Documentation/GOOGLE_AI_TASK_SPEC.md`
+3. Test each tab standalone before committing
+4. Update this doc with progress in Section 16
+5. Push to remote when done
+
+**Claude AI Must:**
+1. Continue on branch: `claude/review-codebase-status-sIrLt`
+2. Build regime integration (regime_engine.py + widgets)
+3. Modify kickstart.py to integrate regime checks
+4. Test standalone before committing
+5. Merge Google AI's branch when both done
+
+**Both Must:**
+- Commit frequently with clear messages
+- Test standalone before pushing
+- Document progress
+- NOT modify each other's files
+
+### ✅ Success Criteria
+
+**Google AI Done When:**
+- [x] All 5 files created in gui/settings_tabs/
+- [x] Each tab tested standalone
+- [x] Settings load/save correctly
+- [x] Pushed to google/enhanced-settings-gui
+- [x] Documented in Section 16
+
+**Claude AI Done When:**
+- [x] regime_engine.py complete and tested
+- [x] GUI widgets created and tested
+- [x] kickstart.py integrated with regime checks
+- [x] All tests pass
+- [x] Pushed to claude/review-codebase-status-sIrLt
+
+**Integration Done When:**
+- [x] Branches merged successfully
+- [x] No conflicts
+- [x] All tabs work in Settings Window
+- [x] Regime monitor works in kickstart.py
+- [x] End-to-end tests pass
+
+### 🚀 Communication Protocol
+
+**Google AI Updates:** Add to Section 16 (below this section)
+**Claude AI Updates:** Update Section 14 with regime integration progress
+
+**Handover Messages:**
+- Google AI: "Enhanced Settings GUI complete on branch google/enhanced-settings-gui"
+- Claude AI: "Regime integration complete, ready to merge Google AI branch"
+
+---
+
+**Document Version:** 1.6
+**Last Updated:** January 18, 2026, 10:00 IST (Added Section 15: Parallel Development Strategy)
+**Next Review:** After both parallel tasks complete
+
+**Status:** 🤝 PARALLEL DEVELOPMENT COORDINATED | ⏳ GOOGLE AI: SETTINGS GUI | ⏳ CLAUDE AI: REGIME INTEGRATION
 
 ---

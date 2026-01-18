@@ -47,6 +47,13 @@ except ImportError:
     RISK_MANAGER_AVAILABLE = False
 
 try:
+    from regime_engine import RegimeEngine, RegimeAction
+    REGIME_ENGINE_AVAILABLE = True
+except ImportError:
+    print("⚠️ regime_engine not found, regime-based trading controls disabled")
+    REGIME_ENGINE_AVAILABLE = False
+
+try:
     from state_manager import StateManager
     STATE_MANAGER_AVAILABLE = True
 except ImportError:
@@ -382,6 +389,19 @@ if STATE_MANAGER_AVAILABLE:
     except Exception as e:
         log_ok(f"⚠️ State Manager init failed: {e}", force=True)
         state_mgr = None
+
+if REGIME_ENGINE_AVAILABLE and settings:
+    try:
+        regime_engine = RegimeEngine(settings=settings, enable_regime_monitor=True)
+        log_ok("✅ Regime Engine initialized (market regime monitoring active)", force=True)
+    except Exception as e:
+        log_ok(f"⚠️ Regime Engine init failed: {e}", force=True)
+        regime_engine = None
+elif REGIME_ENGINE_AVAILABLE and not settings:
+    log_ok("⚠️ Regime Engine skipped (settings not available)", force=True)
+    regime_engine = None
+else:
+    regime_engine = None
 
 if NOTIFICATIONS_AVAILABLE and settings:
     try:
@@ -1166,6 +1186,36 @@ def connectivity_monitor():
 def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
     if is_offline():
         return False
+
+    # Check Regime Engine (only for BUY orders, let SELL orders through)
+    if regime_engine and side.upper() == "BUY":
+        try:
+            decision = regime_engine.check_trading_allowed()
+
+            # If trading is halted and no override, block the order
+            if not decision.should_trade():
+                log_ok(
+                    f"⛔ REGIME HALT: Cannot place BUY order for {symbol}. "
+                    f"Regime: {decision.regime} ({decision.action.value}). "
+                    f"Override available in settings.",
+                    force=True
+                )
+                return False
+
+            # If position size should be reduced, adjust quantity
+            if decision.position_multiplier < 1.0:
+                original_qty = qty
+                qty = int(qty * decision.position_multiplier)
+                if qty < 1:
+                    qty = 1  # Minimum 1 share
+
+                log_ok(
+                    f"⚠️ REGIME REDUCE: {decision.regime} regime. "
+                    f"Position size adjusted: {original_qty} → {qty} shares ({decision.position_multiplier:.0%})",
+                    force=True
+                )
+        except Exception as e:
+            log_ok(f"⚠️ Regime check failed: {e}. Proceeding with trade.", force=True)
 
     # Check Paper Trading Mode
     if settings and settings.get("app_settings.paper_trading_mode"):

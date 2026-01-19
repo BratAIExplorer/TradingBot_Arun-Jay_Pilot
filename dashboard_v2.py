@@ -392,20 +392,33 @@ class DashboardV2:
         
         self.build_positions_table(self.card_positions)
 
-        # --- ROW 3: ACTIONS & PERFORMANCE ---
+        # --- ROW 3: CONTROLS ---
         row3 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
         row3.pack(fill="x", pady=5)
+
+        # Control Panel Wrapper
+        self.card_controls = TitanCard(row3, title="ENGINE COMMANDER", height=100, border_color=COLOR_ACCENT)
+        self.card_controls.pack(fill="both", expand=True)
+
+        inner_controls = ctk.CTkFrame(self.card_controls, fg_color="transparent")
+        inner_controls.pack(fill="both", expand=True, padx=20, pady=15)
         
-        # Controls
-        self.btn_start = ctk.CTkButton(row3, text="▶ START ENGINE", command=self.toggle_bot, fg_color=COLOR_SUCCESS, hover_color="#00C853", height=45, font=("Roboto", 13, "bold"))
-        self.btn_start.pack(side="left", padx=(0, 10))
+        # 1. Toggle Button (Start/Stop)
+        self.btn_start = ctk.CTkButton(inner_controls, text="▶ START ENGINE", command=self.toggle_bot, 
+                                     fg_color=COLOR_SUCCESS, hover_color="#00C853", height=50, 
+                                     font=("Roboto", 16, "bold"), text_color="black")
+        self.btn_start.pack(side="left", fill="x", expand=True, padx=(0, 20))
         
-        self.btn_panic = ctk.CTkButton(row3, text="🚨 PANIC STOP", command=self.emergency_exit, fg_color=COLOR_DANGER, hover_color="#B71C1C", height=45, width=120)
-        self.btn_panic.pack(side="left")
+        # 2. Panic Button
+        self.btn_panic = ctk.CTkButton(inner_controls, text="🚨 PANIC STOP", command=self.emergency_exit, 
+                                     fg_color=COLOR_DANGER, hover_color="#B71C1C", height=50, width=200,
+                                     font=("Roboto", 14, "bold"))
+        self.btn_panic.pack(side="right")
         
-        # Log Area (Mini)
-        self.log_area = ctk.CTkTextbox(row3, height=50, fg_color="#080808", text_color="#AAA", font=("Consolas", 10), border_width=1, border_color="#222")
-        self.log_area.pack(side="right", fill="x", expand=True, padx=(20, 0))
+        # Log Area (Mini) - Moved to right side of row3 outside card
+        # Or maybe putting it below? User liked "Logs view".
+        # Let's keep mini-log minimal or remove if redundant with LOGS tab.
+        # Keeping it hidden for now as we have a dedicated LOGS tab.
 
     def build_strategies_view(self):
         """Strategies View Content - Baskets & Strategies"""

@@ -19,6 +19,11 @@ try:
     from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide, get_contextual_tip
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
+    # Import positions fetching from kickstart
+    try:
+        from kickstart import safe_get_live_positions_merged
+    except ImportError:
+        safe_get_live_positions_merged = lambda: {}
     # Database (optional)
     try:
         from database.trades_db import TradesDatabase
@@ -118,6 +123,18 @@ class DashboardV2:
     def start_background_threads(self):
         """Start background worker threads for data fetching"""
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
+        threading.Thread(target=self.positions_worker, daemon=True).start()  # NEW: Fetch positions
+
+    def positions_worker(self):
+        """Background worker to fetch and update positions every 30 seconds"""
+        while not self.stop_update_flag.is_set():
+            try:
+                positions = safe_get_live_positions_merged()
+                if positions:
+                    self.data_queue.put(("positions", positions))
+            except Exception as e:
+                print(f"Positions fetch error: {e}")
+            time.sleep(30)  # Refresh every 30 seconds
 
     def balance_refresh_timer(self):
         """Auto-refresh balance every 15 minutes"""

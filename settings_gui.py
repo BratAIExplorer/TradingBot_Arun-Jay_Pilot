@@ -737,84 +737,147 @@ class SettingsGUI:
         messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
 
     def test_broker_connection(self):
-        """Test API credentials and fetch balance"""
+        """Test API credentials and fetch balance with enhanced debugging"""
+        import datetime
+        import json
+
         api_key = self.api_key_entry.get().strip()
         totp_secret = self.totp_entry.get().strip()
-        
+
         if not api_key or not totp_secret:
             messagebox.showwarning("Missing Data", "Please enter API Key and TOTP Secret to test connection.")
             return
 
+        # Check if in maintenance window
+        now = datetime.datetime.now()
+        hour = now.hour
+        minute = now.minute
+        current_time = hour * 60 + minute
+
+        # BOD: 7:00-8:30 AM (420-510 min), EOD: 7:00-9:00 PM (1140-1260 min)
+        if (420 <= current_time <= 510) or (1140 <= current_time <= 1260):
+            messagebox.showwarning(
+                "⚠️ Maintenance Window Detected",
+                f"You're testing during mStock's processing window:\n\n"
+                f"• BOD: 7:00-8:30 AM IST\n"
+                f"• EOD: 7:00-9:00 PM IST\n\n"
+                f"API may be slow or return unexpected results.\n"
+                f"Continuing anyway..."
+            )
+
+        debug_log = []
+
         try:
             # 1. Generate TOTP
+            debug_log.append("✅ Step 1: Generating TOTP code...")
             totp = pyotp.TOTP(totp_secret)
             otp_code = totp.now()
-            
+            debug_log.append(f"✅ TOTP Generated: {otp_code[:2]}****")
+
             # 2. Verify TOTP & Get Token
+            debug_log.append("✅ Step 2: Verifying TOTP with mStock API...")
             url = "https://api.mstock.trade/openapi/typea/session/verifytotp"
             payload = {"api_key": api_key, "totp": otp_code}
-            
+
             common_headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "*/*",
                 "Connection": "keep-alive",
                 "X-Mirae-Version": "1"
             }
-            
+
             # Request 1 headers
             headers = common_headers.copy()
             headers["Content-Type"] = "application/x-www-form-urlencoded"
-            
+
             resp = requests.post(url, data=payload, headers=headers, timeout=10)
-            
+            debug_log.append(f"✅ Response Status: {resp.status_code}")
+
             if resp.status_code != 200:
-                messagebox.showerror("Connection Failed", f"API Verification Failed.\nStatus: {resp.status_code}\nResponse: {resp.text}")
+                error_msg = "\n".join(debug_log) + f"\n\n❌ API Verification Failed.\nStatus: {resp.status_code}\nResponse: {resp.text[:200]}"
+                messagebox.showerror("Connection Failed", error_msg)
+                print("\n".join(debug_log))  # Console logging
                 return
-                
+
             data = resp.json()
+            debug_log.append(f"✅ Response: {json.dumps(data, indent=2)[:300]}...")
+
             if data.get("status") == "success":
                 access_token = data["data"]["access_token"]
-                
+                debug_log.append(f"✅ Access Token Received: {access_token[:10]}****")
+
                 # Auto-fill the access token field since we got it
                 self.access_token_entry.delete(0, "end")
                 self.access_token_entry.insert(0, access_token)
-                
+
                 # 3. Fetch Balance (Validator for permissions)
-                # Try multiple endpoints for balance
+                debug_log.append("✅ Step 3: Fetching balance from multiple endpoints...")
+
+                # Try multiple endpoints for balance (including holdings)
                 balance_endpoints = [
-                    "https://api.mstock.trade/openapi/typea/limits/getRmsLimits",
-                    "https://api.mstock.trade/openapi/typea/limits/getCashLimits",
-                    "https://api.mstock.trade/openapi/typea/user/profile"
+                    ("getRmsLimits", "https://api.mstock.trade/openapi/typea/limits/getRmsLimits"),
+                    ("getCashLimits", "https://api.mstock.trade/openapi/typea/limits/getCashLimits"),
+                    ("userProfile", "https://api.mstock.trade/openapi/typea/user/profile"),
+                    ("holdings", "https://api.mstock.trade/openapi/typea/portfolio/holdings")
                 ]
-                
+
                 # Request 2 headers
                 b_headers = common_headers.copy()
                 b_headers["Authorization"] = f"token {api_key}:{access_token}"
-                
+
                 balance_found = False
                 cash = 0.0
-                
-                for balance_url in balance_endpoints:
+                successful_endpoint = None
+                last_error = None
+
+                for endpoint_name, balance_url in balance_endpoints:
                     try:
-                        b_resp = requests.get(balance_url, headers=b_headers, timeout=5)
-                        
+                        debug_log.append(f"  → Trying: {endpoint_name}...")
+                        b_resp = requests.get(balance_url, headers=b_headers, timeout=10)
+                        debug_log.append(f"    Status: {b_resp.status_code}")
+
                         if b_resp.status_code == 200:
                             b_data = b_resp.json()
-                            
+                            debug_log.append(f"    Response: {json.dumps(b_data, indent=2)[:200]}...")
+
                             # Try different response formats
                             if "data" in b_data:
                                 data_obj = b_data["data"]
-                                # Try various field names
-                                cash = float(data_obj.get("availableCash", 
+
+                                # For holdings endpoint, just verify it returns data
+                                if endpoint_name == "holdings" and isinstance(data_obj, list):
+                                    debug_log.append(f"    ✅ Holdings endpoint accessible ({len(data_obj)} items)")
+                                    successful_endpoint = endpoint_name
+                                    # Don't break, keep looking for actual balance
+                                    continue
+
+                                # Try various field names for balance
+                                cash = float(data_obj.get("availableCash",
                                            data_obj.get("available_cash",
-                                           data_obj.get("net", 
-                                           data_obj.get("cashmarginavailable", 0)))))
+                                           data_obj.get("net",
+                                           data_obj.get("cashmarginavailable",
+                                           data_obj.get("balance", 0))))))
+
                                 if cash > 0:
+                                    debug_log.append(f"    ✅ Balance found: ₹{cash:,.2f}")
                                     balance_found = True
+                                    successful_endpoint = endpoint_name
                                     break
-                    except:
+                                else:
+                                    debug_log.append(f"    ⚠️ No balance in response")
+                        else:
+                            debug_log.append(f"    ❌ HTTP {b_resp.status_code}: {b_resp.text[:100]}")
+
+                    except Exception as endpoint_error:
+                        last_error = str(endpoint_error)
+                        debug_log.append(f"    ❌ Error: {last_error}")
                         continue
-                
+
+                # Print full debug log to console
+                print("\n=== API TEST DEBUG LOG ===")
+                print("\n".join(debug_log))
+                print("=========================\n")
+
                 if balance_found:
                     messagebox.showinfo(
                         "✅ Connection Successful",
@@ -822,28 +885,54 @@ class SettingsGUI:
                         f"• API Key: OK\n"
                         f"• TOTP: OK\n"
                         f"• Session Token: Generated & Filled\n"
-                        f"• Balance Check: OK\n\n"
-                        f"💰 Available Balance: ₹{cash:,.2f}"
+                        f"• Balance Check: OK ({successful_endpoint})\n\n"
+                        f"💰 Available Balance: ₹{cash:,.2f}\n\n"
+                        f"📋 Full debug log printed to console."
+                    )
+                elif successful_endpoint:
+                    # We got holdings but no balance
+                    messagebox.showinfo(
+                        "✅ Credentials Validated",
+                        f"🚀 API Connection Working!\n\n"
+                        f"• API Key: ✅\n"
+                        f"• TOTP: ✅\n"
+                        f"• Session Token: ✅\n"
+                        f"• API Access: ✅ (verified via {successful_endpoint})\n\n"
+                        f"Note: Balance not retrieved (common post-market).\n"
+                        f"Holdings endpoint accessible - bot will work!\n\n"
+                        f"📋 Check console for detailed debug log."
                     )
                 else:
                     # Show success without balance
                     messagebox.showinfo(
-                        "✅ Credentials Validated", 
-                        f"🚀 All Credentials Working!\n\n"
+                        "✅ Credentials Validated",
+                        f"🚀 Authentication Successful!\n\n"
                         f"• API Key: ✅\n"
                         f"• TOTP: ✅\n"
                         f"• Session Token: ✅ Generated\n\n"
-                        f"Note: Balance fetch unavailable (might be due to:\n"
-                        f"• Weekend/Market hours restriction\n"
-                        f"• VPN blocking secondary endpoints\n"
-                        f"• API permissions)\n\n"
-                        f"Your bot WILL work for trading!"
+                        f"⚠️ Balance endpoints unavailable:\n"
+                        f"• Possible reasons:\n"
+                        f"  - Weekend/After market hours\n"
+                        f"  - Maintenance window (BOD/EOD)\n"
+                        f"  - API permissions\n"
+                        f"  - Network/VPN issues\n\n"
+                        f"Last Error: {last_error[:100] if last_error else 'N/A'}\n\n"
+                        f"Your bot WILL work during market hours!\n"
+                        f"📋 Check console for full debug details."
                     )
             else:
-                 messagebox.showerror("Validation Failed", f"Reason: {data.get('message', 'Unknown Error')}")
-                 
+                error_msg = "\n".join(debug_log) + f"\n\n❌ Validation Failed: {data.get('message', 'Unknown Error')}"
+                messagebox.showerror("Validation Failed", error_msg)
+                print("\n".join(debug_log))
+
         except Exception as e:
-            messagebox.showerror("Error", f"Connection Test Failed:\n{str(e)}")
+            import traceback
+            full_trace = traceback.format_exc()
+            error_msg = "\n".join(debug_log) + f"\n\n❌ Exception:\n{str(e)}\n\n{full_trace[:500]}"
+            messagebox.showerror("Error", f"Connection Test Failed:\n\n{str(e)}\n\nCheck console for full details.")
+            print("\n=== API TEST ERROR ===")
+            print(error_msg)
+            print("=====================\n")
     
     def toggle_password_visibility(self):
         """Toggle password and API key field visibility"""

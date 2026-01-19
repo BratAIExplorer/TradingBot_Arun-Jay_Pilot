@@ -5,27 +5,24 @@
     "api_secret": "37gcDiQSKtGSK7PvDdhWgITHlox8GzhqGuhj0Tn9ndI=",
     "client_code": "MA8224736",
     "password": "Bharat@123",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVU0VSTkFNRSI6Ik1BODIyNDczNiIsIkNMSUVOVE5BTUUiOiJLSVJBTiBERUVQQUsgU0FNQU5UIiwiVVNFUl9ERVRBSUxTIjoiQ0pGUXQ4K09pYjNNOXJ1LzlHWDdnenlSZExJbjVmL25USGRkZ1FZM0Exd3pSVVk2cFpDKy96b1RVYVBxU25VcW55VlVSdktld0l4aEJEVVhwS1A0RXVoYTRQNGVFdnowQ1hqQzVvU25KZCtwb2tCemlNVkRWK1N3UlAwcGV6b015eUN5SGIxUUJ1SU5PYWo4K2dITExIcEhaZSsyaXRjUFhHaGVsTnRGUTV5RmRqNEFZL0lYYm1DNm4yclZYUzhUeXVTSmJuMFNweFJraUswcTlHYnFhelJROUdJQWpPT2E2anpFZWVaaUluQUpKQ3BHWm5YVkJXNTQ5SE5WNHhVdjVKcCsrYkowczdPaWk5QUtGZEJvTWhJWHZHVWhSVjE5MyszV2cwYm91U0VBVmE3Zm55RVU2T1pUKzkrS2hGN3ZqdC80WnRWeGhiTXI3OTl1UHNBdndOam9nMVlab25ocjNJc3hnaTZQbWtNPSIsIlVTRVJJRCI6Ik1BODIyNDczNiIsIkFDQ0VTU19UT0tFTiI6ImV5SmhiR2NpT2lKSVV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoZFdRaU9pSnRhWEpoWlM1cGJpSXNJbVY0Y0NJNk1UYzJPRGMwTmpRek5Dd2lhV0YwSWpveE56WTROall3TURNMExDSnBjM01pT2lKdGFYSmhaUzVwYmlJc0ltNWlaaUk2TVRRME5EUTNPRFF3TUN3aWNHWnRJam9pTVNJc0luUnBaQ0k2SWpRMElpd2lkV2xrSWpvaU1qWTROalExTnlJc0luWnBaQ0k2SWpJeEluMC5YQmxuU0dWUjlUVjdYUzlydVVLa3VhSDMwUVI0X2U5Zi1hUlNJVXVSalVnIiwiQVBJVFlQRSI6IlRZUEVBIiwiVUlEIjoiMTAwYWE1MTgtNjk2ZS00N2Y3LTkyM2QtZGYwM2IyMWIyOThkIiwibmJmIjoxNzY4NjYwMDM0LCJleHAiOjE3Njg2NzQ2MDAsImlhdCI6MTc2ODY2MDAzNH0.q7CzzEZSEXXPjJtE9kS8OBbwCbLMGpw5vMzXBjrkKiU",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVU0VSTkFNRSI6Ik1BODIyNDczNiIsIkNMSUVOVE5BTUUiOiJLSVJBTiBERUVQQUsgU0FNQU5UIiwiVVNFUl9ERVRBSUxTIjoiUDRlODlENld0S2VzOC9vVHJIT1Ayb3BUaTdyeFh6dlUreUNwWXlIQ29Tb0xuR1FhY25JKzFrUnNMVGVTSWprUkNKeTFvbURLSGRYUm1uNmdQYlBPemtjZ3JhRjgwQS9UajBWYjFPUFdrTm9xRVgvejRobFMyQ1NmdmtpRXRFK1VZV09FVitNSFhEd0FRU1poS2R4TEVMZitVd0txdW9QTm83SnBzUmdaMCtpSzNSNHcxazZkOHY1UldyanZnOXBuT3NCSFB0QWJ6bGkxenJPTHZmT0UzUGJYT3YveTVhcC9EOHRxSWswWmFUclFocm90ekU0QWxtYTNmU2FUNlZqQ3BsRzJ1djV6a3hGWEJmR2JVa053OUdDRmRsYjV4ZEl6TTc5NWE0OThwZnNTbzJHbCthdkwybmJrZHVST1BTTFQyTE9TQ3R2aHBXRzRkdm40b2JOTW1DSHp6ZkZDa1JIWm1iUUVMR0lITE9FPSIsIlVTRVJJRCI6Ik1BODIyNDczNiIsIkFDQ0VTU19UT0tFTiI6ImV5SmhiR2NpT2lKSVV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoZFdRaU9pSnRhWEpoWlM1cGJpSXNJbVY0Y0NJNk1UYzJPRGc1TXpJNE9Td2lhV0YwSWpveE56WTRPREEyT0RnNUxDSnBjM01pT2lKdGFYSmhaUzVwYmlJc0ltNWlaaUk2TVRRME5EUTNPRFF3TUN3aWNHWnRJam9pTVNJc0luUnBaQ0k2SWpRMElpd2lkV2xrSWpvaU1qWTROalExTnlJc0luWnBaQ0k2SWpJeEluMC5ZUFhHeFp1VWVsWTJoaEpTSVV4eHdsRTdOeWE0VWVOUUtHZ1Q2Nkl0NC00IiwiQVBJVFlQRSI6IlRZUEVBIiwiVUlEIjoiZGUwMGYxMjItYWNkMS00MmE1LWJkMTQtNWZlOTJmNjYxZDI2IiwibmJmIjoxNzY4ODA2ODg5LCJleHAiOjE3Njg4NDc0MDAsImlhdCI6MTc2ODgwNjg4OX0.oEcMGNqy-JyADLf8yK7slXdh7gcpIWsoINiPKiaPzoA",
     "totp_secret": "I25KMXCXICZ3QIFXR5RXTSY3BGUYP6YR"
   },
   "market": {
     "name": "india_nse",
     "timezone": "Asia/Kolkata",
     "currency": "INR",
-    "currency_symbol": "₹",
+    "currency_symbol": "\u00e2\u201a\u00b9",
     "open_time": "09:15",
     "close_time": "15:30"
   },
   "capital": {
-    "allocated_limit": 0,
-    "per_trade_pct": 10.0,
-    "max_positions": 5,
+    "allocated_limit": 20000.0,
     "max_per_stock_type": "percentage",
-    "max_per_stock_fixed_amount": 0,
-    "compound_profits": false,
-    "volume_filter_enabled": false,
-    "min_volume_shares": 0,
-    "min_volume_value": 0
+    "per_trade_pct": 10.0,
+    "max_per_stock_fixed_amount": 0.0,
+    "max_positions": 5,
+    "compound_profits": false
   },
   "notifications": {
     "enabled": false,
@@ -37,9 +34,7 @@
     "profit_target_pct": 10.0,
     "catastrophic_stop_loss_pct": 15.0,
     "daily_loss_limit_pct": 10.0,
-    "auto_execute_stop_loss": false,
-    "never_sell_at_loss": false,
-    "trend_filter_enabled": true
+    "never_sell_at_loss": false
   },
   "app_settings": {
     "paper_trading_mode": true,

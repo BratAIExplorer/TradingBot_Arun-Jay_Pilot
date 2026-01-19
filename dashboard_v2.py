@@ -98,7 +98,10 @@ class DashboardV2:
         self.view_strategies = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_settings = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_knowledge = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        self.view_logs = ctk.CTkFrame(self.main_container, fg_color="transparent")  # NEW
+        self.view_settings = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_knowledge = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_logs = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_start = ctk.CTkFrame(self.main_container, fg_color="transparent")  # NEW: Start Here Tab
         
         UILogger.log_section("Building Dashboard Views")
         
@@ -132,13 +135,23 @@ class DashboardV2:
 
         try:
             UILogger.log_component_start("Logs View")
-            self.build_logs_view()  # NEW
+            self.build_logs_view()
             UILogger.log_component_success("Logs View")
         except Exception as e:
             UILogger.log_component_error("Logs View", e)
+
+        try:
+            UILogger.log_component_start("Start Here View")
+            self.build_start_here_view()  # NEW
+            UILogger.log_component_success("Start Here View")
+        except Exception as e:
+            UILogger.log_component_error("Start Here View", e)
         
-        # Default View
-        self.show_view("DASHBOARD")
+        # Default View (Show START HERE first if first time user, else Dashboard)
+        if self.settings_mgr.get("capital.allocated_limit", 0) <= 0:
+            self.show_view("START HERE")
+        else:
+            self.show_view("DASHBOARD")
 
         # Start Logic
         self.start_background_threads()
@@ -227,7 +240,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
+            values=["START HERE", "DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -240,7 +253,9 @@ class DashboardV2:
             width=500
         )
         self.nav_bar.pack(side="left", padx=50, pady=14)
-        self.nav_bar.set("DASHBOARD") # Set default
+        self.nav_bar.pack(side="left", padx=50, pady=14)
+        # Default set handled in __init__
+
 
         # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
@@ -265,7 +280,10 @@ class DashboardV2:
         self.view_strategies.pack_forget()
         self.view_settings.pack_forget()
         self.view_knowledge.pack_forget()
-        self.view_logs.pack_forget()  # FIX: Hide Logs view
+        self.view_knowledge.pack_forget()
+        self.view_logs.pack_forget()
+        self.view_start.pack_forget()  # Hide Start Here
+
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -279,6 +297,8 @@ class DashboardV2:
         elif view_name == "LOGS":
             self.view_logs.pack(fill="both", expand=True)
             self.refresh_technical_logs()
+        elif view_name == "START HERE":
+            self.view_start.pack(fill="both", expand=True)
 
     def build_logs_view(self):
         """Technical Logs View"""
@@ -312,6 +332,109 @@ class DashboardV2:
                 self.log_viewer.insert("1.0", "No log file found at logs/bot.log")
         except Exception as e:
             self.log_viewer.insert("end", f"\nError reading logs: {e}")
+
+    def build_start_here_view(self):
+        """Onboarding Guide Tab"""
+        # Header
+        header = ctk.CTkFrame(self.view_start, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(header, text="🚀 START HERE: Quick Setup Guide", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(pady=10)
+        ctk.CTkLabel(header, text="Follow these 4 simple steps to get your bot running!", font=("Roboto", 14), text_color="#AAA").pack()
+        
+        # Steps Container
+        steps_frame = ctk.CTkScrollableFrame(self.view_start, fg_color="transparent")
+        steps_frame.pack(fill="both", expand=True, padx=40)
+        
+        # --- Step 1: Broker ---
+        s1 = TitanCard(steps_frame, title="STEP 1: CONNECT BROKER", height=150, border_color="#3498DB")
+        s1.pack(fill="x", pady=10)
+        
+        row1 = ctk.CTkFrame(s1, fg_color="transparent")
+        row1.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row1, text="1️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(
+            row1, 
+            text="Configure API Credentials", 
+            font=("Roboto", 16, "bold")
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            row1,
+            text="Go to Settings > Broker tab. Enter your API Key, Secret, and User ID.\n"
+                 "Enable 'Auto-Login' by adding your TOTP secret (recommended).",
+            font=("Arial", 12), text_color="#CCC", justify="left"
+        ).pack(anchor="w", pady=5)
+        
+        ctk.CTkButton(row1, text="Go to Broker Settings", width=150, fg_color="#3498DB", command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
+
+        # --- Step 2: Capital ---
+        s2 = TitanCard(steps_frame, title="STEP 2: ALLOCATE FUNDS", height=150, border_color="#2ECC71")
+        s2.pack(fill="x", pady=10)
+        
+        row2 = ctk.CTkFrame(s2, fg_color="transparent")
+        row2.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row2, text="2️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(
+            row2, 
+            text="Set Capital Limits (Safety Box)", 
+            font=("Roboto", 16, "bold")
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            row2,
+            text="Go to Settings > Capital tab.\n"
+                 "Set 'Allocated Capital' (e.g., ₹50,000). This is the maximum the bot can touch.\n"
+                 "Your main broker balance remains safe.",
+            font=("Arial", 12), text_color="#CCC", justify="left"
+        ).pack(anchor="w", pady=5)
+        
+        ctk.CTkButton(row2, text="Go to Capital Settings", width=150, fg_color="#2ECC71", command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
+
+        # --- Step 3: Select Stocks ---
+        s3 = TitanCard(steps_frame, title="STEP 3: CHOOSE STOCKS", height=150, border_color="#9B59B6")
+        s3.pack(fill="x", pady=10)
+        
+        row3 = ctk.CTkFrame(s3, fg_color="transparent")
+        row3.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row3, text="3️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(
+            row3, 
+            text="Select Strategy & Stocks", 
+            font=("Roboto", 16, "bold")
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            row3,
+            text="Review 'Strategies' tab to see active logic (e.g., RSI).\n"
+                 "Go to Settings > Stocks to add/remove symbols you want to trade.",
+            font=("Arial", 12), text_color="#CCC", justify="left"
+        ).pack(anchor="w", pady=5)
+        
+        ctk.CTkButton(row3, text="Go to Strategies", width=150, fg_color="#9B59B6", command=lambda: self.nav_bar.set("STRATEGIES") or self.show_view("STRATEGIES")).pack(side="right")
+
+        # --- Step 4: Launch ---
+        s4 = TitanCard(steps_frame, title="STEP 4: LAUNCH", height=150, border_color=COLOR_ACCENT)
+        s4.pack(fill="x", pady=10)
+        
+        row4 = ctk.CTkFrame(s4, fg_color="transparent")
+        row4.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row4, text="🚀", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(
+            row4, 
+            text="Start the Engine", 
+            font=("Roboto", 16, "bold")
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            row4,
+            text="Go to DASHBOARD tab.\n"
+                 "Click 'START ENGINE' (Green Button).\n"
+                 "Monitor the 'Market Regime' and 'Logs' for activity.",
+            font=("Arial", 12), text_color="#CCC", justify="left"
+        ).pack(anchor="w", pady=5)
+        
+        ctk.CTkButton(row4, text="Go to Dashboard", width=150, fg_color=COLOR_ACCENT, text_color="black", font=("Arial", 12, "bold"), command=lambda: self.nav_bar.set("DASHBOARD") or self.show_view("DASHBOARD")).pack(side="right")
 
     def build_dashboard_view(self):
         """Replicates the Titan Mockup Grid"""
@@ -475,28 +598,44 @@ class DashboardV2:
                     for t in trades:
                         # symbol, type, quantity, price, timestamp
                         txt += f"[{t[4]}] {t[1]} {t[0]} x{t[2]} @ ₹{t[3]}\n"
-                    self.history_list.insert("0.0", txt)
-                else:
-                    self.history_list.insert("0.0", "No recent trades recorded.")
-            else:
-                 self.history_list.insert("0.0", "Database not connected.")
-        except Exception as e:
-            self.history_list.insert("0.0", f"Error loading trades: {e}")
+                    self.history_list.insert("1.0", txt)
+        except:
+             self.history_list.insert("1.0", "No trades yet.")
 
-        # --- ROW 3: ACTIONS & PERFORMANCE ---
+        # --- ROW 3: CONTROLS (Missing) ---
         row3 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
-        row3.pack(fill="x", pady=5)
+        row3.pack(fill="x", pady=15)
         
-        # Controls
-        self.btn_start = ctk.CTkButton(row3, text="▶ START ENGINE", command=self.toggle_bot, fg_color=COLOR_SUCCESS, hover_color="#00C853", height=45, font=("Roboto", 13, "bold"))
-        self.btn_start.pack(side="left", padx=(0, 10))
+        self.card_controls = TitanCard(row3, title="SYSTEM CONTROLS", height=100, border_color="#333")
+        self.card_controls.pack(fill="both", expand=True)
         
-        self.btn_panic = ctk.CTkButton(row3, text="🚨 PANIC STOP", command=self.emergency_exit, fg_color=COLOR_DANGER, hover_color="#B71C1C", height=45, width=120)
-        self.btn_panic.pack(side="left")
+        # Controls Layout
+        ctrl_frame = ctk.CTkFrame(self.card_controls, fg_color="transparent")
+        ctrl_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Log Area (Mini)
-        self.log_area = ctk.CTkTextbox(row3, height=50, fg_color="#080808", text_color="#AAA", font=("Consolas", 10), border_width=1, border_color="#222")
-        self.log_area.pack(side="right", fill="x", expand=True, padx=(20, 0))
+        # START / STOP ENGINE BUTTON
+        self.btn_start = ctk.CTkButton(
+            ctrl_frame,
+            text="▶ START ENGINE",
+            font=("Roboto", 16, "bold"),
+            fg_color=COLOR_SUCCESS,
+            hover_color="#00C853",
+            height=50,
+            command=self.toggle_bot
+        )
+        self.btn_start.pack(side="left", fill="x", expand=True, padx=(0, 20))
+        
+        # EMERGENCY STOP (Panic)
+        self.btn_panic = ctk.CTkButton(
+            ctrl_frame,
+            text="🚨 EMERGENCY STOP",
+            font=("Roboto", 14, "bold"),
+            fg_color="#D50000",
+            hover_color="#B71C1C",
+            height=50,
+            command=self.stop_bot
+        )
+        self.btn_panic.pack(side="right", width=200)
 
     def build_strategies_view(self):
         """Strategies View Content - Baskets & Strategies"""
@@ -504,8 +643,8 @@ class DashboardV2:
         scroll_frame = ctk.CTkScrollableFrame(self.view_strategies, fg_color="transparent")
         scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # --- SECTION 1: SECTOR BASKETS ---
-        ctk.CTkLabel(scroll_frame, text="SECTOR BASKETS (BUCKETS)", font=("Roboto", 16, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
+        # --- SECTION 1: SECTOR WATCHLIST ---
+        ctk.CTkLabel(scroll_frame, text="SECTOR WATCHLIST", font=("Roboto", 16, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
         
         basket_grid = ctk.CTkFrame(scroll_frame, fg_color="transparent")
         basket_grid.pack(fill="x", pady=(0, 20))

@@ -58,6 +58,10 @@ class SettingsGUI:
             self.root.title("⚙️ ARUN Bot - Settings")
             self.root.geometry("900x700")
             
+            # Validation Cache
+            self.validation_cache = {}
+            self.load_validation_cache()
+            
             # Header (only for standalone)
             header = ctk.CTkLabel(
                 self.root,
@@ -120,6 +124,23 @@ class SettingsGUI:
             text_color="gray"
         )
         disclaimer_label.pack(side="bottom", pady=10)
+
+    def load_validation_cache(self):
+        """Load validated stocks from cache"""
+        try:
+            if os.path.exists("validated_stocks.json"):
+                with open("validated_stocks.json", "r") as f:
+                    self.validation_cache = json.load(f)
+        except Exception as e:
+            print(f"Failed to load validation cache: {e}")
+
+    def save_validation_cache(self):
+        """Save validated stocks to cache"""
+        try:
+            with open("validated_stocks.json", "w") as f:
+                json.dump(self.validation_cache, f)
+        except Exception as e:
+            print(f"Failed to save validation cache: {e}")
     
     def build_broker_tab(self):
         """Broker credentials configuration"""
@@ -653,10 +674,17 @@ class SettingsGUI:
                         row['Sell RSI'],
                         row['Quantity'],
                         row['Profit Target %'],
-                        "" # Status
+                        self.get_cached_status(row['Symbol'], row['Exchange']) # Use cached status
                     ))
             except Exception as e:
                 print(f"Error loading CSV: {e}")
+
+    def get_cached_status(self, symbol, exchange):
+        """Get status string from cache if available"""
+        key = f"{symbol}_{exchange}"
+        if self.validation_cache.get(key, False):
+            return "✅ Valid (Cached)"
+        return ""
 
     def validate_totp_secret(self):
         """Validate the TOTP secret by generating a code"""
@@ -705,6 +733,7 @@ class SettingsGUI:
                 
             symbol = values[0]
             exchange = values[1]
+            key = f"{symbol}_{exchange}"
             
             # Temporarily set Status to "..."
             new_values = list(values)
@@ -733,17 +762,20 @@ class SettingsGUI:
             if not is_valid and "Found on" in message:
                 # Suggest alternate exchange
                 status_icon = f"⚠️ {message}"
-            elif is_valid:
+            if is_valid:
                 status_icon = "✅ Valid"
                 valid_count += 1
+                self.validation_cache[key] = True # Mark as valid in cache
             else:
                 status_icon = f"❌ {message[:30]}"
+                if key in self.validation_cache: del self.validation_cache[key] # Remove invalid from cache
             
             # Add tooltip with full message
             new_values[9] = status_icon
             self.stock_table.item(item, values=new_values)
             self.root.update_idletasks()
-            
+        
+        self.save_validation_cache() # Save cache to disk
         self.validate_btn.configure(state="normal", text="🔍 Validate")
         
         if valid_count == total:

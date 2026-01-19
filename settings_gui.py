@@ -719,22 +719,37 @@ class SettingsGUI:
             # Simulate a small delay for UX so user sees "Validating..."
             time.sleep(0.1) 
             
-            # Validate
-            # We assume validate_symbol is available or imported. If not, logic:
-            is_valid = False
-            if symbol and exchange:
-                is_valid = True # Placeholder for actual validation logic (yfinance check)
-                # Ideally: is_valid = validate_symbol(symbol, exchange)
+            # Validate using actual validator
+            result = validate_symbol(symbol, exchange)
             
-            status_icon = "✅ Valid" if is_valid else "❌ Error"
-            if is_valid: valid_count += 1
+            # Handle tuple return (is_valid, message)
+            if isinstance(result, tuple):
+                is_valid, message = result
+            else:
+                is_valid = result
+                message = "Valid" if is_valid else "Invalid symbol"
             
+            # Check for exchange suggestion
+            if not is_valid and "Found on" in message:
+                # Suggest alternate exchange
+                status_icon = f"⚠️ {message}"
+            elif is_valid:
+                status_icon = "✅ Valid"
+                valid_count += 1
+            else:
+                status_icon = f"❌ {message[:30]}"
+            
+            # Add tooltip with full message
             new_values[9] = status_icon
             self.stock_table.item(item, values=new_values)
             self.root.update_idletasks()
             
         self.validate_btn.configure(state="normal", text="🔍 Validate")
-        messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
+        
+        if valid_count == total:
+            messagebox.showinfo("Validation Complete", f"✅ All {total} symbols validated successfully!")
+        else:
+            messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed/Warnings: {total - valid_count}")
 
     def test_broker_connection(self):
         """Test API credentials and fetch balance with enhanced debugging"""
@@ -1151,29 +1166,33 @@ class SettingsGUI:
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
 
+        # Scrollable frame for all content
+        scroll_frame = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
         # Fields
-        ctk.CTkLabel(dialog, text="Symbol:").pack(pady=(20, 0))
-        sym_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Symbol:").pack(pady=(10, 0))
+        sym_entry = ctk.CTkEntry(scroll_frame, width=200)
         sym_entry.pack(pady=5)
         if edit_values: sym_entry.insert(0, edit_values[0])
         
-        ctk.CTkLabel(dialog, text="Exchange:").pack(pady=(10, 0))
+        ctk.CTkLabel(scroll_frame, text="Exchange:").pack(pady=(10, 0))
         exch_var = ctk.StringVar(value=edit_values[1] if edit_values else "NSE")
-        ctk.CTkOptionMenu(dialog, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
+        ctk.CTkOptionMenu(scroll_frame, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
         
         # Strategy Mode
-        ctk.CTkLabel(dialog, text="Strategy Mode:").pack(pady=(10, 0))
+        ctk.CTkLabel(scroll_frame, text="Strategy Mode:").pack(pady=(10, 0))
         strat_var = ctk.StringVar(value=edit_values[3] if edit_values else "TRADE")
-        ctk.CTkOptionMenu(dialog, values=["TRADE", "INVEST", "SIP"], variable=strat_var).pack(pady=5)
+        ctk.CTkOptionMenu(scroll_frame, values=["TRADE", "INVEST", "SIP"], variable=strat_var).pack(pady=5)
 
-        ctk.CTkLabel(dialog, text="Timeframe:").pack(pady=(10, 0))
+        ctk.CTkLabel(scroll_frame, text="Timeframe:").pack(pady=(10, 0))
         # Adjust index for edit_values because we added a column
         tf_index = 4 if edit_values else 3
         tf_var = ctk.StringVar(value=edit_values[tf_index] if edit_values else "15T")
-        ctk.CTkOptionMenu(dialog, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
+        ctk.CTkOptionMenu(scroll_frame, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
         
         # RSI Inputs in a grid
-        rsi_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        rsi_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
         rsi_frame.pack(pady=10)
         
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
@@ -1188,8 +1207,8 @@ class SettingsGUI:
         sell_rsi_entry.insert(0, edit_values[sell_rsi_index] if edit_values else "65")
         
         # Sell Strategy Presets (New MVP1 Feature)
-        ctk.CTkLabel(dialog, text="Quick Presets (Auto-fills Sell Rules):", font=("Arial", 11, "bold"), text_color="#3498DB").pack(pady=(10, 0))
-        preset_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        ctk.CTkLabel(scroll_frame, text="Quick Presets (Auto-fills Sell Rules):", font=("Arial", 11, "bold"), text_color="#3498DB").pack(pady=(10, 0))
+        preset_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
         preset_frame.pack(pady=5)
         
         def set_preset_rsi():
@@ -1215,20 +1234,20 @@ class SettingsGUI:
         ctk.CTkButton(preset_frame, text="Hybrid", width=80, height=24, font=("Arial", 10), command=set_preset_hybrid).grid(row=0, column=2, padx=2)
         
         # Qty and Target
-        ctk.CTkLabel(dialog, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
-        qty_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
+        qty_entry = ctk.CTkEntry(scroll_frame, width=200)
         qty_entry.pack(pady=5)
         qty_index = 7 if edit_values else 6
         qty_entry.insert(0, edit_values[qty_index] if edit_values else "0")
         
-        ctk.CTkLabel(dialog, text="Profit Target %:").pack(pady=(10, 0))
-        target_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Profit Target %:").pack(pady=(10, 0))
+        target_entry = ctk.CTkEntry(scroll_frame, width=200)
         target_entry.pack(pady=5)
         target_index = 8 if edit_values else 7
         target_entry.insert(0, edit_values[target_index] if edit_values else "10.0")
 
         enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
-        ctk.CTkCheckBox(dialog, text="Enabled", variable=enabled_var).pack(pady=15)
+        ctk.CTkCheckBox(scroll_frame, text="Enabled", variable=enabled_var).pack(pady=15)
 
         def save_stock():
             symbol = sym_entry.get().upper().strip()
@@ -1268,7 +1287,15 @@ class SettingsGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid data: {e}")
 
-        ctk.CTkButton(dialog, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
+        # Buttons Frame
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=20)
+        
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", border_width=1, border_color="#555",
+                      command=dialog.destroy).pack(side="left", expand=True, padx=10)
+        
+        ctk.CTkButton(btn_frame, text="💾 Save Stock", fg_color="green", 
+                      command=save_stock).pack(side="left", expand=True, padx=10)
 
 if __name__ == "__main__":
     app = SettingsGUI()

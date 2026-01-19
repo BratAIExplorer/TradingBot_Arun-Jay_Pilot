@@ -849,31 +849,28 @@ class DashboardV2:
             
             color = regime_colors.get(regime_name, "#AAA")
             
-            # Update regime name
+            color = regime_colors.get(regime_name, "#888888")
+            
+            # Update labels
             self.lbl_regime_name.configure(text=regime_name, text_color=color)
             self.lbl_regime_confidence.configure(text=f"Confidence: {confidence}%")
             
             # Update trading status
-            if should_trade:
-                if multiplier < 1.0:
-                    status_text = f"⚠️ REDUCED ({int(multiplier*100)}%)"
-                    status_color = COLOR_WARN
-                else:
-                    status_text = "✅ TRADING"
-                    status_color = COLOR_SUCCESS
+            if trading_allowed:
+                self.lbl_trading_status.configure(text="✅ TRADING ALLOWED", text_color="#00E676")
             else:
-                status_text = "⛔ HALTED"
-                status_color = COLOR_DANGER
+                self.lbl_trading_status.configure(text="🛑 TRADING HALTED", text_color="#FF5252")
             
-            self.lbl_trading_status.configure(text=status_text, text_color=status_color)
+            # Update reason
             self.lbl_regime_reason.configure(text=reason)
             
             # Update timestamp
-            now = datetime.now().strftime("%H:%M")
+            from datetime import datetime
+            now = datetime.now().strftime("%H:%M:%S")
             self.lbl_regime_update.configure(text=f"Last update: {now}")
             
         except Exception as e:
-            print(f"Regime update error: {e}")
+            print(f"Error updating regime: {e}")
             self.lbl_regime_name.configure(text="ERROR", text_color="#888")
             self.lbl_trading_status.configure(text="⚠️ UNAVAILABLE", text_color="#888")
 

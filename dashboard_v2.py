@@ -101,10 +101,22 @@ class DashboardV2:
         # Start Logic
         self.start_background_threads()
         self.update_ui_loop()
-    
+
+        # Initial balance load (delayed to allow UI to render)
+        self.root.after(2000, self.refresh_balance)
+
+        # Auto-refresh balance every 15 minutes
+        self.balance_refresh_timer()
+
     def start_background_threads(self):
         """Start background worker threads for data fetching"""
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
+
+    def balance_refresh_timer(self):
+        """Auto-refresh balance every 15 minutes"""
+        self.refresh_balance()
+        # Schedule next refresh (15 minutes = 900000 ms)
+        self.root.after(900000, self.balance_refresh_timer)
 
     # ... (Rest of class methods remain same, will rely on backup or merge context) ...
 
@@ -184,11 +196,100 @@ class DashboardV2:
             self.view_knowledge.pack(fill="both", expand=True)
 
     def build_dashboard_view(self):
-        """Replicates the Titan Mockup Grid"""
+        """Replicates the Titan Mockup Grid with Enhanced Balance & Capital Tracking"""
         # Grid Layout
         self.view_dashboard.grid_columnconfigure(0, weight=1) # Left Col
         self.view_dashboard.grid_columnconfigure(1, weight=1) # Right Col
-        
+
+        # --- ROW 0: ACCOUNT BALANCE & BOT WALLET ---
+        row0 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
+        row0.pack(fill="x", pady=(0, 5))
+
+        # 1. Account Balance Card
+        self.card_balance = TitanCard(row0, title="ACCOUNT BALANCE", width=400, height=180, border_color=COLOR_ACCENT)
+        self.card_balance.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        balance_content = ctk.CTkFrame(self.card_balance, fg_color="transparent")
+        balance_content.pack(fill="both", expand=True, padx=15, pady=10)
+
+        # Balance Display
+        self.lbl_total_balance = ctk.CTkLabel(balance_content, text="₹0.00", font=("Roboto", 36, "bold"), text_color="white")
+        self.lbl_total_balance.pack(anchor="w", pady=(5, 0))
+
+        # Breakdown
+        breakdown_frame = ctk.CTkFrame(balance_content, fg_color="transparent")
+        breakdown_frame.pack(fill="x", pady=(10, 0))
+
+        ctk.CTkLabel(breakdown_frame, text="Available Cash:", font=("Roboto", 11), text_color="#AAA").grid(row=0, column=0, sticky="w", pady=2)
+        self.lbl_available_cash = ctk.CTkLabel(breakdown_frame, text="₹0.00", font=("Roboto", 11, "bold"), text_color=COLOR_SUCCESS)
+        self.lbl_available_cash.grid(row=0, column=1, sticky="e", padx=(10, 0), pady=2)
+
+        ctk.CTkLabel(breakdown_frame, text="Allocated to Bots:", font=("Roboto", 11), text_color="#AAA").grid(row=1, column=0, sticky="w", pady=2)
+        self.lbl_allocated = ctk.CTkLabel(breakdown_frame, text="₹0.00", font=("Roboto", 11, "bold"), text_color=COLOR_WARN)
+        self.lbl_allocated.grid(row=1, column=1, sticky="e", padx=(10, 0), pady=2)
+
+        ctk.CTkLabel(breakdown_frame, text="In Open Positions:", font=("Roboto", 11), text_color="#AAA").grid(row=2, column=0, sticky="w", pady=2)
+        self.lbl_in_positions = ctk.CTkLabel(breakdown_frame, text="₹0.00", font=("Roboto", 11, "bold"), text_color=COLOR_DANGER)
+        self.lbl_in_positions.grid(row=2, column=1, sticky="e", padx=(10, 0), pady=2)
+
+        breakdown_frame.grid_columnconfigure(1, weight=1)
+
+        # Refresh Button & Timestamp
+        refresh_frame = ctk.CTkFrame(self.card_balance, fg_color="transparent")
+        refresh_frame.place(relx=0.95, rely=0.05, anchor="ne")
+
+        self.btn_refresh_balance = ctk.CTkButton(
+            refresh_frame, text="🔄", width=30, height=25,
+            fg_color="#222", hover_color="#333",
+            command=self.refresh_balance,
+            font=("Arial", 14)
+        )
+        self.btn_refresh_balance.pack()
+
+        self.lbl_balance_timestamp = ctk.CTkLabel(self.card_balance, text="Updated: --:--", font=("Roboto", 9), text_color="#666")
+        self.lbl_balance_timestamp.place(relx=0.02, rely=0.95, anchor="sw")
+
+        # 2. Bot Wallet Breakdown Card
+        self.card_wallet = TitanCard(row0, title="BOT CAPITAL ALLOCATION", width=400, height=180, border_color=COLOR_WARN)
+        self.card_wallet.pack(side="left", fill="both", expand=True, padx=(10, 0))
+
+        wallet_content = ctk.CTkFrame(self.card_wallet, fg_color="transparent")
+        wallet_content.pack(fill="both", expand=True, padx=15, pady=10)
+
+        # Total Allocated
+        alloc_row = ctk.CTkFrame(wallet_content, fg_color="transparent")
+        alloc_row.pack(fill="x", pady=(5, 10))
+
+        ctk.CTkLabel(alloc_row, text="Total Allocated:", font=("Roboto", 11), text_color="#AAA").pack(side="left")
+        self.lbl_total_allocated = ctk.CTkLabel(alloc_row, text="₹50,000", font=("Roboto", 18, "bold"), text_color="white")
+        self.lbl_total_allocated.pack(side="right")
+
+        # Deployment Progress
+        deploy_frame = ctk.CTkFrame(wallet_content, fg_color="transparent")
+        deploy_frame.pack(fill="x", pady=(0, 5))
+
+        ctk.CTkLabel(deploy_frame, text="Currently Deployed:", font=("Roboto", 10), text_color="#AAA").pack(anchor="w")
+        self.wallet_progress = ctk.CTkProgressBar(deploy_frame, height=12, progress_color=COLOR_SUCCESS)
+        self.wallet_progress.set(0.6)  # Default 60%
+        self.wallet_progress.pack(fill="x", pady=5)
+
+        progress_labels = ctk.CTkFrame(deploy_frame, fg_color="transparent")
+        progress_labels.pack(fill="x")
+
+        self.lbl_deployed = ctk.CTkLabel(progress_labels, text="₹30,000 (60%)", font=("Roboto", 10, "bold"), text_color=COLOR_SUCCESS)
+        self.lbl_deployed.pack(side="left")
+
+        self.lbl_available_wallet = ctk.CTkLabel(progress_labels, text="₹20,000 (40%) Available", font=("Roboto", 10), text_color="#888")
+        self.lbl_available_wallet.pack(side="right")
+
+        # Per-Bot Allocation (Placeholder for future)
+        bots_frame = ctk.CTkFrame(wallet_content, fg_color="#0A0A0A", corner_radius=8)
+        bots_frame.pack(fill="x", pady=(10, 0))
+
+        ctk.CTkLabel(bots_frame, text="Per-Bot Breakdown:", font=("Roboto", 9, "bold"), text_color="#666").pack(anchor="w", padx=8, pady=(5, 2))
+        self.lbl_bot_breakdown = ctk.CTkLabel(bots_frame, text="• All Bots: ₹50,000 (Shared Pool)", font=("Roboto", 9), text_color="#888")
+        self.lbl_bot_breakdown.pack(anchor="w", padx=8, pady=(0, 5))
+
         # --- ROW 1: PROFIT & SENTIMENT ---
         row1 = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
         row1.pack(fill="x", pady=5)
@@ -414,28 +515,125 @@ class DashboardV2:
             ctk.CTkLabel(card, text=tip['content'], font=("Roboto", 11), text_color="#888", wraplength=800, justify="left").pack(anchor="w", padx=10, pady=(0,10))
 
     def build_positions_table(self, parent):
+        # Filter/View Toggle
+        filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
+        filter_frame.pack(fill="x", padx=10, pady=(5, 0))
+
+        ctk.CTkLabel(filter_frame, text="Show:", font=("Roboto", 10), text_color="#AAA").pack(side="left", padx=(5, 10))
+
+        self.holdings_filter_var = ctk.StringVar(value="ALL")
+        filter_segment = ctk.CTkSegmentedButton(
+            filter_frame,
+            values=["ALL", "BOT", "MANUAL"],
+            variable=self.holdings_filter_var,
+            command=self.filter_positions_display,
+            font=("Roboto", 10),
+            height=25,
+            fg_color="#222",
+            selected_color=COLOR_ACCENT,
+            unselected_color="#111"
+        )
+        filter_segment.pack(side="left")
+
+        # Summary Stats
+        self.lbl_position_stats = ctk.CTkLabel(
+            filter_frame,
+            text="Positions: 0 • Bot: 0 • Manual: 0",
+            font=("Roboto", 9),
+            text_color="#666"
+        )
+        self.lbl_position_stats.pack(side="right", padx=10)
+
         # Table Frame
         table_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=0)
-        table_frame.pack(fill="both", expand=True, padx=2, pady=10)
-        
-        cols = ("Symbol", "Source", "Status", "Entry", "LTP", "PnL", "Action")
-        
+        table_frame.pack(fill="both", expand=True, padx=2, pady=5)
+
+        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "P&L", "P&L %")
+
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview", background="#111", foreground="white", fieldbackground="#111", rowheight=40, borderwidth=0, font=("Roboto", 11))
-        style.configure("Treeview.Heading", background="#1A1A1A", foreground="#888", font=("Roboto", 10, "bold"), borderwidth=0)
-        
+        style.configure("Treeview", background="#111", foreground="white", fieldbackground="#111", rowheight=35, borderwidth=0, font=("Roboto", 10))
+        style.configure("Treeview.Heading", background="#1A1A1A", foreground="#888", font=("Roboto", 9, "bold"), borderwidth=0)
+
         self.pos_table = ttk.Treeview(table_frame, columns=cols, show="headings", height=8)
         for col in cols:
             self.pos_table.heading(col, text=col.upper())
             self.pos_table.column(col, anchor="center")
-            
-        self.pos_table.column("Source", width=80) 
-        self.pos_table.column("Symbol", width=120)
-            
+
+        self.pos_table.column("Source", width=70)
+        self.pos_table.column("Symbol", width=100)
+        self.pos_table.column("Qty", width=60)
+        self.pos_table.column("Entry", width=80)
+        self.pos_table.column("LTP", width=80)
+        self.pos_table.column("P&L", width=90)
+        self.pos_table.column("P&L %", width=70)
+
         self.pos_table.pack(fill="both", expand=True)
         self.pos_table.tag_configure("green", foreground=COLOR_SUCCESS)
         self.pos_table.tag_configure("red", foreground=COLOR_DANGER)
+        self.pos_table.tag_configure("bot", background="#0A2A0A")  # Dark green tint for BOT
+        self.pos_table.tag_configure("manual", background="#2A2A0A")  # Dark yellow tint for MANUAL
+
+        # Store all positions for filtering
+        self.all_positions_data = {}
+
+    def filter_positions_display(self, filter_value=None):
+        """Filter positions table by source (ALL/BOT/MANUAL)"""
+        try:
+            filter_val = self.holdings_filter_var.get()
+
+            # Clear table
+            for item in self.pos_table.get_children():
+                self.pos_table.delete(item)
+
+            # Re-populate based on filter
+            total_pnl = 0
+            bot_count = 0
+            manual_count = 0
+
+            for sym, pos in self.all_positions_data.items():
+                source = pos.get("source", "BOT")
+
+                # Apply filter
+                if filter_val != "ALL" and source != filter_val:
+                    continue
+
+                # Count
+                if source == "BOT":
+                    bot_count += 1
+                else:
+                    manual_count += 1
+
+                s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
+                pnl = pos.get("pnl", 0)
+                qty = pos.get("qty", 0)
+                avg = pos.get("price", 0)
+                ltp = pos.get("ltp", 0)
+
+                # Calculate P&L percentage
+                pnl_pct = ((ltp - avg) / avg * 100) if avg > 0 else 0
+
+                total_pnl += pnl
+                tag = "green" if pnl >= 0 else "red"
+                source_tag = "bot" if source == "BOT" else "manual"
+
+                # Icon prefix for source
+                source_icon = "🤖" if source == "BOT" else "👤"
+
+                self.pos_table.insert(
+                    "", END,
+                    values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
+                    tags=(tag, source_tag)
+                )
+
+            # Update stats
+            total_positions = bot_count + manual_count
+            self.lbl_position_stats.configure(
+                text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
+            )
+
+        except Exception as e:
+            self.write_log(f"❌ Filter error: {e}\n")
 
     # --- DRAWING UTILS ---
     def draw_mock_graph(self, canvas, color):
@@ -536,26 +734,66 @@ class DashboardV2:
         finally: self.root.after(1000, self.update_ui_loop)
 
     def update_positions(self, data):
-        for item in self.pos_table.get_children(): self.pos_table.delete(item)
+        # Store all positions data for filtering
+        self.all_positions_data = data
+
+        # Clear table
+        for item in self.pos_table.get_children():
+            self.pos_table.delete(item)
+
         total_pnl = 0
         used_capital = 0
-        
+        bot_count = 0
+        manual_count = 0
+
+        filter_val = self.holdings_filter_var.get()
+
         for sym, pos in data.items():
+            source = pos.get("source", "BOT")
+
+            # Apply filter
+            if filter_val != "ALL" and source != filter_val:
+                continue
+
+            # Count
+            if source == "BOT":
+                bot_count += 1
+            else:
+                manual_count += 1
+
             s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
             pnl = pos.get("pnl", 0)
             qty = pos.get("qty", 0)
             avg = pos.get("price", 0)
-            source = pos.get("source", "BOT") # Default to BOT for now
-            
+            ltp = pos.get("ltp", 0)
+
+            # Calculate P&L percentage
+            pnl_pct = ((ltp - avg) / avg * 100) if avg > 0 else 0
+
             # Calculate metrics
             invested = qty * avg
-            if source == "BOT": used_capital += invested
-            
+            if source == "BOT":
+                used_capital += invested
+
             total_pnl += pnl
             tag = "green" if pnl >= 0 else "red"
-            
-            self.pos_table.insert("", END, values=(s, source, "OPEN", qty, avg, pos.get("ltp"), f"{pnl:.2f}", "MANAGE"), tags=(tag,))
-            
+            source_tag = "bot" if source == "BOT" else "manual"
+
+            # Icon prefix for source
+            source_icon = "🤖" if source == "BOT" else "👤"
+
+            self.pos_table.insert(
+                "", END,
+                values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
+                tags=(tag, source_tag)
+            )
+
+        # Update position stats
+        total_positions = bot_count + manual_count
+        self.lbl_position_stats.configure(
+            text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
+        )
+
         self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
         
         # Update Safety Box Bar
@@ -572,6 +810,101 @@ class DashboardV2:
         self.draw_meter(data['score'])
         self.lbl_sentiment_val.configure(text=str(int(data['score'])))
         self.lbl_sentiment_reason.configure(text=f"WHY? {data['details']}")
+
+    def refresh_balance(self):
+        """Fetch real-time balance from broker API"""
+        try:
+            from kickstart import fetch_funds, ALLOCATED_CAPITAL
+
+            # Show loading state
+            self.btn_refresh_balance.configure(text="⏳", state="disabled")
+
+            # Fetch balance in background thread to avoid UI freeze
+            def fetch_and_update():
+                try:
+                    available_cash = fetch_funds()  # Real-time API call
+
+                    # Get allocated capital from settings
+                    allocated = float(ALLOCATED_CAPITAL) if ALLOCATED_CAPITAL else 50000.0
+
+                    # Get currently deployed capital from positions
+                    positions = safe_get_live_positions_merged()
+                    deployed = 0.0
+                    for sym, pos in positions.items():
+                        source = pos.get("source", "BOT")
+                        if source == "BOT":
+                            qty = pos.get("qty", 0)
+                            avg_price = pos.get("price", 0)
+                            deployed += qty * avg_price
+
+                    # Calculate total balance
+                    total_balance = available_cash + deployed
+
+                    # Update UI on main thread
+                    self.root.after(0, lambda: self.update_balance_display(
+                        total_balance, available_cash, allocated, deployed
+                    ))
+
+                except Exception as e:
+                    self.root.after(0, lambda: self.write_log(f"❌ Balance fetch error: {e}\n"))
+                finally:
+                    self.root.after(0, lambda: self.btn_refresh_balance.configure(text="🔄", state="normal"))
+
+            # Run in background
+            threading.Thread(target=fetch_and_update, daemon=True).start()
+
+        except Exception as e:
+            self.write_log(f"❌ Balance refresh failed: {e}\n")
+            self.btn_refresh_balance.configure(text="🔄", state="normal")
+
+    def update_balance_display(self, total, available, allocated, in_positions):
+        """Update Account Balance Card with new data"""
+        try:
+            # Update labels
+            self.lbl_total_balance.configure(text=f"₹{total:,.2f}")
+            self.lbl_available_cash.configure(text=f"₹{available:,.2f}")
+            self.lbl_allocated.configure(text=f"₹{allocated:,.2f}")
+            self.lbl_in_positions.configure(text=f"₹{in_positions:,.2f}")
+
+            # Update timestamp
+            now = datetime.now().strftime("%H:%M:%S")
+            self.lbl_balance_timestamp.configure(text=f"Updated: {now}")
+
+            # Also update bot wallet
+            self.update_wallet_display(allocated, in_positions)
+
+        except Exception as e:
+            self.write_log(f"❌ Display update error: {e}\n")
+
+    def update_wallet_display(self, allocated, deployed):
+        """Update Bot Wallet Breakdown Card"""
+        try:
+            # Update total allocated
+            self.lbl_total_allocated.configure(text=f"₹{allocated:,.0f}")
+
+            # Calculate percentages
+            if allocated > 0:
+                pct_deployed = (deployed / allocated) * 100
+                pct_available = 100 - pct_deployed
+                available = allocated - deployed
+
+                # Update progress bar
+                self.wallet_progress.set(min(1.0, deployed / allocated))
+
+                # Update labels
+                self.lbl_deployed.configure(text=f"₹{deployed:,.0f} ({pct_deployed:.0f}%)")
+                self.lbl_available_wallet.configure(text=f"₹{available:,.0f} ({pct_available:.0f}%) Available")
+
+                # Change color based on usage
+                if pct_deployed > 90:
+                    self.wallet_progress.configure(progress_color=COLOR_DANGER)
+                elif pct_deployed > 70:
+                    self.wallet_progress.configure(progress_color=COLOR_WARN)
+                else:
+                    self.wallet_progress.configure(progress_color=COLOR_SUCCESS)
+
+        except Exception as e:
+            self.write_log(f"❌ Wallet update error: {e}\n")
 
     def write_log(self, text):
         """Redirect print/logs to UI Console and Alert Box"""

@@ -89,14 +89,21 @@ class DashboardV2:
         self.view_strategies = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_settings = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_knowledge = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_logs = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_start = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
         self.build_dashboard_view()
         self.build_strategies_view()
         self.build_settings_view()
         self.build_knowledge_view()
+        self.build_logs_view()
+        self.build_start_here_view()
         
-        # Default View
-        self.show_view("DASHBOARD")
+        # Default View (show START HERE for new users, else Dashboard)
+        if self.settings_mgr.get("capital.allocated_limit", 0) <= 0:
+            self.show_view("START HERE")
+        else:
+            self.show_view("DASHBOARD")
 
         # Start Logic
         self.start_background_threads()
@@ -146,7 +153,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS"],
+            values=["START HERE", "DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -156,7 +163,7 @@ class DashboardV2:
             text_color="white",
             fg_color="#000",
             height=32,
-            width=400
+            width=550
         )
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
@@ -184,6 +191,8 @@ class DashboardV2:
         self.view_strategies.pack_forget()
         self.view_settings.pack_forget()
         self.view_knowledge.pack_forget()
+        self.view_logs.pack_forget()
+        self.view_start.pack_forget()
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -194,6 +203,11 @@ class DashboardV2:
             self.view_settings.pack(fill="both", expand=True)
         elif view_name == "KNOWLEDGE":
             self.view_knowledge.pack(fill="both", expand=True)
+        elif view_name == "LOGS":
+            self.view_logs.pack(fill="both", expand=True)
+            self.refresh_technical_logs()
+        elif view_name == "START HERE":
+            self.view_start.pack(fill="both", expand=True)
 
     def build_dashboard_view(self):
         """Replicates the Titan Mockup Grid with Enhanced Balance & Capital Tracking"""
@@ -513,6 +527,110 @@ class DashboardV2:
             
             ctk.CTkLabel(card, text=tip['title'], font=("Roboto", 12, "bold"), text_color="white").pack(anchor="w", padx=10, pady=(10,0))
             ctk.CTkLabel(card, text=tip['content'], font=("Roboto", 11), text_color="#888", wraplength=800, justify="left").pack(anchor="w", padx=10, pady=(0,10))
+
+    def build_logs_view(self):
+        """Technical Logs View"""
+        import os
+        
+        # Header
+        header = ctk.CTkFrame(self.view_logs, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(header, text="📜 TECHNICAL LOGS", font=("Roboto", 20, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        
+        ctk.CTkButton(header, text="🔄 Refresh", width=100, command=self.refresh_technical_logs).pack(side="right")
+        ctk.CTkButton(header, text="📂 Open Log File", width=120, command=lambda: os.startfile("logs\\bot.log") if os.name == 'nt' else None, fg_color="#333").pack(side="right", padx=10)
+
+        # Log Content
+        self.log_viewer = ctk.CTkTextbox(self.view_logs, font=("Consolas", 12), text_color="#DDD", fg_color="#111")
+        self.log_viewer.pack(fill="both", expand=True)
+        
+    def refresh_technical_logs(self):
+        """Read 200 lines from bot.log"""
+        import os
+        try:
+            log_path = os.path.join("logs", "bot.log")
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                    last_lines = lines[-200:]
+                    content = "".join(last_lines)
+                    self.log_viewer.delete("1.0", "end")
+                    self.log_viewer.insert("1.0", content)
+                    self.log_viewer.see("end")
+            else:
+                self.log_viewer.insert("1.0", "No log file found at logs/bot.log")
+        except Exception as e:
+            self.log_viewer.insert("end", f"\nError reading logs: {e}")
+
+    def build_start_here_view(self):
+        """Onboarding Guide Tab"""
+        # Header
+        header = ctk.CTkFrame(self.view_start, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(header, text="🚀 START HERE: Quick Setup Guide", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(pady=10)
+        ctk.CTkLabel(header, text="Follow these 4 simple steps to get your bot running!", font=("Roboto", 14), text_color="#AAA").pack()
+        
+        # Steps Container
+        steps_frame = ctk.CTkScrollableFrame(self.view_start, fg_color="transparent")
+        steps_frame.pack(fill="both", expand=True, padx=40)
+        
+        # --- Step 1: Broker ---
+        s1 = TitanCard(steps_frame, title="STEP 1: CONNECT BROKER", height=150, border_color="#3498DB")
+        s1.pack(fill="x", pady=10)
+        
+        row1 = ctk.CTkFrame(s1, fg_color="transparent")
+        row1.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row1, text="1️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row1, text="Configure API Credentials", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row1, text="Go to Settings > Broker tab. Enter your API Key, Secret, and User ID.\nEnable 'Auto-Login' by adding your TOTP secret (recommended).",
+                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+        ctk.CTkButton(row1, text="Go to Broker Settings", width=150, fg_color="#3498DB", 
+                      command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
+
+        # --- Step 2: Capital ---
+        s2 = TitanCard(steps_frame, title="STEP 2: ALLOCATE FUNDS", height=150, border_color="#2ECC71")
+        s2.pack(fill="x", pady=10)
+        
+        row2 = ctk.CTkFrame(s2, fg_color="transparent")
+        row2.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row2, text="2️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row2, text="Set Capital Limits (Safety Box)", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row2, text="Go to Settings > Capital tab.\nSet 'Allocated Capital' (e.g., ₹50,000). This is the maximum the bot can touch.\nYour main broker balance remains safe.",
+                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+        ctk.CTkButton(row2, text="Go to Capital Settings", width=150, fg_color="#2ECC71", 
+                      command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
+
+        # --- Step 3: Select Stocks ---
+        s3 = TitanCard(steps_frame, title="STEP 3: CHOOSE STOCKS", height=150, border_color="#9B59B6")
+        s3.pack(fill="x", pady=10)
+        
+        row3 = ctk.CTkFrame(s3, fg_color="transparent")
+        row3.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row3, text="3️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row3, text="Select Strategy & Stocks", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row3, text="Review 'Strategies' tab to see active logic (e.g., RSI).\nGo to Settings > Stocks to add/remove symbols you want to trade.",
+                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+        ctk.CTkButton(row3, text="Go to Strategies", width=150, fg_color="#9B59B6", 
+                      command=lambda: self.nav_bar.set("STRATEGIES") or self.show_view("STRATEGIES")).pack(side="right")
+
+        # --- Step 4: Launch ---
+        s4 = TitanCard(steps_frame, title="STEP 4: LAUNCH", height=150, border_color=COLOR_ACCENT)
+        s4.pack(fill="x", pady=10)
+        
+        row4 = ctk.CTkFrame(s4, fg_color="transparent")
+        row4.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        ctk.CTkLabel(row4, text="🚀", font=("Arial", 30)).pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row4, text="Start the Engine", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row4, text="Go to DASHBOARD tab.\nClick 'START ENGINE' (Green Button).\nMonitor the 'Market Regime' and 'Logs' for activity.",
+                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+        ctk.CTkButton(row4, text="Go to Dashboard", width=150, fg_color=COLOR_ACCENT, text_color="black", 
+                      font=("Arial", 12, "bold"), command=lambda: self.nav_bar.set("DASHBOARD") or self.show_view("DASHBOARD")).pack(side="right")
 
     def build_positions_table(self, parent):
         # Filter/View Toggle

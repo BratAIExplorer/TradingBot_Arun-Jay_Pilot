@@ -394,7 +394,7 @@ class SettingsGUI:
         info_title.pack(anchor="w", padx=10, pady=5)
         
         # Calculate example
-        total_cap = float(self.total_capital_entry.get() or 50000)
+        total_cap = float(self.allocated_capital_entry.get() or 50000)
         per_trade_pct = self.per_trade_var.get()
         per_trade_amount = total_cap * (per_trade_pct / 100)
         

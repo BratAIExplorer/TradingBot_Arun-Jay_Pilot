@@ -1396,8 +1396,13 @@ class SettingsGUI:
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(fill="x", pady=20)
         
+        def close_dialog():
+            """Properly close dialog without affecting parent"""
+            dialog.grab_release()
+            dialog.destroy()
+        
         ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", border_width=1, border_color="#555",
-                      command=dialog.destroy).pack(side="left", expand=True, padx=10)
+                      command=close_dialog).pack(side="left", expand=True, padx=10)
         
         ctk.CTkButton(btn_frame, text="💾 Save Stock", fg_color="green", 
                       command=save_stock).pack(side="left", expand=True, padx=10)

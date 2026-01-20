@@ -53,6 +53,41 @@ def _filter_session_intraday(df: pd.DataFrame) -> pd.DataFrame:
 def _is_daily_interval(interval: str) -> bool:
     return interval in {"1d", "5d"}
 
+def calculate_rsi_from_df(
+    df: pd.DataFrame,
+    period: int = 14,
+    live_price: Optional[float] = None
+):
+    """
+    Compute TradingView-exact RSI from an existing DataFrame (e.g. fetched from m.Stock).
+    - df must have a 'close' (case-insensitive) column.
+    - live_price can optionally overwrite the last bar.
+    Returns: (timestamp_str, last_rsi_float, df[['close','RSI']])
+    """
+    if df.empty:
+        raise ValueError("Provided DataFrame is empty.")
+
+    df = df.copy()
+    # Case-insensitive column search
+    cols = {c.lower(): c for c in df.columns}
+    if 'close' not in cols:
+        raise ValueError(f"DataFrame missing 'close' column. Found: {list(df.columns)}")
+    
+    close_col = cols['close']
+
+    if live_price is not None and np.isfinite(live_price):
+        df.iloc[-1, df.columns.get_loc(close_col)] = float(live_price)
+
+    rsi = tv_rsi_series(df[close_col], length=period)
+    df = df.assign(RSI=rsi)
+
+    last_idx = df["RSI"].last_valid_index()
+    if last_idx is None:
+        raise ValueError("Insufficient history to seed RSI.")
+
+    ts = last_idx.strftime("%Y-%m-%d %H:%M:%S") if hasattr(last_idx, 'strftime') else str(last_idx)
+    return ts, float(df.loc[last_idx, "RSI"]), df[[close_col, "RSI"]]
+
 def calculate_intraday_rsi_tv(
     ticker: str,
     period: int = 14,

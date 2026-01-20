@@ -17,7 +17,7 @@ Unlike standard trading scripts, Titan V2 features a **"Human-First" Bento Grid 
 
 ### 🧠 Intelligent Trading & Analysis
 *   **Market Sentiment Engine:** Real-time analysis of NIFTY 50 trends and India VIX volatility to determine the "Market Mood" (Fear, Greed, Neutral).
-*   **RSI Mean Reversion Strategy:** Automatically identifies overbought (>65) and oversold (<35) conditions to execute mean reversion trades.
+*   **RSI Mean Reversion Strategy:** Automatically identifies overbought (>65) and oversold (<35) conditions. Uses a **"Deep Seed" logic** (fetching 200 bars daily from mStock) for institutional-grade precision and math stability.
 *   **Smart SIP (Systematic Investment Plan):** (Optional) Dollar-cost averaging module for long-term wealth building, triggered by specific technical dips.
 *   **Paper Trading Mode:** A fully simulated environment to test strategies with zero financial risk before going live.
 
@@ -84,7 +84,7 @@ The bot is fully configurable via the **Settings Tab** or `settings.json`. Below
 2.  **Authentication**: Bot auto-logs in using API Key + TOTP.
 3.  **Data Stream**: Bot subscribes to real-time quotes for watchlist symbols.
 4.  **Signal Generation**:
-    *   *Input*: Price & Volume Data.
+    *   *Input*: Historical Price Data (200-bar warm-up from mStock) + Live Polling.
     *   *Process*: Calculate Indicators (RSI, VIX).
     *   *Decision*: If (RSI < Buy_Threshold) AND (Sentiment != Extreme Fear), then BUY.
 5.  **Execution**: Order sent to mStock API.

@@ -109,9 +109,10 @@ Based on `config_table.csv`:
 ### RSI Calculation
 - **Method**: TradingView-exact RMA (Relative Moving Average)
 - **Period**: 14 bars
-- **Data Source**: Yahoo Finance via `yfinance`
-- **Live Price Integration**: Last bar updated with current LTP from broker
-- **Session Filter**: Only 09:15-15:30 IST candles (matches TradingView NSE session)
+- **Data Source**: **m.Stock Historical API** (Seamless Integration)
+- **Stabilization**: Uses **200+ historical bars** for extreme mathematical precision.
+- **Live Price Integration**: Last bar overwritten with real-time LTP from broker.
+- **Session Filter**: Handled by m.Stock API (09:15-15:30 IST).
 
 ### Order Execution
 - **Order Type**: MARKET orders (price = 0)

@@ -135,6 +135,7 @@ CYCLE_QUOTES: Dict[str, Optional[dict]] = {}
 SYMBOL_LOCKS: Dict[str, bool] = {}  # Simplified to boolean for sync
 FETCH_STATE: Dict[str, InflightState] = {}
 MISSING_TOKEN_LOGGED: Dict[str, bool] = {}
+CANDLE_CACHE: Dict[Tuple[str, str, str], pd.DataFrame] = {} # (symbol, exchange, timeframe) -> DataFrame
 
 def reset_cycle_state():
     MISSING_TOKEN_LOGGED.clear()
@@ -1116,6 +1117,38 @@ def rsi_tradingview(close: pd.Series, length: int = 14) -> pd.Series:
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=None):
+    """
+    Seamless RSI Implementation (Option A):
+    1. Check if bars exist in cache.
+    2. If not, fetch history from m.Stock (approx 200-500 bars).
+    3. Calculate RSI using the deep seed for extreme precision.
+    """
+    cache_key = (symbol, exchange, timeframe)
+    df = CANDLE_CACHE.get(cache_key)
+    
+    if df is None:
+        # Log that we are warming up the engine for this stock
+        log_ok(f"🌡️ Seeding 200+ bar RSI for {symbol}:{exchange} ({timeframe})...")
+        df = fetch_historical_data(symbol, exchange, timeframe, instrument_token)
+        if df is not None and not df.empty:
+            CANDLE_CACHE[cache_key] = df
+        else:
+            return None, None
+            
+    if df is not None and not df.empty:
+        from getRSI import calculate_rsi_from_df
+        try:
+            # Use the deep-seed buffer to calculate the latest RSI
+            ts, rsi_val, _ = calculate_rsi_from_df(df, period=14, live_price=live_price)
+            return ts, rsi_val
+        except Exception as e:
+            if "Insufficient history" in str(e):
+                CANDLE_CACHE.pop(cache_key, None) # Clear to retry fetch
+            return None, None
+            
+    return None, None
+
 def compute_rsi_wilder(close: pd.Series, period: int = 14) -> pd.Series:
     close = pd.to_numeric(close, errors="coerce")
     delta = close.diff()
@@ -1359,9 +1392,11 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token):
                 None
             )
             if api_timeframe == "day":
-                from_encoded, to_encoded = build_last_nd_window_ist(days=10, frame_minutes=60)
+                # For Daily RSI-14 stabilization, we need 200+ trading days. 365 calendar days is safe.
+                from_encoded, to_encoded = build_last_nd_window_ist(days=365, frame_minutes=1440)
             else:
-                from_encoded, to_encoded = build_last_nd_window_ist(days=10, frame_minutes=frame_minutes or 60)
+                # For Intraday, 15 days is plenty to seed 200 bars even for 1H timeframe.
+                from_encoded, to_encoded = build_last_nd_window_ist(days=15, frame_minutes=frame_minutes or 60)
 
             url = (
                 f"https://api.mstock.trade/openapi/typea/instruments/historical/"
@@ -1530,16 +1565,15 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         }
         api_timeframe = timeframe_map.get(tf, tf)
 
-        try:
-            ts_str, tv_rsi_last_val, _ = calculate_intraday_rsi_tv(
-                ticker=symbol,
-                period=14,
-                interval=api_timeframe,
-                live_price=current_close,
-                exchange=exchange
-            )
-        except Exception as e:
-            log_ok(f"Error calculating RSI for {config_key}: {str(e)}")
+        ts_str, tv_rsi_last_val = get_stabilized_rsi(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=tf,
+            instrument_token=instrument_token,
+            live_price=current_close
+        )
+
+        if tv_rsi_last_val is None:
             return
 
         last_rsi = float(tv_rsi_last_val)

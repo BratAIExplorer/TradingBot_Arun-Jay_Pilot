@@ -46,7 +46,7 @@ STRATEGY_GUIDES = {
         "title": "🧪 Backtesting Engine Logic",
         "summary": "Understanding how the Simulation tab works.",
         "how_it_works": [
-            "Data Source: Uses Yahoo Finance (yfinance) to fetch historical market data.",
+            "LIVE Data vs SIM Data: Unlike the Live Bot (which uses m.Stock), the Simulator uses Yahoo Finance (yfinance).",
             "Suffix Handling: For Indian stocks, it expects '.NS' (e.g., RELIANCE.NS). If you type 'RELIANCE', it auto-appends '.NS'.",
             "Duration: It fetches 1 year of daily data by default.",
             "Strategy: Simulates a pure RSI Mean Reversion strategy.",
@@ -99,13 +99,19 @@ STRATEGY_GUIDES = {
         ]
     },
     "RSI_STRATEGY": {
-        "title": "RSI Mean Reversion (Swing)",
-        "summary": "Buy when oversold (RSI < 30), Sell when overbought (RSI > 70).",
+        "title": "📊 RSI Mean Reversion (Seamless Edition)",
+        "summary": "Professional-grade RSI strategy using direct broker data and 200-bar stabilization.",
         "how_it_works": [
-            "The Relative Strength Index (RSI) measures momentum.",
-            "Low RSI (< 30) indicates the stock is 'oversold' and might bounce back (BUY signal).",
-            "High RSI (> 70) indicates the stock is 'overbought' and might fall (SELL signal).",
-            "Best for: Sideways or ranging markets."
+            "Current Implementation: Option A (The Deep Historical Seed)",
+            "1. Warm-up 🌡️: On startup, the bot fetches 200 bars from m.Stock to stabilize its math.",
+            "2. Precision 🎯: Local RSI calculation matches TradingView perfectly (14-period RMA).",
+            "3. Seamless Polling 📡: After setup, the bot only polls for the latest price, saving data.",
+            "4. Dynamic Buy/Sell: Buys at oversold (< 35) and sells at profit target or overbought (> 70).",
+            "",
+            "Future Enhancement Options:",
+            "- ⚓ 15-Min Anchor: Move from 1m to 15m intervals to filter out market noise.",
+            "- 🛡️ Margin Cushion: Ensure no single trade exceeds 10% of your total portfolio.",
+            "- 📈 Trend Filter: Only buy if RSI is oversold AND the long-term trend is up."
         ]
     },
     "SIP_STRATEGY": {

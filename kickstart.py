@@ -869,6 +869,10 @@ def get_positions():
         return {}
     data_json = resp.json() or {}
     positions = data_json.get("data", []) or []
+    
+    # Mark token as validated for today (Smart Session Persistence)
+    if state_mgr:
+        state_mgr.mark_token_validated()
     pos_dict = {}
     for pos in positions:
         sym = pos.get("tradingsymbol")

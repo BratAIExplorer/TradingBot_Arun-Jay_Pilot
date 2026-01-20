@@ -19,6 +19,8 @@ try:
     from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide, get_contextual_tip
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
+    from state_manager import StateManager
+    state_mgr = StateManager()
     # Import positions fetching from kickstart
     try:
         from kickstart import safe_get_live_positions_merged
@@ -122,8 +124,30 @@ class DashboardV2:
 
     def start_background_threads(self):
         """Start background worker threads for data fetching"""
+        # INSTANT: Load cached holdings before anything else
+        self.load_cached_holdings()
+        
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
-        threading.Thread(target=self.positions_worker, daemon=True).start()  # NEW: Fetch positions
+        threading.Thread(target=self.positions_worker, daemon=True).start()
+
+    def load_cached_holdings(self):
+        """Load cached holdings for instant display on startup"""
+        try:
+            cached = state_mgr.get_cached_holdings()
+            if cached.get('data'):
+                self.update_positions(cached['data'])
+                age = cached.get('age_minutes', 0)
+                if cached.get('is_stale'):
+                    self.lbl_position_stats.configure(
+                        text=f"🟡 Cached {age:.0f}m ago • Refreshing..."
+                    )
+                else:
+                    self.lbl_position_stats.configure(
+                        text=f"🟢 Loaded {age:.0f}m ago"
+                    )
+                self.write_log(f"📦 Loaded {len(cached['data'])} cached holdings\n")
+        except Exception as e:
+            print(f"Cache load error: {e}")
 
     def positions_worker(self):
         """Background worker to fetch and update positions every 30 seconds"""
@@ -131,6 +155,8 @@ class DashboardV2:
             try:
                 positions = safe_get_live_positions_merged()
                 if positions:
+                    # Cache holdings for next startup
+                    state_mgr.cache_holdings(positions)
                     self.data_queue.put(("positions", positions))
             except Exception as e:
                 print(f"Positions fetch error: {e}")
@@ -936,10 +962,11 @@ class DashboardV2:
                 tags=(tag, source_tag)
             )
 
-        # Update position stats
+        # Update position stats with Live indicator
         total_positions = bot_count + manual_count
+        now_str = datetime.now().strftime("%H:%M")
         self.lbl_position_stats.configure(
-            text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
+            text=f"🟢 Live {now_str} • {total_positions} positions (Bot: {bot_count} | Manual: {manual_count})"
         )
 
         self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)

@@ -656,28 +656,49 @@ class SettingsGUI:
 
     def refresh_stock_table(self):
         """Load symbols from CSV into the table"""
+        print("\n🔄 DEBUG: refresh_stock_table called")
+        
+        # Clear existing items
         for item in self.stock_table.get_children():
             self.stock_table.delete(item)
-            
+        
         csv_path = 'config_table.csv'
-        if os.path.exists(csv_path):
-            try:
-                df = pd.read_csv(csv_path)
-                for _, row in df.iterrows():
-                    self.stock_table.insert("", "end", values=(
+        if not os.path.exists(csv_path):
+            print(f"❌ CSV file not found: {csv_path}")
+            return
+            
+        try:
+            df = pd.read_csv(csv_path)
+            print(f"✅ Loaded {len(df)} rows from CSV")
+            
+            for idx, row in df.iterrows():
+                try:
+                    values = (
                         row['Symbol'], 
                         row['Exchange'], 
                         "Yes" if str(row['Enabled']).upper() == 'TRUE' else "No",
-                        row.get('Strategy', 'TRADE'), # Default to TRADE if missing
+                        row.get('Strategy', 'TRADE'),
                         row['Timeframe'],
                         row['Buy RSI'],
                         row['Sell RSI'],
                         row['Quantity'],
                         row['Profit Target %'],
-                        self.get_cached_status(row['Symbol'], row['Exchange']) # Use cached status
-                    ))
-            except Exception as e:
-                print(f"Error loading CSV: {e}")
+                        "Pending"  # Simplified status
+                    )
+                    self.stock_table.insert("", "end", values=values)
+                    print(f"  ✅ Inserted: {row['Symbol']} ({row['Exchange']})")
+                except Exception as row_err:
+                    print(f"  ❌ Error inserting row {idx}: {row_err}")
+                    import traceback
+                    traceback.print_exc()
+            
+            print(f"✅ Table refreshed. Total items: {len(self.stock_table.get_children())}")
+            
+        except Exception as e:
+            print(f"❌ Error loading CSV: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to load stocks: {e}")
 
     def get_cached_status(self, symbol, exchange):
         """Get status string from cache if available"""
@@ -1332,6 +1353,22 @@ class SettingsGUI:
                 print(f"DEBUG: Saving to CSV: {new_data}")
                 
                 csv_path = 'config_table.csv'
+                
+                # Duplicate prevention (only for new stocks, not edits)
+                if os.path.exists(csv_path):
+                    df = pd.read_csv(csv_path)
+                    
+                    if not edit_values:  # Only check duplicates for new entries
+                        duplicate_mask = (df['Symbol'] == symbol) & (df['Exchange'] == exch_var.get())
+                        if duplicate_mask.any():
+                            messagebox.showwarning(
+                                "Duplicate Stock", 
+                                f"Stock '{symbol}' on '{exch_var.get()}' already exists!\n\n"
+                                "Please use Edit button to modify it, or choose a different stock."
+                            )
+                            print(f"DEBUG: Duplicate prevented - {symbol}/{exch_var.get()}")
+                            return
+                
                 if os.path.exists(csv_path):
                     df = pd.read_csv(csv_path)
                     # If editing, remove old entry

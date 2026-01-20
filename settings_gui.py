@@ -1346,6 +1346,7 @@ class SettingsGUI:
                 
                 print("DEBUG: Stock saved successfully")
                 self.refresh_stock_table()
+                self.stock_table.update()  # Force GUI update
                 messagebox.showinfo("Success", f"Stock {symbol} saved successfully!")
                 dialog.destroy()
             except Exception as e:

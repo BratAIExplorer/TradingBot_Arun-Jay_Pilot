@@ -1254,6 +1254,7 @@ class SettingsGUI:
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
+        buy_rsi_index = 5 if edit_values else 4  # Index of Buy RSI in edit_values
         buy_rsi_entry.insert(0, edit_values[buy_rsi_index] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)

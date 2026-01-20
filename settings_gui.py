@@ -1282,31 +1282,61 @@ class SettingsGUI:
         ctk.CTkCheckBox(scroll_frame, text="Enabled", variable=enabled_var).pack(pady=15)
 
         def save_stock():
+            print("DEBUG: Save stock button clicked")
             symbol = sym_entry.get().upper().strip()
             if not symbol:
                 messagebox.showerror("Error", "Symbol is required")
                 return
             
             try:
+                print(f"DEBUG: Parsing values for {symbol}")
+                
+                # Validate each field individually with better error messages
+                try:
+                    buy_rsi = int(buy_rsi_entry.get())
+                except ValueError:
+                    messagebox.showerror("Error", f"Buy RSI must be a number, got: '{buy_rsi_entry.get()}'")
+                    return
+                
+                try:
+                    sell_rsi = int(sell_rsi_entry.get())
+                except ValueError:
+                    messagebox.showerror("Error", f"Sell RSI must be a number, got: '{sell_rsi_entry.get()}'")
+                    return
+                
+                try:
+                    profit_target = float(target_entry.get())
+                except ValueError:
+                    messagebox.showerror("Error", f"Profit Target must be a number, got: '{target_entry.get()}'")
+                    return
+                
+                try:
+                    quantity = int(qty_entry.get())
+                except ValueError:
+                    messagebox.showerror("Error", f"Quantity must be a number, got: '{qty_entry.get()}'")
+                    return
+                
                 new_data = {
                     'Symbol': symbol,
-                    'Broker': 'mstock', # Default or fetched from broker tab
+                    'Broker': 'mstock',
                     'Enabled': enabled_var.get(),
                     'Strategy': strat_var.get(),
                     'Timeframe': tf_var.get(),
-                    'Buy RSI': int(buy_rsi_entry.get()),
-                    'Sell RSI': int(sell_rsi_entry.get()),
-                    'Profit Target %': float(target_entry.get()),
-                    'Quantity': int(qty_entry.get()),
+                    'Buy RSI': buy_rsi,
+                    'Sell RSI': sell_rsi,
+                    'Profit Target %': profit_target,
+                    'Quantity': quantity,
                     'Exchange': exch_var.get()
                 }
+                
+                print(f"DEBUG: Saving to CSV: {new_data}")
                 
                 csv_path = 'config_table.csv'
                 if os.path.exists(csv_path):
                     df = pd.read_csv(csv_path)
                     # If editing, remove old entry
                     if edit_values:
-                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[1]))]
+                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[edit_values[1]]))]
                     
                     # Append new entry
                     df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
@@ -1314,10 +1344,15 @@ class SettingsGUI:
                 else:
                     pd.DataFrame([new_data]).to_csv(csv_path, index=False)
                 
+                print("DEBUG: Stock saved successfully")
                 self.refresh_stock_table()
+                messagebox.showinfo("Success", f"Stock {symbol} saved successfully!")
                 dialog.destroy()
             except Exception as e:
-                messagebox.showerror("Error", f"Invalid data: {e}")
+                print(f"DEBUG ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Error", f"Failed to save stock: {str(e)}")
 
         # Buttons Frame
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")

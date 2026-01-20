@@ -1213,7 +1213,7 @@ class SettingsGUI:
         
         dialog = ctk.CTkToplevel(parent_window)
         dialog.title("Edit Stock" if edit_values else "Add New Stock")
-        dialog.geometry("400x550")
+        dialog.geometry("450x700")  # Increased height to show all fields
         dialog.grab_set()  # Modal
         
         # Center dialog

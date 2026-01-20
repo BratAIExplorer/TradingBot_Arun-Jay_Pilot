@@ -173,23 +173,44 @@ class StateManager:
         """
         Cache broker holdings for instant display on next startup.
         Called after each successful API fetch.
+        Converts tuple keys to strings for JSON serialization.
         """
+        # Convert tuple keys like ("BAJFINANCE", "NSE") to "BAJFINANCE:NSE"
+        serializable_data = {}
+        for key, value in holdings_data.items():
+            if isinstance(key, tuple):
+                str_key = ":".join(str(k) for k in key)
+            else:
+                str_key = str(key)
+            serializable_data[str_key] = value
+        
         self.state['broker_holdings'] = {
-            'data': holdings_data,
+            'data': serializable_data,
             'fetched_at': datetime.now().isoformat(),
             'source': 'mStock API'
         }
         self.save()
-        logging.debug(f"💾 Cached {len(holdings_data)} holdings")
+        logging.debug(f"💾 Cached {len(serializable_data)} holdings")
     
     def get_cached_holdings(self) -> Dict[str, Any]:
         """
         Get cached holdings with staleness info.
+        Converts string keys back to tuples for compatibility.
         Returns: {'data': {...}, 'is_stale': bool, 'age_minutes': float}
         """
         cached = self.state.get('broker_holdings', {})
         if not cached or not cached.get('data'):
             return {'data': {}, 'is_stale': True, 'age_minutes': 999, 'fetched_at': None}
+        
+        # Convert string keys like "BAJFINANCE:NSE" back to tuples ("BAJFINANCE", "NSE")
+        data_with_tuple_keys = {}
+        for str_key, value in cached.get('data', {}).items():
+            if ':' in str_key:
+                parts = str_key.split(':', 1)
+                tuple_key = (parts[0], parts[1])
+            else:
+                tuple_key = (str_key, 'NSE')  # Default to NSE if no exchange
+            data_with_tuple_keys[tuple_key] = value
         
         fetched_at = cached.get('fetched_at')
         age_minutes = 999
@@ -205,7 +226,7 @@ class StateManager:
                 pass
         
         return {
-            'data': cached.get('data', {}),
+            'data': data_with_tuple_keys,
             'is_stale': is_stale,
             'age_minutes': age_minutes,
             'fetched_at': fetched_at

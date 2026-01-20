@@ -855,16 +855,25 @@ def get_positions():
             return {}
 
     if is_offline():
+        log_ok("⚠️ Offline mode - skipping positions fetch")
         return {}
+    
+    log_ok(f"🔍 Fetching holdings from mStock API...")
+    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {API_KEY[:10] if API_KEY else 'NONE'}...")
+    
     url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
     headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
     resp = safe_request("GET", url, headers=headers)
     if resp is None:
+        log_ok("❌ API request returned None")
         return {}
+    
+    log_ok(f"📡 API Response Status: {resp.status_code}")
+    
     if resp.status_code != 200:
         if not is_offline():
             log_ok(f"❌ Positions fetch error: {resp.text}")
-            if "TokenException" or "invalid session" in resp.text:
+            if "TokenException" in resp.text or "invalid session" in resp.text:
                 raise Exception("TokenException")
         return {}
     data_json = resp.json() or {}
@@ -874,6 +883,9 @@ def get_positions():
     if state_mgr:
         state_mgr.mark_token_validated()
     pos_dict = {}
+    
+    log_ok(f"📊 Holdings API returned {len(positions)} items")
+    
     for pos in positions:
         sym = pos.get("tradingsymbol")
         qty = pos.get("quantity", 0)
@@ -881,6 +893,9 @@ def get_positions():
         ltp = pos.get("last_price", 0)
         pnl = pos.get("pnl", 0)
         used_quantity = pos.get("used_quantity", 0)
+        
+        log_ok(f"  → {sym}: qty={qty}, used={used_quantity}, available={qty - used_quantity}")
+        
         if qty > 0 and qty - used_quantity != 0:
             pos_dict[sym] = {
                 "qty": qty,
@@ -890,6 +905,10 @@ def get_positions():
                 "used_quantity": used_quantity,
                 "exchange": pos.get("exchange") or pos.get("exchangeSegment") or "NSE"
             }
+        else:
+            log_ok(f"    ⚠️ Filtered out (qty={qty}, available={qty - used_quantity})")
+    
+    log_ok(f"📦 Returning {len(pos_dict)} positions after filtering")
     return pos_dict
 
 def safe_get_positions():

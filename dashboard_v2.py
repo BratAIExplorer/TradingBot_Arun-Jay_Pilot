@@ -15,12 +15,15 @@ import os
 
 # --- Core Logic Imports ---
 try:
-    from kickstart import run_cycle, fetch_market_data, config_dict, SYMBOLS_TO_TRACK, calculate_intraday_rsi_tv, is_system_online, safe_get_positions, safe_get_live_positions_merged
+    from kickstart import run_cycle, fetch_market_data, config_dict, SYMBOLS_TO_TRACK, calculate_intraday_rsi_tv, is_system_online, safe_get_positions, safe_get_live_positions_merged, reload_config
     from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide, get_contextual_tip
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
     from state_manager import StateManager
     state_mgr = StateManager()
+    
+    # Reload config to ensure fresh access token from settings.json
+    reload_config()
     # Import positions fetching from kickstart
     try:
         from kickstart import safe_get_live_positions_merged
@@ -146,11 +149,14 @@ class DashboardV2:
                         text=f"🟢 Loaded {age:.0f}m ago"
                     )
                 self.write_log(f"📦 Loaded {len(cached['data'])} cached holdings\n")
+            else:
+                self.write_log("📦 No cached holdings - waiting for API fetch...\n")
         except Exception as e:
             print(f"Cache load error: {e}")
 
     def positions_worker(self):
         """Background worker to fetch and update positions every 30 seconds"""
+        self.write_log("🔄 Starting positions fetch...\n")
         while not self.stop_update_flag.is_set():
             try:
                 positions = safe_get_live_positions_merged()
@@ -158,8 +164,11 @@ class DashboardV2:
                     # Cache holdings for next startup
                     state_mgr.cache_holdings(positions)
                     self.data_queue.put(("positions", positions))
+                    self.write_log(f"✅ Fetched {len(positions)} holdings from API\n")
+                else:
+                    self.write_log("⚠️ No positions returned from API\n")
             except Exception as e:
-                print(f"Positions fetch error: {e}")
+                self.write_log(f"❌ Positions fetch error: {e}\n")
             time.sleep(30)  # Refresh every 30 seconds
 
     def balance_refresh_timer(self):

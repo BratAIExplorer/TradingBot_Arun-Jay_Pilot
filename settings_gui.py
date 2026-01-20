@@ -1208,7 +1208,10 @@ class SettingsGUI:
 
     def show_stock_dialog(self, edit_values=None):
         """Show dialog for adding/editing a stock"""
-        dialog = ctk.CTkToplevel(self.root)
+        # Get the top-level window (important when embedded in dashboard)
+        parent_window = self.root.winfo_toplevel() if hasattr(self.root, 'winfo_toplevel') else self.root
+        
+        dialog = ctk.CTkToplevel(parent_window)
         dialog.title("Edit Stock" if edit_values else "Add New Stock")
         dialog.geometry("400x550")
         dialog.grab_set()  # Modal

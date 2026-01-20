@@ -107,7 +107,7 @@ class SettingsGUI:
         self.cancel_btn = ctk.CTkButton(
             button_frame,
             text="❌ Cancel",
-            command=self.root.destroy,
+            command=lambda: None if self.is_embedded else self.root.destroy(),
             width=120,
             height=40,
             font=("Arial", 14),

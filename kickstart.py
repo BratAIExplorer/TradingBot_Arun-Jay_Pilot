@@ -321,23 +321,30 @@ def check_capital_safety(required_amount):
     This separates 'Bot Funds' from 'Life Savings'.
     """
     try:
+        if not db or not hasattr(db, 'conn'):
+             # Fallback if DB not ready
+             return True, required_amount
+
         # Calculate currently used capital by BOT (sum of active positions cost)
         used_capital = 0.0
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # Only count OPEN trades initiated by BOT
-        cursor.execute("SELECT entry_price, quantity FROM trades WHERE status='OPEN' AND source='BOT'")
-        rows = cursor.fetchall()
-        for p, q in rows:
-            used_capital += (p * q)
-        conn.close()
+        
+        # We use db.conn directly for a specific calculation
+        cursor = db.conn.cursor()
+        
+        # In our schema, we don't have a 'status' column in 'trades' table anymore (v2).
+        # We determine 'OPEN' by net_quantity per symbol.
+        # However, for a quick capital check, we use the DATABASE logic.
+        positions = db.get_open_positions(is_paper=False)
+        for pos in positions:
+            # total_invested is SUM(price * quantity) for net positive positions
+            used_capital += float(pos.get("total_invested", 0.0))
         
         remaining = ALLOCATED_CAPITAL - used_capital
         
         if remaining >= required_amount:
             return True, remaining
         else:
-            log_ok(f"🚫 Capital Limit Reached! Allocated: ₹{ALLOCATED_CAPITAL}, Used: ₹{used_capital}. Needed: ₹{required_amount}")
+            log_ok(f"🚫 Capital Limit Reached! Allocated: ₹{ALLOCATED_CAPITAL}, Used: ₹{used_capital:,.2f}. Needed: ₹{required_amount:,.2f}")
             return False, remaining
     except Exception as e:
         log_ok(f"⚠️ Capital Check Error: {e}. Defaulting to Safe Mode (Block).")
@@ -1119,32 +1126,52 @@ def rsi_tradingview(close: pd.Series, length: int = 14) -> pd.Series:
 
 def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=None):
     """
-    Seamless RSI Implementation (Option A):
+    Seamless RSI Implementation (Option A) with Phase B (Incremental Updates):
     1. Check if bars exist in cache.
-    2. If not, fetch history from m.Stock (approx 200-500 bars).
-    3. Calculate RSI using the deep seed for extreme precision.
+    2. If not, fetch 200+ seed bars from m.Stock.
+    3. If cache exists, fetch ONLY the latest bars since the last cached timestamp.
+    4. Maintain a sliding window of ~400 bars for speed and precision.
     """
     cache_key = (symbol, exchange, timeframe)
     df = CANDLE_CACHE.get(cache_key)
     
     if df is None:
-        # Log that we are warming up the engine for this stock
-        log_ok(f"🌡️ Seeding 200+ bar RSI for {symbol}:{exchange} ({timeframe})...")
+        log_ok(f"🌡️ Seeding 200+ bar RSI buffer for {symbol}:{exchange} ({timeframe})...")
         df = fetch_historical_data(symbol, exchange, timeframe, instrument_token)
         if df is not None and not df.empty:
             CANDLE_CACHE[cache_key] = df
         else:
             return None, None
-            
+    else:
+        # Phase B: Incremental Update (Smart Polling)
+        # Fetch last 2 days to ensure we bridge any gaps since last check
+        try:
+            new_data = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=2)
+            if new_data is not None and not new_data.empty:
+                # Merge and deduplicate based on timestamp
+                combined = pd.concat([df, new_data])
+                combined = combined[~combined.index.duplicated(keep='last')]
+                combined.sort_index(inplace=True)
+                
+                # Maintain sliding window (Keep last 400 bars for overhead/precision balance)
+                if len(combined) > 400:
+                    combined = combined.tail(400)
+                
+                CANDLE_CACHE[cache_key] = combined
+                df = combined
+        except Exception as e:
+            log_ok(f"⚠️ Failed incremental update for {symbol}: {e}")
+
     if df is not None and not df.empty:
         from getRSI import calculate_rsi_from_df
         try:
-            # Use the deep-seed buffer to calculate the latest RSI
+            # Calculate RSI using the deep-seed buffer + current LTP
             ts, rsi_val, _ = calculate_rsi_from_df(df, period=14, live_price=live_price)
             return ts, rsi_val
         except Exception as e:
             if "Insufficient history" in str(e):
-                CANDLE_CACHE.pop(cache_key, None) # Clear to retry fetch
+                log_ok(f"⚠️ Buffer too small for {symbol}, flushing cache to re-seed.")
+                CANDLE_CACHE.pop(cache_key, None)
             return None, None
             
     return None, None
@@ -1364,39 +1391,36 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
 
 # ---------------- Market Data ----------------
 
-def fetch_historical_data(symbol, exchange, tf, instrument_token):
+def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
     if is_offline():
         return None
 
     def attempt_fetch():
         try:
+            # Determine default lookback based on timeframe if not provided
+            nonlocal days
             timeframe_map = {
-                "1T": "1minute",
-                "3T": "3minute",
-                "5T": "5minute",
-                "10T": "10minute",
-                "15T": "15minute",
-                "30T": "30minute",
-                "1H": "60minute",
-                "1D": "day"
+                "1T": "1minute", "3T": "3minute", "5T": "5minute",
+                "10T": "10minute", "15T": "15minute", "30T": "30minute",
+                "1H": "60minute", "1D": "day"
             }
             api_timeframe = timeframe_map.get(tf, tf)
-            frame_minutes = (
-                1 if api_timeframe == "1minute" else
-                3 if api_timeframe == "3minute" else
-                5 if api_timeframe == "5minute" else
-                10 if api_timeframe == "10minute" else
-                15 if api_timeframe == "15minute" else
-                30 if api_timeframe == "30minute" else
-                60 if api_timeframe == "60minute" else
-                None
-            )
-            if api_timeframe == "day":
-                # For Daily RSI-14 stabilization, we need 200+ trading days. 365 calendar days is safe.
-                from_encoded, to_encoded = build_last_nd_window_ist(days=365, frame_minutes=1440)
-            else:
-                # For Intraday, 15 days is plenty to seed 200 bars even for 1H timeframe.
-                from_encoded, to_encoded = build_last_nd_window_ist(days=15, frame_minutes=frame_minutes or 60)
+            
+            if days is None:
+                if api_timeframe == "day":
+                    days = 365
+                else:
+                    days = 15
+
+            # Correct frame_minutes lookup
+            frame_minutes_map = {
+                "1minute": 1, "3minute": 3, "5minute": 5,
+                "10minute": 10, "15minute": 15, "30minute": 30,
+                "60minute": 60, "day": 1440
+            }
+            frame_minutes = frame_minutes_map.get(api_timeframe, 60)
+
+            from_encoded, to_encoded = build_last_nd_window_ist(days=days, frame_minutes=frame_minutes)
 
             url = (
                 f"https://api.mstock.trade/openapi/typea/instruments/historical/"
@@ -1659,8 +1683,22 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         if last_rsi <= buy_rsi and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY"):
             need_qty = qty - max(0, available_qty)
             if need_qty > 0:
-                log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
+                required_funds = need_qty * current_close
+                
+                # SMART CHECK 1: Available Bot Capital
+                can_afford, remaining = check_capital_safety(required_funds)
+                
+                # SMART CHECK 2: Portfolio Risk (Buffett Rule - Max 10% in one trade)
+                portfolio_risk_limit = ALLOCATED_CAPITAL * 0.10
+                is_concentrated = required_funds > portfolio_risk_limit
+                
+                if not can_afford:
+                    log_ok(f"🚫 Trade Skipped for {symbol}: Insufficient Bot Capital (Needed ₹{required_funds:,.2f})")
+                elif is_concentrated:
+                    log_ok(f"🛡️ Trade Skipped for {symbol}: Risk Limit Hit (Trade ₹{required_funds:,.2f} > 10% of portfolio ₹{portfolio_risk_limit:,.2f})")
+                else:
+                    log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
+                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
     finally:
         SYMBOL_LOCKS[symbol] = False
 

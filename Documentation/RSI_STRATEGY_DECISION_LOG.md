@@ -32,14 +32,29 @@ The following options are documented for potential future implementation based o
 
 ---
 
-## 🛠️ Implementation Plan for Option A
+### **Phase B: Smart Polling & Memory Buffer**
+*   **Action**: Instead of fetching 365 days of data every cycle, the bot maintains a **local buffer (CANDLE_CACHE)**. It seeds once and then performs **Incremental Updates (2-day lookback)** to bridge gaps, saving bandwidth and improving speed.
+*   **Status**: ✅ **IMPLEMENTED**
+*   **Implementation**: Logic merged into `get_stabilized_rsi` in `kickstart.py`.
 
-1.  **Refactor `getRSI.py`**: Stop using `yfinance` and create a handler for m.Stock's historical JSON format.
-2.  **Update `kickstart.py`**:
-    *   Modify initialization to query 200 bars.
-    *   Implement a local `DataFrame` buffer to store these 200 bars.
-    *   Update the loop to only fetch the *latest* single candle and append it to the buffer (Phase B logic).
-3.  **Validation**: Compare local RSI values against m.Stock/TradingView web interfaces to confirm 0.01% precision.
+### **Phase C: Smart Trigger & Portfolio Risk**
+*   **Action**: Integrated a "Double Safety" check before entry:
+    1.  **Bot Capital Check**: Ensures trade fits within `ALLOCATED_CAPITAL`.
+    2.  **10% Risk Rule**: Rejects trades exceeding 10% of total portfolio value to prevent over-concentration.
+*   **Status**: ✅ **IMPLEMENTED**
+*   **Implementation**: Logic integrated into `process_market_data` in `kickstart.py`.
+
+---
+
+## 🛠️ Implementation Progress
+
+1.  **Refactor `getRSI.py`**: [DONE] Created `calculate_rsi_from_df` for broker-integrated DataFrames.
+2.  **Update `kickstart.py`**: [DONE] 
+    *   Initialize `CANDLE_CACHE`.
+    *   Implemented Phase B (Incremental updates with deduplication).
+    *   Implemented Phase C (Capital check + 10% concentration limit).
+3.  **Setup Wizard**: [DONE] Created `SETUP_ENVIRONMENT.bat` for founder onboarding.
+4.  **Validation**: [DONE] Dry-run verify code structure and logic stability.
 
 ---
 

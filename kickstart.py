@@ -130,7 +130,13 @@ def log_ok(msg: str = "", *args, force: bool = False, **kwargs):
     if LOG_CALLBACK:
         try:
             LOG_CALLBACK(str(msg) + "\n")
-        except: pass
+        except (TypeError, AttributeError, RuntimeError) as e:
+            # BUG-004 FIX: Use specific exceptions instead of bare except
+            # Don't log here to avoid recursion, just silently fail
+            pass
+        except Exception as e:
+            # Catch any other unexpected errors without crashing
+            pass
 
     if LOG_SUPPRESS and not force:
         return
@@ -207,6 +213,70 @@ def ensure_inflight(key: str) -> InflightState:
         st = InflightState(fetching=False, result=None)
         FETCH_STATE[key] = st
     return st
+
+# ============================================================================
+# API Response Validation Helpers (BUG-005 FIX)
+# ============================================================================
+
+def safe_get(data: dict, path: str, default=None):
+    """
+    Safely get nested dictionary value using dot notation.
+
+    BUG-005 FIX: Prevents KeyError crashes when API response structure changes.
+
+    Args:
+        data: Dictionary to search
+        path: Dot-separated path (e.g., "data.positions.0.quantity")
+        default: Value to return if path not found
+
+    Returns:
+        Value at path, or default if not found
+
+    Examples:
+        >>> safe_get({"data": {"user": "John"}}, "data.user")
+        'John'
+        >>> safe_get({"data": {}}, "data.missing", "N/A")
+        'N/A'
+    """
+    if not isinstance(data, dict):
+        return default
+
+    keys = path.split('.')
+    result = data
+
+    for key in keys:
+        if not isinstance(result, dict):
+            return default
+        result = result.get(key, default)
+        if result is default:
+            return default
+
+    return result
+
+def validate_api_response(response: dict, required_keys: list, operation: str) -> bool:
+    """
+    Validate API response has required keys.
+
+    BUG-005 FIX: Provides centralized validation with logging.
+
+    Args:
+        response: API response dictionary
+        required_keys: List of required keys (supports dot notation)
+        operation: Name of operation for logging
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not isinstance(response, dict):
+        log_ok(f"⚠️ Invalid {operation} response: not a dictionary")
+        return False
+
+    for key in required_keys:
+        if safe_get(response, key) is None:
+            log_ok(f"⚠️ Invalid {operation} response: missing key '{key}'")
+            return False
+
+    return True
 
 def fetch_market_data_once(symbol: str, exchange: str) -> Tuple[Optional[dict], Optional[str]]:
     if is_offline():
@@ -431,7 +501,12 @@ if settings:
         # Load User's "Safety Box" Limit
         ALLOCATED_CAPITAL = float(settings.get("capital.allocated_limit", 50000.0))
         log_ok(f"💰 Bot Capital Limit Set to: ₹{ALLOCATED_CAPITAL:,.2f}")
-    except: pass
+    except (ValueError, TypeError, KeyError) as e:
+        # BUG-004 FIX: Log specific parsing errors
+        log_ok(f"⚠️ Could not load allocated_limit from settings: {e}. Using default: ₹50,000")
+    except Exception as e:
+        # BUG-004 FIX: Catch unexpected errors
+        log_ok(f"⚠️ Unexpected error loading capital settings: {e}. Using default: ₹50,000")
 
 def check_capital_safety(required_amount):
     """
@@ -493,7 +568,12 @@ def fetch_market_data(symbol, exchange):
             sm.load()
             if sm.get("app_settings", {}).get("paper_trading_mode", False):
                 should_simulate = True
-        except: pass
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            # BUG-004 FIX: Log specific settings loading errors
+            log_ok(f"⚠️ Could not load paper_trading_mode setting: {e}")
+        except Exception as e:
+            # BUG-004 FIX: Catch unexpected errors
+            log_ok(f"⚠️ Unexpected error checking paper trading mode: {e}")
 
     # Try Real API First
     if not is_offline():

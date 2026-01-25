@@ -7,9 +7,18 @@ Welcome to the ARUN Trading Bot. This project is built for professional, algorit
 Since you are not a developer, follow these exact steps to start testing the latest fixes on your machine:
 
 ### 1. Extract the Latest Work
+
+**Option A: Visual Method (Inside Antigravity)**
 1.  Open your **Antigravity Workspace**.
 2.  Click the **Git/Source Control** icon (usually on the left sidebar).
-3.  Click the **Pull** button (or the `...` menu and then **Pull**) to download the latest stability fixes and "Titan V2" UI updates.
+3.  Click the **Pull** button (or the `...` menu and then **Pull**) to download the latest updates.
+
+**Option B: Manual Method (Command Prompt)**
+1.  Open the folder containing the bot in Windows.
+2.  Click on the **Address Bar** at the top of the window (where it shows the folder path).
+3.  Type `cmd` and press **Enter**. A black command window will open.
+4.  Type `git pull` and press **Enter**.
+5.  Wait for it to finish, then close the black window.
 
 ### 2. Launch the Application
 1.  Find the file named `LAUNCH_ARUN.bat` in the main folder.

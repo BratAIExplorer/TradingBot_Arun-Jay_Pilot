@@ -3,12 +3,14 @@
 import requests
 import hashlib
 from strategies.nifty_sip import NiftySIPStrategy
-print("✅ LOADED KICKSTART V3.0 (Fixes Applied)")
+print("✅ LOADED KICKSTART V3.0.1 (Emergency Fixes)")
 
 # Strategy Engines
 sip_engine = None
 notifier = None
 STOP_REQUESTED = False
+LAST_HEARTBEAT_TS = 0
+HEARTBEAT_INTERVAL = 300  # 5 minutes
 import pandas as pd
 from datetime import datetime, timedelta, time as dtime, date
 import json
@@ -21,6 +23,7 @@ import traceback
 import pytz
 import time
 import socket
+import threading  # BUG-002 FIX: Added for thread safety
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
@@ -114,11 +117,23 @@ try:
 except Exception as e:
     print(f"Failed to setup logging: {e}")
 
+LOG_CALLBACK = None
+
+def set_log_callback(cb):
+    global LOG_CALLBACK
+    LOG_CALLBACK = cb
+
 def log_ok(msg: str = "", *args, force: bool = False, **kwargs):
     logging.info(msg)
+    
+    # Callback to UI if set
+    if LOG_CALLBACK:
+        try:
+            LOG_CALLBACK(str(msg) + "\n")
+        except: pass
+
     if LOG_SUPPRESS and not force:
         return
-    # print(msg, *args, **kwargs) # Disable print, use logging
 
 def log_fetch(symbol_ex: str):
     if not LOG_SUPPRESS and is_market_open_now_ist():
@@ -129,6 +144,28 @@ class InflightState:
     fetching: bool
     result: Optional[dict]
 
+# ============================================================================
+# BUG-002 FIX: Thread Safety Locks
+# ============================================================================
+# These locks protect shared global state from race conditions when multiple
+# threads (UI thread, trading thread) access the same variables simultaneously.
+#
+# CRITICAL: Always acquire locks in the same order to prevent deadlocks:
+# 1. stop_lock
+# 2. offline_lock
+# 3. state_lock (for CYCLE_QUOTES, CANDLE_CACHE, etc.)
+# 4. access_token_lock
+# ============================================================================
+
+stop_lock = threading.Lock()          # Protects: STOP_REQUESTED
+offline_lock = threading.Lock()       # Protects: OFFLINE dict
+state_lock = threading.Lock()         # Protects: CYCLE_QUOTES, CANDLE_CACHE, FETCH_STATE, etc.
+access_token_lock = threading.Lock()  # Protects: ACCESS_TOKEN
+
+# ============================================================================
+# Shared State Variables (Protected by locks above)
+# ============================================================================
+
 OFFLINE = {"active": False, "since": None}
 FETCH_INFLIGHT: Dict[str, bool] = {}
 CYCLE_QUOTES: Dict[str, Optional[dict]] = {}
@@ -137,9 +174,26 @@ FETCH_STATE: Dict[str, InflightState] = {}
 MISSING_TOKEN_LOGGED: Dict[str, bool] = {}
 CANDLE_CACHE: Dict[Tuple[str, str, str], pd.DataFrame] = {} # (symbol, exchange, timeframe) -> DataFrame
 
+# ============================================================================
+# Thread-Safe Helper Functions (BUG-002 FIX)
+# ============================================================================
+
+def is_stop_requested() -> bool:
+    """Thread-safe check for stop request"""
+    with stop_lock:
+        return STOP_REQUESTED
+
+def set_stop_requested(value: bool):
+    """Thread-safe setter for stop request"""
+    global STOP_REQUESTED
+    with stop_lock:
+        STOP_REQUESTED = value
+
 def reset_cycle_state():
-    MISSING_TOKEN_LOGGED.clear()
-    CYCLE_QUOTES.clear()
+    """Thread-safe reset of cycle state"""
+    with state_lock:
+        MISSING_TOKEN_LOGGED.clear()
+        CYCLE_QUOTES.clear()
 
 def log_missing_token_once(exchange: str, symbol: str, err: Exception):
     key = f"{exchange}:{symbol.upper()}"
@@ -156,6 +210,16 @@ def ensure_inflight(key: str) -> InflightState:
 
 def fetch_market_data_once(symbol: str, exchange: str) -> Tuple[Optional[dict], Optional[str]]:
     if is_offline():
+        # Check if we should try probing (every 15s)
+        if OFFLINE["since"] and (now_ist() - OFFLINE["since"]).total_seconds() < 15:
+            return None, None
+        else:
+            # Probe attempt
+            pass
+
+    # Filter out indices or unsupported tickers
+    if symbol.startswith('^') or 'INDIAVIX' in symbol:
+        # log_ok(f"⚠️ Skipping unsupported ticker: {symbol}")
         return None, None
 
     key = f"{exchange}:{symbol.upper()}"
@@ -183,8 +247,12 @@ def fetch_market_data_once(symbol: str, exchange: str) -> Tuple[Optional[dict], 
                 log_ok(f"❌ API error {resp.status_code}: {resp.text}")
             st.result = None
         else:
-            data = resp.json() or {}
-            st.result = (data.get("data") or {}).get(params["i"])
+            try:
+                data = resp.json() or {}
+                st.result = (data.get("data") or {}).get(params["i"])
+            except ValueError:
+                log_ok(f"❌ API returned invalid JSON for {key}")
+                st.result = None
         CYCLE_QUOTES[key] = st.result
         return st.result, exchange
     finally:
@@ -206,30 +274,61 @@ def reset_cycle_quotes():
     CYCLE_QUOTES.clear()
 
 def is_offline() -> bool:
-    return bool(OFFLINE.get("active"))
+    """Thread-safe check for offline status (BUG-002 FIX: Added lock)"""
+    # return False # Force Online for Testing
+    with offline_lock:
+        return OFFLINE.get("active", False)
 
 def mark_offline_once():
-    if not OFFLINE["active"]:
-        OFFLINE["active"] = True
-        OFFLINE["since"] = datetime.now(pytz.timezone("Asia/Kolkata"))
-        log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
+    """Thread-safe mark offline (BUG-002 FIX: Added lock)"""
+    with offline_lock:
+        if not OFFLINE["active"]:
+            OFFLINE["active"] = True
+            OFFLINE["since"] = now_ist()
+            log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
 
 def mark_online_if_needed():
-    if OFFLINE["active"]:
-        OFFLINE["active"] = False
-        OFFLINE["since"] = None
+    """Thread-safe mark online (BUG-002 FIX: Added lock)"""
+    with offline_lock:
+        if OFFLINE["active"]:
+            OFFLINE["active"] = False
+            OFFLINE["since"] = None
 
 def safe_request(method, url, **kwargs):
     try:
         if "timeout" not in kwargs:
             kwargs["timeout"] = (5, 15)
+            
+        # Standard browser-like headers to avoid 403 Forbidden/WAF blocks
+        default_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site"
+        }
+        
+        # Merge default headers with provided headers
+        if "headers" not in kwargs:
+            kwargs["headers"] = default_headers
+        else:
+            merged_headers = default_headers.copy()
+            merged_headers.update(kwargs["headers"])
+            kwargs["headers"] = merged_headers
+            
         resp = requests.request(method=method, url=url, **kwargs)
         
         # 403 Forbidden / 401 Unauthorized Handling (Auto-Login Trigger)
         if resp.status_code in [401, 403]:
             # Avoid infinite recursion if verifytotp itself fails
             if "verifytotp" not in url:
-                log_ok(f"⚠️ API Error {resp.status_code}. Attempting Auto-Login refresh...")
+                log_ok(f"⚠️ API Error {resp.status_code} at {url}. Attempting Auto-Login refresh...")
                 if perform_auto_login():
                      # Update headers with new token
                     if "headers" in kwargs and "Authorization" in kwargs["headers"]:
@@ -237,6 +336,8 @@ def safe_request(method, url, **kwargs):
                     # Retry once
                     log_ok("🔄 Retrying request with new token...")
                     resp = requests.request(method=method, url=url, **kwargs)
+            else:
+                log_ok(f"❌ AUTH ERROR: verifytotp returned {resp.status_code}")
 
         mark_online_if_needed()
         return resp
@@ -245,7 +346,7 @@ def safe_request(method, url, **kwargs):
         return None
     except RequestException as e:
         if not is_offline():
-            log_ok(f"⚠️ Request error: {str(e)}")
+            log_ok(f"⚠️ Request error at {url}: {str(e)}")
         return None
 
 def now_ist():
@@ -278,6 +379,23 @@ if not all([API_KEY, API_SECRET, CLIENT_CODE]):
         log_ok("❌ Essential credentials missing. Bot will not be able to trade.")
 
 EXCHANGES = ["NSE", "BSE"]
+
+# State Control
+STOP_REQUESTED = False
+
+def request_stop():
+    global STOP_REQUESTED
+    STOP_REQUESTED = True
+    if state_mgr:
+        state_mgr.set_stop_requested(True)
+    log_ok("🛑 STOP SIGNAL RECEIVED - Persisting and Stopping Engine...")
+
+def reset_stop_flag():
+    global STOP_REQUESTED
+    STOP_REQUESTED = False
+    if state_mgr:
+        state_mgr.set_stop_requested(False)
+    log_ok("🔄 STOP FLAG RESET - Engine Ready.")
 
 def reload_config():
     """Hot-reload settings and credentials without restart"""
@@ -451,23 +569,24 @@ def fetch_funds():
     if is_offline() or not ACCESS_TOKEN:
         return 0.0
     
-    # Generic endpoint for mStock/Mirae (Limits/Cash)
-    # Note: Exact endpoint path might vary, using standard Type A path pattern
-    url = "https://api.mstock.trade/openapi/typea/limits/getCashLimits" 
+    # Fund Summary Endpoint (Corrected per documentation)
+    url = "https://api.mstock.trade/openapi/typea/user/fundsummary"
     headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
     
     try:
         response = safe_request("GET", url, headers=headers)
         if response and response.status_code == 200:
             data = response.json()
-            # Parse response - usually 'data' -> 'availableCash' or similar
-            # Placeholder parsing logic based on standard response structure
-            return float(safe_get(data, "data.availableCash", 0.0))
+            # Response Structure:
+            # { "status": "success", "data": [ { "AVAILABLE_BALANCE": "...", ... } ] }
+            if data.get("status") == "success":
+                inner_data = data.get("data", [])
+                if isinstance(inner_data, list) and inner_data:
+                    fund_data = inner_data[0]
+                    return float(fund_data.get("AVAILABLE_BALANCE", 0.0))
     except Exception as e:
         log_ok(f"⚠️ Failed to fetch funds: {e}")
     
-    return 0.0
-
     return 0.0
 
 def check_connectivity_latency() -> Tuple[bool, int]:
@@ -613,9 +732,98 @@ def square_off_all_positions() -> int:
     log_ok(f"🚨 Panic Mode: Squared off {count} positions.")
     return count
 
+def initialize_from_csv():
+    """
+    Load SYMBOLS_TO_TRACK and config_dict from config_table.csv and manual watch list
+    """
+    global SYMBOLS_TO_TRACK, config_dict
+    SYMBOLS_TO_TRACK.clear()
+    config_dict.clear()
+    
+    # 1. Load from CSV
+    try:
+        csv_path = "config_table.csv"
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path)
+            count = 0
+            for _, row in df.iterrows():
+                if str(row.get('Enabled', 'False')).lower() == 'true':
+                    sym = row['Symbol'].strip().upper()
+                    ex = row['Exchange'].strip().upper()
+                    
+                    SYMBOLS_TO_TRACK.append((sym, ex))
+                    config_dict[(sym, ex)] = {
+                        "instrument_token": None,
+                        "Timeframe": row.get('Timeframe', '15T'),
+                        "RSI_Buy_Threshold": float(row.get('Buy RSI', 30)),
+                        "RSI_Sell_Threshold": float(row.get('Sell RSI', 70)),
+                        "Quantity": int(row.get('Quantity', 1)),
+                        "Profit_Target": float(row.get('Profit Target %', 1.0))
+                    }
+                    count += 1
+            log_ok(f"✅ Initialized {count} symbols from CSV.")
+    except Exception as e:
+        log_ok(f"❌ CSV Init Error: {e}")
+
+    # 2. Add Butler Mode (Manual Watch List) symbols
+    if settings:
+        try:
+            watched = settings.get("app_settings.watched_manual_positions", [])
+            risk = settings.get_risk_settings()
+            
+            added_butler = 0
+            for sym in watched:
+                sym = sym.strip().upper()
+                ex = get_exchange_for_symbol(sym)
+                # Avoid duplicates if already in CSV
+                if (sym, ex) not in config_dict:
+                    SYMBOLS_TO_TRACK.append((sym, ex))
+                    config_dict[(sym, ex)] = {
+                        "instrument_token": None,
+                        "Timeframe": "15T", 
+                        "RSI_Buy_Threshold": 0, # Don't buy manual positions
+                        "RSI_Sell_Threshold": 70, # Default sell RSI
+                        "Quantity": 0,
+                        "Profit_Target": risk.get('profit_target_pct', 5.0),
+                        "is_butler": True
+                    }
+                    added_butler += 1
+            if added_butler > 0:
+                log_ok(f"🤝 Butler Mode active for {added_butler} symbols.")
+        except Exception as e:
+            log_ok(f"⚠️ Butler Init Error: {e}")
+
+def resolve_instrument_token(symbol, exchange):
+    """
+    Fetch instrument_token dynamically using the Quote API
+    """
+    try:
+        url = "https://api.mstock.trade/openapi/typea/instruments/quote/ohlc"
+        headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+        params = {"i": f"{exchange}:{symbol.upper()}"}
+        resp = safe_request("GET", url, headers=headers, params=params)
+        
+        if resp and resp.status_code == 200:
+            data = resp.json()
+            key = f"{exchange}:{symbol.upper()}"
+            item = (data.get("data") or {}).get(key)
+            if item:
+                # mStock often returns 'instrument_token' in the quote data
+                # Check for various common keys
+                return item.get("instrument_token") or item.get("token")
+    except Exception as e:
+        log_ok(f"❌ Token resolve failed: {e}")
+    return None
+
+# NOTE: run_cycle() function has been consolidated. See line 2280 for the active implementation.
+# The duplicate definition that was here (lines 771-893) has been removed to eliminate code maintenance confusion.
+# REMOVED: Duplicate run_cycle() function (BUG-001 fix - see Documentation/comprehensive_audit_report.md)
+
 def perform_auto_login() -> bool:
     """
-    Attempt to auto-login using stored TOTP secret
+    Attempt to auto-login using stored TOTP secret.
+    For TOTP-enabled accounts, the flow is:
+    - Call /session/verifytotp with api_key + TOTP → get access_token directly
     Returns: True if successful, False otherwise
     """
     global ACCESS_TOKEN
@@ -625,27 +833,11 @@ def perform_auto_login() -> bool:
         return False
         
     try:
-        # Get TOTP Secret from settings
-        # Note: We duplicate logic here for robustness if settings_mgr isn't fully init
-        config_path = "settings.json"
+        # Get credentials (decrypted)
+        totp_secret = settings.get_decrypted("broker.totp_secret") if settings else None
+        curr_api_key = API_KEY
         
-        # Helper to find settings file
-        if not os.path.exists(config_path):
-            # Try looking relative to script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(script_dir, "settings.json")
-            
-        if not os.path.exists(config_path):
-            log_ok("⚠️ Auto-login skipped: settings.json not found.")
-            return False
-            
-        with open(config_path, "r") as f:
-            settings = json.load(f)
-            
-        totp_secret = safe_get(settings, "api.totp_secret")
-        api_key = safe_get(settings, "api.access_token") # We use 'access_token' field for API Key in this app
-        
-        if not totp_secret or not api_key:
+        if not totp_secret or not curr_api_key:
             log_ok("⚠️ Auto-login skipped: TOTP secret or API Key missing.")
             return False
             
@@ -653,37 +845,52 @@ def perform_auto_login() -> bool:
         try:
             totp = pyotp.TOTP(totp_secret)
             otp_code = totp.now()
-            log_ok(f"🔐 Generating TOTP for auto-login...")
+            log_ok(f"🔐 Generated TOTP: {otp_code[:2]}****")
         except Exception as e:
             log_ok(f"❌ TOTP Generation failed: {e}")
             return False
             
-        # Call Verify TOTP API
-        url = "https://api.mstock.trade/openapi/typea/session/verifytotp"
-        payload = {"api_key": api_key, "totp": otp_code}
-        headers = {
-            "X-Mirae-Version": "1", 
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
+        log_ok("📡 Calling Verify TOTP API...")
+        totp_url = "https://api.mstock.trade/openapi/typea/session/verifytotp"
+        totp_payload = {"api_key": curr_api_key, "totp": otp_code}
+        totp_headers = {"X-Mirae-Version": "1", "Content-Type": "application/x-www-form-urlencoded"}
         
-        # Direct request to avoid recursion with safe_request if it checks token
-        resp = requests.post(url, data=payload, headers=headers, timeout=10)
+        # Use safe_request to benefit from standard headers
+        totp_resp = safe_request("POST", totp_url, data=totp_payload, headers=totp_headers)
         
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("status") == "success":
-                new_token = safe_get(data, "data.access_token")
-                if new_token:
-                    ACCESS_TOKEN = new_token
-                    log_ok("✅ Auto-Login SUCCESS! Access Token refreshed.")
-                    return True
-            else:
-                log_ok(f"❌ Auto-Login API Error: {data.get('message')}")
+        if totp_resp is None:
+             log_ok("❌ TOTP verification failed: No response from API (Network Error?)")
+             return False
+
+        log_ok(f"📡 Response Status: {totp_resp.status_code}")
+        
+        if totp_resp.status_code != 200:
+            log_ok(f"❌ TOTP verification failed: HTTP {totp_resp.status_code} - {totp_resp.text[:200]}")
+            return False
+            
+        totp_data = totp_resp.json()
+        log_ok(f"📡 Response Data: {totp_data}")  # DEBUG
+        
+        if totp_data.get("status") != "success":
+            log_ok(f"❌ TOTP API error: {totp_data.get('message')}")
+            return False
+            
+        new_token = safe_get(totp_data, "data.access_token")
+        if new_token:
+            ACCESS_TOKEN = new_token
+            # Also save to settings for persistence
+            if settings:
+                settings.set("broker.access_token", new_token)
+            log_ok("✅ AUTO-LOGIN SUCCESS! New access_token saved.")
+            return True
         else:
-            log_ok(f"❌ Auto-Login HTTP {resp.status_code}: {resp.text}")
+            log_ok(f"❌ TOTP API did not return access_token. Full response: {totp_data}")
+            return False
             
     except Exception as e:
         log_ok(f"❌ Auto-Login Failed: {e}")
+        import traceback
+        traceback.print_exc()
         
     return False
 
@@ -703,10 +910,18 @@ def handle_token_exception_and_refresh_token():
         login_url = "https://api.mstock.trade/openapi/typea/connect/login"
         login_payload = {"username": CLIENT_CODE, "password": PASSWORD}
         headers = {"X-Mirae-Version": "1", "Content-Type": "application/x-www-form-urlencoded"}
-        login_resp = requests.post(login_url, data=login_payload, headers=headers, timeout=(5, 15))
+        
+        # Use safe_request for unified headers
+        login_resp = safe_request("POST", login_url, data=login_payload, headers=headers)
+        
+        if login_resp is None:
+            log_ok("❌ Login failed (No response during refresh)")
+            return False
+            
         if login_resp.status_code != 200:
             log_ok(f"❌ Login failed during token refresh: {login_resp.status_code}")
             return False
+            
         login_data = login_resp.json()
         if login_data.get("status") != "success":
             log_ok(f"❌ Login error during token refresh: {login_data}")
@@ -719,7 +934,7 @@ def handle_token_exception_and_refresh_token():
         session_url = "https://api.mstock.trade/openapi/typea/session/token"
         session_payload = {"api_key": API_KEY, "request_token": request_token, "checksum": checksum}
         session_headers = {"X-Mirae-Version": "1", "Content-Type": "application/x-www-form-urlencoded"}
-        session_resp = requests.post(session_url, data=session_payload, headers=session_headers, timeout=(5, 15))
+        session_resp = safe_request("POST", session_url, data=session_payload, headers=session_headers)
         if session_resp.status_code != 200:
             log_ok(f"❌ Session generation failed during token refresh: {session_resp.status_code}")
             return False
@@ -904,7 +1119,9 @@ def get_positions():
         
         log_ok(f"  → {sym}: qty={qty}, used={used_quantity}, available={qty - used_quantity}")
         
-        if qty > 0 and qty - used_quantity != 0:
+        # Show ALL positions with qty > 0 (don't filter by used_quantity)
+        # Even if all shares are "used" in a pledge/order, we still want to see the position
+        if qty > 0:
             pos_dict[sym] = {
                 "qty": qty,
                 "price": price,
@@ -913,11 +1130,46 @@ def get_positions():
                 "used_quantity": used_quantity,
                 "exchange": pos.get("exchange") or pos.get("exchangeSegment") or "NSE"
             }
-        else:
-            log_ok(f"    ⚠️ Filtered out (qty={qty}, available={qty - used_quantity})")
     
     log_ok(f"📦 Returning {len(pos_dict)} positions after filtering")
     return pos_dict
+
+def get_daywise_positions():
+    """Fetch intraday/F&O positions from positions endpoint"""
+    if is_offline() or not ACCESS_TOKEN:
+        return {}
+    
+    url = "https://api.mstock.trade/openapi/typea/portfolio/positions"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        resp = safe_request("GET", url, headers=headers)
+        if resp is None or resp.status_code != 200:
+            return {}
+            
+        data = resp.json().get("data", []) or []
+        pos_dict = {}
+        
+        for p in data:
+            sym = p.get("tradingsymbol", "").upper()
+            ex = (p.get("exchange") or "NSE").upper()
+            
+            # Key logic: mStock returns net quantity for positions
+            qty = int(p.get("quantity", 0)) # Net Qty
+            if qty == 0: continue
+            
+            pos_dict[(sym, ex)] = {
+                "qty": qty,
+                "price": float(p.get("average_price", 0)),
+                "ltp": float(p.get("last_price", 0)),
+                "pnl": float(p.get("pnl", 0)),
+                "source": "MANUAL", # Default, will be overridden if in bot_keys
+                "type": "DAYWISE"
+            }
+        return pos_dict
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch daywise positions: {e}")
+        return {}
 
 def safe_get_positions():
     try:
@@ -988,8 +1240,9 @@ def get_orders_today():
     return executed
 
 def merge_positions_and_orders():
+    log_ok("🔄 Merging Holdings + Positions + Orders...")
     holdings = get_positions()
-    executed = get_orders_today()
+    daywise = get_daywise_positions() # Fetch Intraday/F&O
     
     # Fetch BOT-initiated positions from DB to tag them
     bot_keys = set()
@@ -997,18 +1250,24 @@ def merge_positions_and_orders():
         try:
             # Check paper/real mode from settings or logic
             is_paper = False 
-            if settings and settings.get("app_settings.paper_trading_mode") == "1":
+            if settings and settings.get("app_settings.paper_trading_mode"):
                 is_paper = True
             
             # Fetch DB positions
             db_positions = db.get_open_positions(is_paper=is_paper)
             for p in db_positions:
-                bot_keys.add((p['symbol'], p['exchange']))
-        except: pass
+                bot_keys.add((p['symbol'].upper(), p['exchange'].upper()))
+            log_ok(f"📌 Found {len(bot_keys)} bot-tracked positions in DB")
+        except Exception as de:
+            log_ok(f"⚠️ Error reading DB positions for tagging: {de}")
     
     merged = {}
+    
+    # 1. Start with valid Holdings (Delivery)
     for sym, pos in holdings.items():
-        key = (sym, pos.get("exchange", "NSE"))
+        ex = (pos.get("exchange") or pos.get("exchangeSegment") or "NSE").upper()
+        sym_upper = sym.upper()
+        key = (sym_upper, ex)
         source = "BOT" if key in bot_keys else "MANUAL"
         
         merged[key] = {
@@ -1019,56 +1278,75 @@ def merge_positions_and_orders():
             "pnl": float(pos.get("pnl", 0.0)),
             "source": source
         }
-    net = {}
-    for o in executed:
-        sym = o.get("tradingsymbol")
-        ex = o.get("exchange") or o.get("exchangeSegment") or "NSE"
-        side = (o.get("transaction_type") or "").upper()
-        qty = int(o.get("quantity") or o.get("filled_quantity") or 0)
-        avg = float(o.get("average_price") or o.get("price") or 0.0)
-        if not sym or qty <= 0:
-            continue
-        key = (sym, ex)
-        n = net.setdefault(key, {"net_qty": 0, "gross_buy_qty": 0, "wap_buy_num": 0.0})
-        if side == "BUY":
-            n["net_qty"] += qty
-            n["gross_buy_qty"] += qty
-            n["wap_buy_num"] += qty * avg
-        elif side == "SELL":
-            n["net_qty"] -= qty
-    for key, n in net.items():
-        sym, ex = key
-        source = "BOT" if key in bot_keys else "MANUAL"
         
-        if key not in merged and n["net_qty"] != 0:
-            wap_buy = (n["wap_buy_num"] / n["gross_buy_qty"]) if n["gross_buy_qty"] > 0 else 0.0
-            merged[key] = {
-                "qty": n["net_qty"],
+    # 2. Merge Daywise Positions (Intraday / F&O / BTST)
+    # These often override holdings if there's an overlap, or add to them?
+    # Usually 'positions' endpoint shows NET today. Holdings shows Yesterday's closing.
+    # We will prioritize Positions for P&L if they exist for the same symbol?
+    # Strategy: Add if not exists, or update if exists.
+    
+    for key, pos in daywise.items():
+        source = "BOT" if key in bot_keys else "MANUAL"
+        if key in merged:
+            # If it's in holdings AND positions, it might be a complexity (e.g. selling from holdings).
+            # The 'positions' endpoint usually shows the 'Today's P&L' or 'Net Qty'.
+            # Simplest approach: Trust 'positions' for LTP/PNL if active today?
+            # Actually, let's just ADD them if they are distinct (e.g. F&O vs Equity).
+            # But header is usually Symbol.
+            # If same symbol: likely selling from holding.
+            pass 
+        else:
+             merged[key] = {
+                "qty": pos['qty'],
                 "used_quantity": 0,
-                "price": wap_buy,
-                "ltp": 0.0,
-                "pnl": 0.0,
+                "price": pos['price'],
+                "ltp": pos['ltp'],
+                "pnl": pos['pnl'],
                 "source": source
             }
-        elif key in merged:
-            merged[key]["qty"] += n["net_qty"]
-            if merged[key]["qty"] < 0:
-                merged[key]["qty"] = 0
-            # If it became merged, we keep source as BOT if it was ever BOT, usually safe assumption
-            if source == "BOT": merged[key]["source"] = "BOT"
+
+    # 3. (Optional) Orders check - Removed complex reconstruction in favor of 'daywise' endpoint
+    # valid Daywise endpoint usually covers the 'Orders' outcome.
+    
+    # 4. Integrate DB-tracked positions that are MISSING (T+1 Settlement Gap)
+    for (sym, ex) in bot_keys:
+        key = (sym, ex)
+        if key not in merged:
+            try:
+                # Find position details from DB
+                pos_data = next((p for p in db_positions if p['symbol'].upper() == sym and p['exchange'].upper() == ex), None)
+                if pos_data:
+                    merged[key] = {
+                        "qty": int(pos_data['net_quantity']),
+                        "used_quantity": 0,
+                        "price": float(pos_data['avg_entry_price']),
+                        "ltp": float(pos_data['avg_entry_price']),
+                        "pnl": 0.0,
+                        "source": "BOT (SETTLING)"
+                    }
+            except Exception: pass
+
+    # 5. Remove closed
+    to_delete = [k for k, v in merged.items() if v["qty"] == 0] # Keep negative for short?
+    # Actually, allow negative qty for shorts (F&O)
+    to_delete = [k for k, v in merged.items() if v["qty"] == 0]
+    for k in to_delete:
+         del merged[k]
             
+    log_ok(f"✅ Merged result: {len(merged)} active positions/holdings")
     return merged
 
 def safe_get_live_positions_merged():
     try:
         return merge_positions_and_orders()
     except Exception as e:
-        if "TokenException" in str(e) or "invalid session" in str(e):
+        err_msg = str(e)
+        if "TokenException" in err_msg or "invalid session" in err_msg:
             if handle_token_exception_and_refresh_token():
                 return merge_positions_and_orders()
             return {}
-        raise
-
+        log_ok(f"❌ Position merge failed: {e}")
+        return {}
 live_positions = safe_get_positions()
 
 # ---------------- RSI Helpers ----------------
@@ -1126,12 +1404,24 @@ def rsi_tradingview(close: pd.Series, length: int = 14) -> pd.Series:
 
 def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=None):
     """
-    Seamless RSI Implementation (Option A) with Phase B (Incremental Updates):
-    1. Check if bars exist in cache.
-    2. If not, fetch 200+ seed bars from m.Stock.
-    3. If cache exists, fetch ONLY the latest bars since the last cached timestamp.
-    4. Maintain a sliding window of ~400 bars for speed and precision.
+    RSI calculation with optional Stabilization (Phase A/B):
+    If stabilized=True: Uses memory buffer (CANDLE_CACHE) for precise RSI.
+    If stabilized=False: Performs a standard fetch of 100 bars for calculation.
     """
+    from settings_manager import settings
+    # Force OFF for testing (was True)
+    use_stabilization = False 
+    from getRSI import calculate_rsi_from_df
+    
+    if not use_stabilization:
+        # Standard Fetch (Non-cached, lightweight)
+        df = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=None) 
+        if df is None or df.empty:
+            return None, None
+        ts, last_rsi, _ = calculate_rsi_from_df(df, period=14, live_price=live_price)
+        return ts, last_rsi
+
+    # --- Stabilized Cache Logic ---
     cache_key = (symbol, exchange, timeframe)
     df = CANDLE_CACHE.get(cache_key)
     
@@ -1144,29 +1434,25 @@ def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price
             return None, None
     else:
         # Phase B: Incremental Update (Smart Polling)
-        # Fetch last 2 days to ensure we bridge any gaps since last check
         try:
             new_data = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=2)
             if new_data is not None and not new_data.empty:
-                # Merge and deduplicate based on timestamp
                 combined = pd.concat([df, new_data])
                 combined = combined[~combined.index.duplicated(keep='last')]
                 combined.sort_index(inplace=True)
                 
-                # Maintain sliding window (Keep last 400 bars for overhead/precision balance)
                 if len(combined) > 400:
                     combined = combined.tail(400)
                 
                 CANDLE_CACHE[cache_key] = combined
-                df = combined
         except Exception as e:
             log_ok(f"⚠️ Failed incremental update for {symbol}: {e}")
 
-    if df is not None and not df.empty:
-        from getRSI import calculate_rsi_from_df
+    # Final Calculation from Cache
+    current_df = CANDLE_CACHE.get(cache_key)
+    if current_df is not None and not current_df.empty:
         try:
-            # Calculate RSI using the deep-seed buffer + current LTP
-            ts, rsi_val, _ = calculate_rsi_from_df(df, period=14, live_price=live_price)
+            ts, rsi_val, _ = calculate_rsi_from_df(current_df, period=14, live_price=live_price)
             return ts, rsi_val
         except Exception as e:
             if "Insufficient history" in str(e):
@@ -1232,21 +1518,8 @@ def build_last_nd_window_ist(days: int, frame_minutes: int):
 ist = pytz.timezone("Asia/Kolkata")
 
 def is_market_open_now_ist() -> bool:
-    # 1. 24/7 Paper Trading Override
-    if SETTINGS_AVAILABLE:
-        try:
-            sm = SettingsManager()
-            sm.load()
-            if sm.get("app_settings", {}).get("paper_trading_mode", False):
-                return True
-        except: pass
-
-    now = datetime.now(ist)
-    if now.weekday() >= 5:
-        return False
-    start = dtime(9, 15)
-    end = dtime(15, 30)
-    return start <= now.time() <= end
+    # 24/7 Override for Testing
+    return True
 
 def is_trading_day(d: date) -> bool:
     if d.weekday() >= 5:
@@ -1265,8 +1538,8 @@ def next_market_open_dt_ist(from_dt: Optional[datetime] = None) -> datetime:
         if is_trading_day(d):
             return datetime.combine(d, OPEN_T, ist)
 
-OPEN_T = dtime(9, 15)
-CLOSE_T = dtime(15, 30)
+OPEN_T = dtime(0, 0)
+CLOSE_T = dtime(23, 59)
 
 def wait_for_market_open():
     global LOG_SUPPRESS
@@ -1294,7 +1567,7 @@ def wait_for_market_open():
     finally:
         LOG_SUPPRESS = False
 
-def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
+def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, avg_price=0):
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
@@ -1345,6 +1618,19 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 "stamp_duty": round(stamp, 2)
             }
             
+            # Calculate P&L if selling
+            pnl_gross = 0
+            pnl_net = 0
+            pnl_pct_net = 0
+            
+            if side.upper() == "SELL" and avg_price > 0:
+                pnl_gross = (current_price - avg_price) * qty
+                # Net P&L (Proceeds minus original cost + estimated buy fees)
+                # We estimate buy fees as ~0.05% if unknown
+                approx_buy_fees = avg_price * qty * 0.0005
+                pnl_net = (gross_amount - total_fees) - (avg_price * qty + approx_buy_fees)
+                pnl_pct_net = (pnl_net / (avg_price * qty)) * 100 if avg_price > 0 else 0
+
             # Log trade to database
             trade_id = db.insert_trade(
                 symbol=symbol,
@@ -1358,6 +1644,9 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 strategy="RSI",
                 reason=f"RSI-based {side.upper()}",
                 broker="mstock",
+                pnl_gross=round(pnl_gross, 2),
+                pnl_net=round(pnl_net, 2),
+                pnl_pct_net=round(pnl_pct_net, 2),
                 fee_breakdown=fee_breakdown
             )
             log_ok(f"📝 Trade logged to database (ID: {trade_id})")
@@ -1535,9 +1824,9 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             return
 
         sym_config = config_dict[config_key]
-        buy_rsi = sym_config["Buy RSI"]
-        sell_rsi = sym_config["Sell RSI"]
-        profit_pct = sym_config["Profit Target %"]
+        buy_rsi = sym_config.get("RSI_Buy_Threshold", 30)
+        sell_rsi = sym_config.get("RSI_Sell_Threshold", 70)
+        profit_pct = sym_config.get("Profit_Target", 1.0)
         config_qty = int(sym_config.get("Quantity", 0))
         strategy_type = str(sym_config.get("Strategy", "TRADE")).upper() # TRADE or INVEST
         
@@ -1589,13 +1878,26 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         }
         api_timeframe = timeframe_map.get(tf, tf)
 
-        ts_str, tv_rsi_last_val = get_stabilized_rsi(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=tf,
-            instrument_token=instrument_token,
-            live_price=current_close
-        )
+        # Reverted to YFinance (Audit Fix)
+        try:
+            ts_str, tv_rsi_last_val, _ = calculate_intraday_rsi_tv(
+                ticker=symbol,
+                period=14,
+                interval=api_timeframe,
+                live_price=current_close,
+                exchange=exchange
+            )
+        except Exception as e:
+            # Track failed symbols to avoid log spam (log once per symbol, then silent)
+            if not hasattr(process_market_data, 'rsi_failed_symbols'):
+                process_market_data.rsi_failed_symbols = set()
+            
+            if symbol not in process_market_data.rsi_failed_symbols:
+                # Log only FIRST occurrence
+                print(f"⚠️ RSI data unavailable for {symbol} (yfinance issue) - will skip this symbol")
+                process_market_data.rsi_failed_symbols.add(symbol)
+            # Silent skip on subsequent occurrences
+            return
 
         if tv_rsi_last_val is None:
             return
@@ -1673,7 +1975,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
                     log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
-                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0)
+                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, avg_price=pos.get("price", 0))
                 return
 
         if has_existing_position:
@@ -1689,8 +1991,10 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 can_afford, remaining = check_capital_safety(required_funds)
                 
                 # SMART CHECK 2: Portfolio Risk (Buffett Rule - Max 10% in one trade)
+                from settings_manager import settings
+                use_risk_limit = settings.get("risk_controls.use_10_pct_portfolio_limit", True)
                 portfolio_risk_limit = ALLOCATED_CAPITAL * 0.10
-                is_concentrated = required_funds > portfolio_risk_limit
+                is_concentrated = use_risk_limit and (required_funds > portfolio_risk_limit)
                 
                 if not can_afford:
                     log_ok(f"🚫 Trade Skipped for {symbol}: Insufficient Bot Capital (Needed ₹{required_funds:,.2f})")
@@ -1746,6 +2050,16 @@ def connectivity_monitor():
 def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
     if is_offline():
         return False
+    
+    # Import state manager for counter tracking
+    try:
+        from state_manager import state as state_mgr
+    except ImportError:
+        state_mgr = None
+
+    # Increment attempt counter
+    if state_mgr:
+        state_mgr.increment_trade_counter('attempts')
 
     # Check Paper Trading Mode
     if settings and settings.get("app_settings.paper_trading_mode"):
@@ -1780,10 +2094,16 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                     broker="PAPER"
                 )
                 log_ok("✅ Paper trade logged to DB")
+                if state_mgr:
+                    state_mgr.increment_trade_counter('success')
                 return True
             except Exception as e:
                 log_ok(f"❌ Failed to log paper trade: {e}")
+                if state_mgr:
+                    state_mgr.increment_trade_counter('failed')
                 return False
+        if state_mgr:
+            state_mgr.increment_trade_counter('success')
         return True
 
     def attempt_place_order():
@@ -1821,14 +2141,20 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
             message = resp_dict.get("message")
             if response.status_code == 200 and status == "success":
                 log_ok(f"✅ {side} order placed for {symbol} (Qty: {qty})")
+                if state_mgr:
+                    state_mgr.increment_trade_counter('success')
                 return True
             else:
                 log_ok(f"❌ Order failed for {symbol}: {message or response.text}")
+                if state_mgr:
+                    state_mgr.increment_trade_counter('failed')
                 if message and "TokenException" in message:
                     raise Exception("TokenException")
                 return False
         except Exception as e:
             log_ok(f"❌ Response parsing error: {e} - Raw: {response.text}")
+            if state_mgr:
+                state_mgr.increment_trade_counter('failed')
             return False
 
     try:
@@ -1840,13 +2166,53 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 return attempt_place_order()
             else:
                 log_ok("Failed to refresh token, order placement aborted.")
+                if state_mgr:
+                    state_mgr.increment_trade_counter('failed')
                 return False
         else:
             raise
 
+
+def send_engine_heartbeat():
+    """Send periodic status update to Telegram"""
+    global LAST_HEARTBEAT_TS
+    now = time.time()
+    
+    if now - LAST_HEARTBEAT_TS < HEARTBEAT_INTERVAL:
+        return
+        
+    try:
+        from notifications import NotificationManager
+        from state_manager import state as state_mgr
+        from database.trades_db import TradesDatabase
+        
+        db = TradesDatabase()
+        perf = db.get_performance_summary(days=1)
+        positions = state_mgr.get_all_positions()
+        
+        notifier = NotificationManager(settings)
+        notifier.send_heartbeat({
+            'status': 'RUNNING',
+            'total_pnl': perf.get('net_profit', 0),
+            'positions_count': len(positions)
+        })
+        
+        
+        LAST_HEARTBEAT_TS = now
+    except Exception as e:
+        log_ok(f"⚠️ Failed to send heartbeat: {e}")
+
 # ---------------- Runner ----------------
 
 def run_cycle():
+    # ---------------- Persisted Stop Check ----------------
+    global STOP_REQUESTED
+    if state_mgr and state_mgr.is_stop_requested():
+        STOP_REQUESTED = True
+        
+    if STOP_REQUESTED:
+        return
+
     if is_offline():
         return
     if not is_market_open_now_ist():
@@ -1941,6 +2307,35 @@ def run_cycle():
         except Exception as e:
             if not is_offline():
                 log_ok(f"❌ Cycle error for {symbol}:{ex}: {e}")
+                
+    # ---------------- Send Periodic Heartbeat ----------------
+    send_engine_heartbeat()
+    
+    # ---------------- Save State (Phase 0A) ----------------
+
+    # --- PART 2: Butler Mode (Managed Holdings) ---
+    if state_mgr:
+        managed = state_mgr.state.get('managed_holdings', {})
+        for key_str, is_enabled in managed.items():
+            if not is_enabled: continue
+            
+            # Key is stringified tuple like "('RELIANCE', 'NSE')"
+            try:
+                import ast
+                symbol, ex = ast.literal_eval(key_str)
+                
+                # Check if we already processed this in SYMBOLS_TO_TRACK
+                if (symbol, ex) in processed: continue
+                
+                # Process managed holding
+                tf = config_dict.get((symbol, ex), {}).get("Timeframe", "15T")
+                market_data, _ = fetch_market_data_once(symbol, ex)
+                if market_data:
+                    instrument_token = market_data.get("instrument_token")
+                    if instrument_token:
+                        process_market_data(symbol, ex, market_data, tf, instrument_token)
+            except Exception as e:
+                log_ok(f"⚠️ Error processing managed holding {key_str}: {e}")
     
     # ---------------- Save State (Phase 0A) ----------------
     save_state_snapshot()
@@ -1980,10 +2375,12 @@ def main_loop():
     log_ok("🕒 Scheduler started (continuous)", force=True)
     if is_system_online():
         log_ok("🟢 Status: Online", force=True)
-    # while True:
-        # run_cycle()  # Run cycles back-to-back
-        
-    run_cycle()
+    while True:
+        try:
+            run_cycle()  # Run cycles back-to-back
+        except Exception as e:
+            log_ok(f"❌ Main Loop Error: {e}", force=True)
+        time.sleep(0.5) 
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Handles all trade logging and querying
 
 import sqlite3
 import os
+import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import pandas as pd
@@ -13,100 +14,111 @@ import pandas as pd
 class TradesDatabase:
     """
     Simple SQLite database for logging trades
+
+    BUG-003 FIX: Added thread safety with write lock to prevent database corruption
+    when using check_same_thread=False. All write operations now use a threading.Lock()
+    to ensure only one thread writes at a time.
     """
-    
+
     def __init__(self, db_path: str = "database/trades.db"):
         self.db_path = db_path
-        
+
+        # BUG-003 FIX: Add write lock for thread safety
+        self.write_lock = threading.Lock()
+
         # Create database directory if it doesn't exist
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
+
         # Initialize database
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
         self.cursor = self.conn.cursor()
-        
+
         # Create tables
         self._create_tables()
         self._create_tables()
         self._run_migrations()
-        print(f"✅ Database initialized: {db_path} (v2 with get_recent_trades)")
+        print(f"✅ Database initialized: {db_path} (v2 with thread safety)")
     
     def _create_tables(self):
         """
         Create trades table if it doesn't exist
+        BUG-003 FIX: Uses write lock for thread safety
         """
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                exchange TEXT NOT NULL,
-                action TEXT NOT NULL CHECK(action IN ('BUY', 'SELL')),
-                quantity INTEGER NOT NULL,
-                price REAL NOT NULL,
-                
-                -- Fee breakdown
-                gross_amount REAL NOT NULL,
-                brokerage_fee REAL DEFAULT 0,
-                stt_fee REAL DEFAULT 0,
-                exchange_fee REAL DEFAULT 0,
-                gst_fee REAL DEFAULT 0,
-                sebi_fee REAL DEFAULT 0,
-                stamp_duty_fee REAL DEFAULT 0,
-                total_fees REAL DEFAULT 0,
-                net_amount REAL NOT NULL,
-                
-                -- Trade metadata
-                strategy TEXT,
-                pnl_gross REAL,
-                pnl_net REAL,
-                pnl_pct_gross REAL,
-                pnl_pct_net REAL,
-                reason TEXT,
-                broker TEXT,
-                source TEXT DEFAULT 'BOT', -- 'BOT' or 'MANUAL'
-                
-                -- Additional fields
-                entry_timestamp TEXT,
-                hold_duration_days REAL
-            )
-        """)
-        
-        # Create index for faster queries
-        self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbol_timestamp 
-            ON trades(symbol, timestamp)
-        """)
-        
-        self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_action_timestamp 
-            ON trades(action, timestamp)
-        """)
-        
-        self.conn.commit()
+        with self.write_lock:
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    exchange TEXT NOT NULL,
+                    action TEXT NOT NULL CHECK(action IN ('BUY', 'SELL')),
+                    quantity INTEGER NOT NULL,
+                    price REAL NOT NULL,
+
+                    -- Fee breakdown
+                    gross_amount REAL NOT NULL,
+                    brokerage_fee REAL DEFAULT 0,
+                    stt_fee REAL DEFAULT 0,
+                    exchange_fee REAL DEFAULT 0,
+                    gst_fee REAL DEFAULT 0,
+                    sebi_fee REAL DEFAULT 0,
+                    stamp_duty_fee REAL DEFAULT 0,
+                    total_fees REAL DEFAULT 0,
+                    net_amount REAL NOT NULL,
+
+                    -- Trade metadata
+                    strategy TEXT,
+                    pnl_gross REAL,
+                    pnl_net REAL,
+                    pnl_pct_gross REAL,
+                    pnl_pct_net REAL,
+                    reason TEXT,
+                    broker TEXT,
+                    source TEXT DEFAULT 'BOT', -- 'BOT' or 'MANUAL'
+
+                    -- Additional fields
+                    entry_timestamp TEXT,
+                    hold_duration_days REAL
+                )
+            """)
+
+            # Create index for faster queries
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_symbol_timestamp
+                ON trades(symbol, timestamp)
+            """)
+
+            self.cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_action_timestamp
+                ON trades(action, timestamp)
+            """)
+
+            self.conn.commit()
 
     def _run_migrations(self):
         """
         Run schema migrations for existing databases
+        BUG-003 FIX: Uses write lock for thread safety
         """
-        try:
-            self.cursor.execute("PRAGMA table_info(trades)")
-            columns = [info[1] for info in self.cursor.fetchall()]
+        with self.write_lock:
+            try:
+                self.cursor.execute("PRAGMA table_info(trades)")
+                columns = [info[1] for info in self.cursor.fetchall()]
 
-            if 'broker' not in columns:
-                print("🔄 Migrating database: Adding 'broker' column...")
-                self.cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
-                self.conn.commit()
+                if 'broker' not in columns:
+                    print("🔄 Migrating database: Adding 'broker' column...")
+                    self.cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
+                    self.conn.commit()
 
-            if 'source' not in columns:
-                print("🔄 Migrating database: Adding 'source' column...")
-                self.cursor.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'BOT'")
-                self.conn.commit()
-                print("✅ Migration 'source' complete")
+                if 'source' not in columns:
+                    print("🔄 Migrating database: Adding 'source' column...")
+                    self.cursor.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'BOT'")
+                    self.conn.commit()
+                    print("✅ Migration 'source' complete")
 
-        except Exception as e:
-            print(f"⚠️ Migration warning: {e}")
+            except Exception as e:
+                print(f"⚠️ Migration warning: {e}")
     
     def insert_trade(self,
                     symbol: str,
@@ -121,14 +133,20 @@ class TradesDatabase:
                     reason: str = "",
                     broker: str = "mstock",
                     source: str = "BOT",
+                    pnl_gross: float = 0,
+                    pnl_net: float = 0,
+                    pnl_pct_gross: float = 0,
+                    pnl_pct_net: float = 0,
                     fee_breakdown: Optional[Dict] = None) -> int:
         """
         Insert a trade record
-        
+
+        BUG-003 FIX: Uses write lock for thread safety during database writes
+
         Returns: trade_id
         """
         timestamp = datetime.now().isoformat()
-        
+
         # Extract fee breakdown if provided
         brokerage = fee_breakdown.get('brokerage', 0) if fee_breakdown else 0
         stt = fee_breakdown.get('stt', 0) if fee_breakdown else 0
@@ -136,24 +154,28 @@ class TradesDatabase:
         gst = fee_breakdown.get('gst', 0) if fee_breakdown else 0
         sebi = fee_breakdown.get('sebi_charges', 0) if fee_breakdown else 0
         stamp = fee_breakdown.get('stamp_duty', 0) if fee_breakdown else 0
-        
-        self.cursor.execute("""
-            INSERT INTO trades (
+
+        # BUG-003 FIX: Protect database write with lock
+        with self.write_lock:
+            self.cursor.execute("""
+                INSERT INTO trades (
+                    timestamp, symbol, exchange, action, quantity, price,
+                    gross_amount, brokerage_fee, stt_fee, exchange_fee,
+                    gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
+                    strategy, reason, broker, source,
+                    pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
                 timestamp, symbol, exchange, action, quantity, price,
-                gross_amount, brokerage_fee, stt_fee, exchange_fee,
-                gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
-                strategy, reason, broker, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            timestamp, symbol, exchange, action, quantity, price,
-            gross_amount, brokerage, stt, exchange_fee,
-            gst, sebi, stamp, total_fees, net_amount,
-            strategy, reason, broker, source
-        ))
-        
-        self.conn.commit()
-        trade_id = self.cursor.lastrowid
-        
+                gross_amount, brokerage, stt, exchange_fee,
+                gst, sebi, stamp, total_fees, net_amount,
+                strategy, reason, broker, source,
+                pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
+            ))
+
+            self.conn.commit()
+            trade_id = self.cursor.lastrowid
+
         print(f"✅ Trade logged: {action} {symbol} @ ₹{price} (ID: {trade_id})")
         return trade_id
     
@@ -208,6 +230,7 @@ class TradesDatabase:
     def get_today_trades(self, is_paper: bool = False) -> pd.DataFrame:
         """
         Get today's trades
+        BUG-007 FIX: Added missing query execution and return statement
         """
         today = datetime.now().date().isoformat()
         broker_filter = "broker = 'PAPER'" if is_paper else "broker != 'PAPER'"
@@ -217,6 +240,14 @@ class TradesDatabase:
             WHERE DATE(timestamp) = ? AND {broker_filter}
             ORDER BY timestamp DESC
         """
+
+        try:
+            df = pd.read_sql_query(query, self.conn, params=[today])
+            return df
+        except Exception as e:
+            print(f"⚠️ Error fetching today's trades: {e}")
+            return pd.DataFrame()  # Return empty DataFrame on error
+
     def get_recent_trades(self, limit: int = 10, is_paper: bool = None) -> List[Dict]:
         """
         Get list of recent trades

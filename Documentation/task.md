@@ -1,28 +1,33 @@
-# 🎯 Developer Task Scratchpad
+# Audit Task Checklist
 
-## Immediate Focus
-- [x] Implement Seamless RSI Strategy (V2: 200-bar Seed + Phase B + Phase C)
-    - [x] Document strategy decisions ([RSI_STRATEGY_DECISION_LOG.md](file:///c:/Antigravity/TradingBots-Aruns%20Project/Documentation/RSI_STRATEGY_DECISION_LOG.md))
-    - [x] Update `knowledge_center.py` with RSI education & enhancements
-    - [x] Refactor `getRSI.py` to use m.Stock historical API
-    - [x] Modify `kickstart.py` for 200-bar warm-up & incremental polling
-    - [x] Add Phase C: Capital Protection & 10% Risk Check logic
-    - [x] Update Product Documentation
-    - [x] Push all changes to Git
+- [x] Explore codebase structure and identify key components `[PLANNING]`
+- [x] Analyze the core trading loop implementation `[PLANNING]`
+    - [x] Check `kickstart.py` (or equivalent core engine)
+    - [x] Check `dashboard_v2.py` (or equivalent new wrapper)
+- [x] Investigate the "Order Trigger" mechanism `[PLANNING]`
+    - [x] Verify how signals are generated
+    - [x] Verify how signals are sent to the exchange
+    - [x] Compare "direct" execution vs "web/gui" triggered execution
+- [x] Identify architectural gaps or regressions `[PLANNING]`
+    - [x] Check for thread safety issues
+    - [x] Check for silent failures or swallowed exceptions
+    - [x] Check for missing "keep-alive" or polling loops
+- [x] Compile Audit Report `[planning]`
 
-## Active Sprint (Founder Readiness)
-- [ ] Create `SETUP_ENVIRONMENT.bat` for non-technical users
-- [ ] Verify `requirements.txt` coverage
-- [ ] Prepare "Founder Onboarding" guide in Knowledge Center
+## Phase 2: Position & Holding Audit
+- [x] Locate position/holding logic in current code `[PLANNING]`
+- [x] Locate position/holding logic in base code (`JAY - Copy`) `[PLANNING]`
+- [x] Compare "Merged" view implementations `[PLANNING]`
+- [x] Verify if both intraday positions and portfolio holdings are considered correctly `[PLANNING]`
+- [x] Update Audit Report with findings `[PLANNING]`
 
-## Active Sprint (Phase 4)
-- [ ] Initialize `streamlit_app.py` prototype.
-- [ ] Test Database connectivity from a separate process.
+## Phase 3: Recommendation & Planning
+- [x] Draft `implementation_plan.md` `[PLANNING]`
+- [x] Present fixes to USER for approval `[PLANNING]`
+- [x] Finalize transition to EXECUTION `[PLANNING]`
 
-### 🛠️ Maintenance & Excellence
-- [ ] Clean up legacy files (`kickstart_gui.py`, old test scripts).
-- [ ] Expand `strategies/trading_tips.json` with more technical education.
-- [ ] Optimize yfinance data fetching for faster sentiment updates.
-
----
-*Status: Phase 2 (Titan UI) 100% Complete. Phase 5 (Seamless RSI) In Progress.*
+## Phase 4: Implementation
+- [x] Decouple Trading Engine from GUI in `dashboard_v2.py` `[EXECUTION]`
+- [x] Enhance Position Merging in `kickstart.py` `[EXECUTION]`
+- [x] Add Headless Mode via `HEADLESS_ENGINE.bat` `[EXECUTION]`
+- [x] Create `walkthrough.md` with verification results `[VERIFICATION]`

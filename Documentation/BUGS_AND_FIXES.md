@@ -6,13 +6,12 @@
 
 | ID | Severity | Issue Description | Fix Implemented | Status |
 |----|----------|-------------------|-----------------|--------|
-| **CRIT-001** | 🔴 Critical | **Unstoppable Bot**: "STOP" button did not kill the engine; bot continued placing orders. | Implemented Global Kill Switch (`STOP_REQUESTED` flag) checked in main loop. Button now forces this flag. | **VERIFIED** |
-| **CRIT-002** | 🔴 Critical | **State Saving Crash**: `Error saving state: keys must be str` caused by tuple keys (e.g. `('STOCK','NSE')`) in JSON. | Added defensive "Nuclear" Sanitization in `state_manager.py` to recursively convert all keys to strings before saving. | **VERIFIED** |
-| **HIGH-003** | 🟠 High | **Incorrect Allocation**: Dashboard showed ₹50,000 default instead of actual user setting (₹10,000). | Updated `dashboard_v2.py` to hot-reload `max_capital` from `settings.json` on refresh. | **VERIFIED** |
-| **HIGH-004** | 🟠 High | **Balance Sync**: Balance was reading 0.00 due to API response format change (Count vs List). | Updated `kickstart.py` to correctly parse `fundsummary` as a list. | **VERIFIED** |
-| **MED-005** | 🟡 Medium | **Monitor Logs**: User unsure if Monitor started/stopped. | Added explicit `--- Monitor Initialized ---` and `--- Stopped ---` logs on button clicks. | **VERIFIED** |
-| **MED-006** | 🟡 Medium | **Ticker Errors**: `Failed to get ticker ^INDIAVIX`. | Filtered indices in `kickstart.py`. (Log may persist harmlessly, but crash is prevented). | **RESOLVED** |
-| **UI-007** | 🔵 Low | **Refresh Indicator**: No visual cue that positions were updating. | Added `(Last Check: HH:MM:SS)` timestamp to Positions table header. | **VERIFIED** |
+| **BUG-002** | 🔴 Critical | **Thread Safety Concurrency**: UI and Engine were modifying global state (STOP/OFFLINE flags) simultaneously, causing "Race Conditions" and UI freezes. | Implemented `threading.Lock()` across all shared state accessors (`stop_lock`, `offline_lock`, `state_lock`). | **VERIFIED** |
+| **BUG-005** | 🟠 High | **API Data Fragility**: Malformed or unexpected JSON from broker API caused bot crashes during order placement. | Implemented centralized `validate_api_response()` helper with schema-checking before processing trades. | **VERIFIED** |
+| **BUG-004** | 🟠 High | **Silent Failures**: critical errors (e.g. stop-signal failure) were hidden by `except: pass` blocks, making debugging impossible. | Replaced silent suppressions with proper `log_ok()` reporting. All background failures now appear in the Dashboard. | **VERIFIED** |
+| **GUI-101** | 🔴 Critical | **Settings GUI Crash**: Settings tab crashed with `AttributeError` when clicking Save. | Fixed missing `broker_var` attribute in `SettingsGUI` class used by the V2 dashboard. | **VERIFIED** |
+| **POS-102** | 🟠 High | **P&L Sync Failure**: `TypeError` when fetching positions if the user's portfolio was empty. | Added type-guards to `get_daywise_positions` to handle string responses from the broker API. | **VERIFIED** |
+| **RISK-103** | 🟡 Medium | **Outdated Risk Limits**: Risk Manager ignored GUI setting changes until manual restart. | Refactored RiskManager to fetch thresholds dynamically in every cycle. Bot now respects user sliders in real-time. | **VERIFIED** |
 
 ---
 

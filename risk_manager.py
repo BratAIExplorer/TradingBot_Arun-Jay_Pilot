@@ -13,54 +13,123 @@ class RiskManager:
     Manages risk controls: stop-loss, profit targets, daily loss limits
     """
     
+    @property
+    def stop_loss_pct(self):
+        return self.settings.get('risk_controls.stop_loss_pct', 5)
+
+    @property
+    def profit_target_pct(self):
+        return self.settings.get('risk_controls.profit_target_pct', 10)
+
+    @property
+    def catastrophic_stop_pct(self):
+        return self.settings.get('risk_controls.catastrophic_stop_loss_pct', 20)
+
+    @property
+    def daily_loss_limit_pct(self):
+        return self.settings.get('risk_controls.daily_loss_limit_pct', 10)
+
     def __init__(self, settings, database, market_data_fetcher):
         self.settings = settings
         self.db = database
         self.fetch_market_data = market_data_fetcher
         
-        # Risk settings
-        self.stop_loss_pct = settings.get('risk_controls.default_stop_loss_pct', 5)
-        self.profit_target_pct = settings.get('risk_controls.default_profit_target_pct', 10)
-        self.catastrophic_stop_pct = settings.get('risk_controls.catastrophic_stop_pct', 20)
-        self.daily_loss_limit_pct = settings.get('capital.daily_loss_limit_pct', 10)
-        
         # Tracking
-        self.daily_start_capital = settings.get('capital.total_capital', 0)
+        self.daily_start_capital = settings.get('capital.allocated_limit', 0)
         self.circuit_breaker_triggered = False
         
-        logging.info(f"✅ RiskManager initialized: SL={self.stop_loss_pct}%, PT={self.profit_target_pct}%")
+        logging.info(f"✅ RiskManager initialized and synced to dynamic settings.")
     
     def check_all_positions(self) -> List[Dict]:
         """
-        Check all open positions for stop-loss or profit target hits
+        Check all open positions (Bot-initiated and Butler Mode manual positions)
+        for stop-loss or profit target hits
         
-        Returns list of actions to take: [{'symbol': 'HDFC', 'action': 'SELL', 'reason': 'Stop Loss Hit'}]
+        Returns list of actions to take.
         """
         actions = []
         
-        # Get open positions from database
-        positions = self.db.get_open_positions()
+        # 1. Get BOT positions from database
+        db_positions = self.db.get_open_positions() if self.db else []
         
-        if not positions:
+        # 2. Identify Manual positions to watch (Butler Mode)
+        watched_symbols = self.settings.get("app_settings.watched_manual_positions", [])
+        
+        # We need live market data for all these as well
+        # In a real environment, we'd fetch live holdings from the broker
+        # For simplicity, we assume kickstart provides a way to get 'live_positions' 
+        # but since RiskManager is independent, we check what it has.
+        
+        # If we have a way to get live holdings, we should use it.
+        # Let's assume the caller (kickstart) might pass positions, 
+        # or we fetch them here if we have access to the broker API.
+        
+        # CURRENT STRATEGY: 
+        # The RiskManager currently focuses on DB positions.
+        # To support Butler Mode, we need the live holdings details (avg price, qty).
+        # We'll rely on the 'fetch_market_data' to get current prices,
+        # but we still need the 'ENTRY price' for manual holdings.
+        
+        # Since manual holdings are NOT in the DB, we must fetch them from the broker.
+        # This requires an update to the RiskManager constructor or a new method.
+        # However, to keep it simple and within the current flow:
+        # We will iterate through DB positions first.
+        
+        final_positions_to_check = []
+        for p in db_positions:
+            final_positions_to_check.append({
+                'symbol': p['symbol'],
+                'exchange': p['exchange'],
+                'avg_entry_price': p['avg_entry_price'],
+                'net_quantity': p['net_quantity'],
+                'source': 'BOT'
+            })
+            
+        # 3. Add Butler Mode positions if they exist in live holdings
+        # HACK: In this context, we need to know what the live holdings are.
+        # We can try to get them from kickstart (global) or fetch them.
+        import kickstart
+        try:
+            live_holdings = kickstart.safe_get_live_positions_merged()
+            for key, pos in live_holdings.items():
+                sym = key[0] if isinstance(key, tuple) else str(key)
+                if sym.upper() in [s.upper() for s in watched_symbols] and pos.get('source') == 'MANUAL':
+                    # Check if already added via DB (shouldn't be, but safety first)
+                    if not any(p['symbol'].upper() == sym.upper() for p in final_positions_to_check):
+                        final_positions_to_check.append({
+                            'symbol': sym,
+                            'exchange': key[1] if isinstance(key, tuple) else 'NSE',
+                            'avg_entry_price': pos.get('price', 0),
+                            'net_quantity': pos.get('qty', 0),
+                            'source': 'BUTLER'
+                        })
+        except Exception as e:
+            logging.warning(f"⚠️ RiskManager: Could not fetch manual holdings for Butler Mode: {e}")
+
+        if not final_positions_to_check:
             return actions
         
-        logging.info(f"📊 Checking {len(positions)} open positions for risk triggers...")
+        logging.info(f"📊 Checking {len(final_positions_to_check)} positions (Bot + Butler) for risk triggers...")
         
-        for position in positions:
-            symbol = position['symbol']
-            exchange = position['exchange']
-            entry_price = position['avg_entry_price']
-            quantity = position['net_quantity']
+        for pos_check in final_positions_to_check:
+            symbol = pos_check['symbol']
+            exchange = pos_check['exchange']
+            entry_price = pos_check['avg_entry_price']
+            quantity = pos_check['net_quantity']
+            source = pos_check['source']
             
+            if entry_price <= 0 or quantity == 0:
+                continue
+
             # Fetch current price
-            market_data = self.fetch_market_data(symbol, exchange)
+            raw_data = self.fetch_market_data(symbol, exchange)
+            if isinstance(raw_data, tuple): market_data = raw_data[0]
+            else: market_data = raw_data
             
             if not market_data:
-                logging.warning(f"⚠️ Could not fetch price for {symbol}, skipping risk check")
                 continue
             
-            current_price = market_data.get('lp', 0)  # Last price
-            
+            current_price = market_data.get('lp', market_data.get('last_price', 0))
             if current_price == 0:
                 continue
             
@@ -68,68 +137,41 @@ class RiskManager:
             pnl_pct = ((current_price - entry_price) / entry_price) * 100
             pnl_amount = (current_price - entry_price) * quantity
             
-            logging.info(f"  {symbol}: Entry ₹{entry_price:.2f} → Current ₹{current_price:.2f} = {pnl_pct:+.2f}%")
-            
-            # Check catastrophic stop (ALWAYS takes priority)
-            if pnl_pct <=-self.catastrophic_stop_pct:
+            # Risk Checks
+            # 1. Catastrophic Stop
+            if pnl_pct <= -self.catastrophic_stop_pct:
                 actions.append({
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'quantity': quantity,
-                    'action': 'SELL',
-                    'reason': f'🛑 CATASTROPHIC STOP ({pnl_pct:.1f}%)',
-                    'priority': 'CRITICAL',
-                    'pnl_pct': pnl_pct,
-                    'pnl_amount': pnl_amount,
-                    'current_price': current_price
+                    'symbol': symbol, 'exchange': exchange, 'quantity': quantity,
+                    'action': 'SELL', 'reason': f'🛑 CATASTROPHIC [{source}] ({pnl_pct:.1f}%)',
+                    'priority': 'CRITICAL', 'current_price': current_price
                 })
-                logging.error(f"  🛑 CATASTROPHIC STOP: {symbol} down {pnl_pct:.1f}%!")
                 continue
-            
-            # Check stop-loss (with never-sell-at-loss override)
+                
+            # 2. Stop Loss
+            # 2. Stop Loss
             if pnl_pct <= -self.stop_loss_pct:
-                # Check if never-sell-at-loss is enabled
-                never_sell_at_loss = self.settings.get('risk.never_sell_at_loss', False)
-                
-                if never_sell_at_loss and pnl_pct < 0:
-                    logging.warning(f"  ⚠️ Stop-loss ignored for {symbol} ({pnl_pct:.1f}%) - Never Sell at Loss enabled")
-                    continue  # Skip stop-loss, position remains open
-                
-                # Proceed with normal stop-loss
+                if self.settings.get('risk_controls.never_sell_at_loss', False) and pnl_pct < 0:
+                    continue
                 actions.append({
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'quantity': quantity,
-                    'action': 'SELL',
-                    'reason': f'⛔ Stop Loss Hit ({pnl_pct:.1f}%)',
-                    'priority': 'HIGH',
-                    'pnl_pct': pnl_pct,
-                    'pnl_amount': pnl_amount,
-                    'current_price': current_price
+                    'symbol': symbol, 'exchange': exchange, 'quantity': quantity,
+                    'action': 'SELL', 'reason': f'⛔ Stop Loss [{source}] ({pnl_pct:.1f}%)',
+                    'priority': 'HIGH', 'current_price': current_price
                 })
-                logging.warning(f"  ⛔ STOP LOSS: {symbol} down {pnl_pct:.1f}%")
                 continue
-            
-            # Check profit target
+                
+            # 3. Profit Target
             if pnl_pct >= self.profit_target_pct:
                 actions.append({
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'quantity': quantity,
-                    'action': 'SELL',
-                    'reason': f'🎯 Profit Target Hit ({pnl_pct:.1f}%)',
-                    'priority': 'NORMAL',
-                    'pnl_pct': pnl_pct,
-                    'pnl_amount': pnl_amount,
-                    'current_price': current_price
+                    'symbol': symbol, 'exchange': exchange, 'quantity': quantity,
+                    'action': 'SELL', 'reason': f'🎯 Profit Target [{source}] ({pnl_pct:.1f}%)',
+                    'priority': 'NORMAL', 'current_price': current_price
                 })
-                logging.info(f"  🎯 PROFIT TARGET: {symbol} up {pnl_pct:.1f}%!")
         
         if actions:
             logging.info(f"⚠️ Risk Manager found {len(actions)} positions to close")
         else:
             logging.info(f"✅ All positions within acceptable risk")
-        
+            
         return actions
     
     def check_daily_loss_limit(self, current_portfolio_value: float) -> bool:

@@ -16,8 +16,35 @@ import sys
 import requests
 from symbol_validator import validate_symbol
 
-# UI Color Constants
-COLOR_ACCENT = "#00F0FF"  # Cyber Cyan
+# --- UI COLOR CONSTANTS (DARK NEON) ---
+COLOR_BG = "#0f0f23"      # Deep Navy Background
+COLOR_CARD = "#1a1a2e"    # Dark Card Surface
+COLOR_ACCENT = "#00d4ff"  # Neon Cyan
+COLOR_DANGER = "#ff4757"  # Soft Red
+COLOR_SUCCESS = "#00ff88" # Bright Green
+COLOR_WARN = "#ffa502"    # Warm Orange
+COLOR_TEXT = "#e4e4e7"    # High Contrast Text
+COLOR_TEXT_DIM = "#6b7280" # Muted Text
+COLOR_BORDER = "#2f2f46"  # Subtle Dark Border
+
+FONT_MONO = ("JetBrains Mono", 11)
+FONT_MAIN = ("Inter", 12)
+FONT_HEADER = ("Inter", 14, "bold")
+FONT_BIG = ("Inter", 32, "bold")
+
+class SettingsSection(ctk.CTkFrame):
+    """Reusable settings card wrapper with title and accent pill"""
+    def __init__(self, parent, title, **kwargs):
+        super().__init__(parent, fg_color=COLOR_CARD, corner_radius=12, border_width=1, border_color=COLOR_BORDER, **kwargs)
+        
+        # Title Bar
+        title_frame = ctk.CTkFrame(self, fg_color="transparent")
+        title_frame.pack(fill="x", padx=15, pady=(15, 10))
+        
+        # Accent Pill
+        ctk.CTkFrame(title_frame, width=4, height=16, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
+        
+        ctk.CTkLabel(title_frame, text=title.upper(), font=FONT_HEADER, text_color=COLOR_TEXT).pack(side="left", padx=10)
 
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
@@ -28,50 +55,43 @@ class SettingsGUI:
         
         # Theme
         ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
         
         self.is_embedded = False
+        self.is_toplevel = False
         
-        # Main window logic
+        # Validation Cache
+        self.validation_cache = {}
+        self.load_validation_cache()
+
+        # Window logic
         if parent:
-            # Embedded Mode (e.g. inside Dashboard Tab)
             self.is_embedded = True
-            # For embedded, we don't set title or geometry on parent usually
         elif root:
-            # Popup Mode
             self.is_toplevel = True
         
-        self.on_save_callback = on_save_callback
-        
         if self.is_embedded:
-            # When embedded in dashboard, use parent as root and make it scrollable
-            self.root = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-            self.root.pack(fill="both", expand=True, padx=10, pady=10)
+            # When embedded, use a frame instead of making it scrollable here 
+            # as the parent container usually handles scrolling for the whole view
+            self.root = ctk.CTkFrame(parent, fg_color="transparent")
+            self.root.pack(fill="both", expand=True)
         elif self.is_toplevel:
-            # Popup Mode
             self.root = ctk.CTkToplevel(root)
             self.root.title("⚙️ Settings")
-            self.root.geometry("900x700")
+            self.root.geometry("1000x850")
+            self.root.configure(fg_color=COLOR_BG)
         else:
-            # Standalone window mode
             self.root = ctk.CTk()
-            self.root.title("⚙️ ARUN Bot - Settings")
-            self.root.geometry("900x700")
-            
-            # Validation Cache
-            self.validation_cache = {}
-            self.load_validation_cache()
-            
-            # Header (only for standalone)
-            header = ctk.CTkLabel(
-                self.root,
-                text="⚙️ ARUN Trading Bot - Configuration",
-                font=("Arial", 20, "bold")
-            )
-            header.pack(pady=20)
-        
-        # Create tabbed interface
-        self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
+            self.root.title("⚙️ Settings Engine")
+            self.root.geometry("1000x850")
+            self.root.configure(fg_color=COLOR_BG)
+
+        # Tabbed interface - Modern Cyan/Dark styling
+        self.tabview = ctk.CTkTabview(self.root, 
+                                     segmented_button_selected_color=COLOR_ACCENT,
+                                     segmented_button_selected_hover_color="#00b4d4",
+                                     segmented_button_unselected_color="#131326",
+                                     text_color=COLOR_TEXT,
+                                     fg_color="transparent")
         self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
         
         # Add tabs
@@ -79,51 +99,54 @@ class SettingsGUI:
         self.tabview.add("Capital")
         self.tabview.add("Risk Controls")
         self.tabview.add("Notifications")
-        self.tabview.add("Stocks")
+        self.tabview.add("Buckets & Strategies")
         
-        # Build each tab
+        # Build tabs
         self.build_broker_tab()
         self.build_capital_tab()
         self.build_risk_tab()
         self.build_notifications_tab()
-        self.build_stocks_tab()
+        self.build_buckets_tab()
         
-        # Bottom buttons
-        button_frame = ctk.CTkFrame(self.root)
-        button_frame.pack(pady=10)
+        # Bottom Control Bar
+        button_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+        button_frame.pack(pady=20, side="bottom")
         
         self.save_btn = ctk.CTkButton(
             button_frame,
-            text="💾 Save All Settings",
+            text="💾 SAVE CONFIGURATION",
             command=self.save_settings,
-            width=200,
-            height=40,
-            font=("Arial", 14, "bold"),
-            fg_color="green",
-            hover_color="darkgreen"
+            width=250,
+            height=45,
+            font=("Inter", 14, "bold"),
+            fg_color=COLOR_SUCCESS,
+            hover_color="#00D477",
+            text_color="#000"
         )
         self.save_btn.grid(row=0, column=0, padx=10)
         
         self.cancel_btn = ctk.CTkButton(
             button_frame,
-            text="❌ Cancel",
+            text="CLOSE",
             command=lambda: None if self.is_embedded else self.root.destroy(),
             width=120,
-            height=40,
-            font=("Arial", 14),
-            fg_color="gray",
-            hover_color="darkgray"
+            height=45,
+            font=("Inter", 12, "bold"),
+            fg_color="transparent",
+            border_width=1,
+            border_color=COLOR_BORDER,
+            text_color=COLOR_TEXT_DIM
         )
         self.cancel_btn.grid(row=0, column=1, padx=10)
 
-        # Disclaimer Section
-        disclaimer_label = ctk.CTkLabel(
+        # Bottom Disclaimer
+        disclaimer = ctk.CTkLabel(
             self.root,
-            text="⚠️ ARUN is a utility tool, not financial advice. You are responsible for your own investment decisions.",
-            font=("Arial", 10, "italic"),
-            text_color="gray"
+            text="⚠️ ARUN TITAN ENGINE: Automated utility. User assumes 100% risk for financial outcomes.",
+            font=("Inter", 10),
+            text_color=COLOR_TEXT_DIM
         )
-        disclaimer_label.pack(side="bottom", pady=10)
+        disclaimer.pack(side="bottom", pady=(0, 10))
 
     def load_validation_cache(self):
         """Load validated stocks from cache"""
@@ -131,528 +154,358 @@ class SettingsGUI:
             if os.path.exists("validated_stocks.json"):
                 with open("validated_stocks.json", "r") as f:
                     self.validation_cache = json.load(f)
-        except Exception as e:
-            print(f"Failed to load validation cache: {e}")
+        except Exception: pass
 
     def save_validation_cache(self):
         """Save validated stocks to cache"""
         try:
             with open("validated_stocks.json", "w") as f:
                 json.dump(self.validation_cache, f)
-        except Exception as e:
-            print(f"Failed to save validation cache: {e}")
+        except Exception: pass
     
     def build_broker_tab(self):
-        """Broker credentials configuration"""
+        """Broker credentials configuration with modernized layout"""
         tab = self.tabview.tab("Broker")
         
-        # Get broker settings
+        # Main scrollable container for the tab
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+        
         broker = self.settings_mgr.get("broker", {})
-        
-        # Paper Trading Mode Toggle
-        paper_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        paper_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
-
-        self.paper_mode_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.paper_trading_mode", True))
-        paper_check = ctk.CTkCheckBox(
-            paper_frame,
-            text="🧪 Enable Paper Trading (Simulation Mode)",
-            variable=self.paper_mode_var,
-            font=("Arial", 13, "bold"),
-            text_color="#3498DB"
-        )
-        paper_check.pack(side="left", padx=(15, 5), pady=10)
-
-        # Help button for Paper Mode (Manual pack)
-        help_btn_1 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
-        )
-        help_btn_1.pack(side="left", padx=(0, 15), pady=10)
-
-        # Nifty 50 Filter Toggle
-        self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
-        nifty_check = ctk.CTkCheckBox(
-            paper_frame,
-            text="🛡️ Nifty 50 Only (Safety Filter)",
-            variable=self.nifty_filter_var,
-            font=("Arial", 13, "bold"),
-            text_color="#2ECC71"
-        )
-        nifty_check.pack(side="left", padx=(15, 5), pady=10)
-        
-        # Help button for Nifty Filter (Manual pack)
-        help_btn_2 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
-        )
-        help_btn_2.pack(side="left", padx=(0, 15), pady=10)
-
-        # Broker selection
-        broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
-        broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
-        
         self.broker_var = ctk.StringVar(value=broker.get("name", "mstock"))
-        broker_menu = ctk.CTkOptionMenu(
-            tab,
-            variable=self.broker_var,
-            values=["mstock", "zerodha", "other"],
-            width=200
-        )
-        broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)
-        
-        # API Key
-        api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 12))
-        api_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
-        self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
-        self.api_key_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
-        # Help button for API Key
-        self.add_help_button(tab, 2, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
+        # --- Section: Trading Modes ---
+        mode_section = SettingsSection(scroll, title="Engine Operating Modes")
+        mode_section.pack(fill="x", pady=10)
         
-        # API Secret
-        secret_label = ctk.CTkLabel(tab, text="API Secret:", font=("Arial", 12))
-        secret_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
-        self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
-        self.api_secret_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        # Paper Mode
+        self.paper_mode_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.paper_trading_mode", True))
+        ctk.CTkCheckBox(mode_section, text="SIMULATION MODE (Paper Trading)", variable=self.paper_mode_var,
+                        font=FONT_MAIN, text_color=COLOR_ACCENT).pack(anchor="w", padx=20, pady=(15, 5))
+        ctk.CTkLabel(mode_section, text="Execute trades in virtual environment using real market data.",
+                     font=("Inter", 11), text_color=COLOR_TEXT_DIM).pack(anchor="w", padx=50, pady=(0, 10))
 
-        # Help button for API Secret
-        self.add_help_button(tab, 3, "API Secret: Companion to API Key, found in the same API portal.")
-        
-        # Client Code
-        ctk.CTkLabel(tab, text="Client Code (Broker):", font=("Arial", 12)).grid(row=4, column=0, sticky="w", padx=20, pady=10)
-        
-        self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
-        self.client_code_entry.insert(0, broker.get("client_code", ""))
-        self.client_code_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
+        # Nifty 50 Filter
+        self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
+        ctk.CTkCheckBox(mode_section, text="NIFTY 50 SAFETY FILTER", variable=self.nifty_filter_var,
+                        font=FONT_MAIN, text_color=COLOR_SUCCESS).pack(anchor="w", padx=20, pady=5)
+        ctk.CTkLabel(mode_section, text="Restricts the engine to highly liquid Blue Chip stocks only.",
+                     font=("Inter", 11), text_color=COLOR_TEXT_DIM).pack(anchor="w", padx=50, pady=(0, 15))
 
-        # Help button for Client Code
-        self.add_help_button(tab, 4, "Client Code: Your unique login ID provided by the broker.")
+        # --- Section: API Credentials ---
+        auth_section = SettingsSection(scroll, title="Broker Authenticator")
+        auth_section.pack(fill="x", pady=10)
         
-        # Password
-        ctk.CTkLabel(tab, text="Password (Broker):", font=("Arial", 12)).grid(row=5, column=0, sticky="w", padx=20, pady=10)
-        
-        self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
-        self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
-        self.password_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
+        # Grid for Auth Fields
+        fields_frame = ctk.CTkFrame(auth_section, fg_color="transparent")
+        fields_frame.pack(fill="x", padx=20, pady=10)
+        fields_frame.grid_columnconfigure(1, weight=1)
 
-        # Help button for Password
-        self.add_help_button(tab, 5, "Password: Your login password for the broker portal.")
+        def add_field(row, label, key, placeholder="", is_pass=True):
+            ctk.CTkLabel(fields_frame, text=label, font=FONT_MAIN, text_color=COLOR_TEXT_DIM).grid(row=row, column=0, sticky="w", pady=8)
+            entry = ctk.CTkEntry(fields_frame, width=300, height=35, placeholder_text=placeholder, 
+                                 show="*" if is_pass else "", fg_color="#0a0a1a", border_color=COLOR_BORDER)
+            entry.insert(0, self.settings_mgr.get_decrypted(f"broker.{key}", "") if is_pass else broker.get(key, ""))
+            entry.grid(row=row, column=1, sticky="w", padx=20, pady=8)
+            return entry
 
-        # TOTP Secret (For Auto-Login)
-        ctk.CTkLabel(tab, text="TOTP Secret (Auto-Login):", font=("Arial", 12)).grid(row=6, column=0, sticky="w", padx=20, pady=10)
-        
-        self.totp_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter TOTP Secret (e.g., JBSWY3DPEHPK3PXP)", show="*")
-        self.totp_entry.insert(0, self.settings_mgr.get_decrypted("broker.totp_secret", ""))
-        self.totp_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
-        
-        # Validation Button
-        validate_totp_btn = ctk.CTkButton(
-            tab,
-            text="Validate",
-            width=60,
-            command=self.validate_totp_secret,
-            fg_color="#E67E22",
-            hover_color="#D35400"
-        )
-        validate_totp_btn.grid(row=6, column=3, sticky="w", padx=5)
+        self.api_key_entry = add_field(0, "API KEY", "api_key", "mStock API Key")
+        self.api_secret_entry = add_field(1, "API SECRET", "api_secret", "mStock secret")
+        self.client_code_entry = add_field(2, "CLIENT ID", "client_code", "Your User ID", is_pass=False)
+        self.password_entry = add_field(3, "PASSWORD", "password", "Login Password")
+        self.totp_entry = add_field(4, "TOTP SECRET", "totp_secret", "2FA 16-digit-secret")
 
-        self.add_help_button(tab, 6, "TOTP Secret: Found in mStock 'Trading APIs' > 'Enable TOTP'. Setting this enables 100% automated daily login!")
-
-        # Access Token
-        token_label = ctk.CTkLabel(tab, text="Access Token (Manual):", font=("Arial", 12))
-        token_label.grid(row=7, column=0, sticky="w", padx=20, pady=10)
-        
-        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token (if TOTP not used)", show="*")
+        # Session Override
+        ctk.CTkLabel(fields_frame, text="ACCESS TOKEN", font=FONT_MAIN, text_color=COLOR_TEXT_DIM).grid(row=5, column=0, sticky="w", pady=8)
+        self.access_token_entry = ctk.CTkEntry(fields_frame, width=300, height=35, placeholder_text="Manual override", 
+                                              show="*", fg_color="#0a0a1a", border_color=COLOR_BORDER)
         self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
-        self.access_token_entry.grid(row=7, column=1, sticky="w", padx=10, pady=10)
-        
-        # Help button for Token
-        self.add_help_button(tab, 7, "Access Token: \n- Manual Override if Auto-Login fails.\n- Generated via login flow every day.")
+        self.access_token_entry.grid(row=5, column=1, sticky="w", padx=20, pady=8)
 
-        # Show password toggle
+        # Controls Row
+        ctrl_row = ctk.CTkFrame(auth_section, fg_color="transparent")
+        ctrl_row.pack(fill="x", padx=20, pady=(0, 20))
+        
         self.show_pass_var = ctk.BooleanVar(value=False)
-        show_pass_check = ctk.CTkCheckBox(
-            tab,
-            text="Show API keys & passwords",
-            variable=self.show_pass_var,
-            command=lambda: self.toggle_password_visibility()
-        )
-        show_pass_check.grid(row=8, column=1, sticky="w", padx=10, pady=5)
+        ctk.CTkCheckBox(ctrl_row, text="Reveal credentials", variable=self.show_pass_var, 
+                        command=self.toggle_password_visibility, font=("Inter", 11)).pack(side="left")
         
-        # Info label
-        info = ctk.CTkLabel(
-            tab,
-            text="🔐 Tip: All sensitive credentials are encrypted and stored securely in settings.json",
-            font=("Arial", 10),
-            text_color="gray"
-        )
-        info.grid(row=9, column=0, columnspan=2, padx=20, pady=5)
+        ctk.CTkButton(ctrl_row, text="📡 TEST CONNECTIVITY", command=self.test_broker_connection,
+                      width=180, height=32, fg_color=COLOR_CARD, border_width=1, border_color=COLOR_ACCENT,
+                      hover_color="#1a2e3e", text_color=COLOR_ACCENT).pack(side="right")
 
-        # Test Connection Button
-        test_btn = ctk.CTkButton(
-            tab,
-            text="📡 Test Connection & Fetch Balance",
-            command=self.test_broker_connection,
-            width=250,
-            height=35,
-            fg_color="#8E44AD",
-            hover_color="#732D91"
-        )
-        test_btn.grid(row=10, column=0, columnspan=3, pady=20)
-    
     def build_capital_tab(self):
-        """Capital management configuration"""
+        """Capital management configuration with professional layout"""
         tab = self.tabview.tab("Capital")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
         capital = self.settings_mgr.get("capital", {})
+
+        # --- Section: Safety Box ---
+        box_section = SettingsSection(scroll, title="Strategy Capital Limit")
+        box_section.pack(fill="x", pady=10)
         
-        # Total capital
-        # --- CAPITAL SEPARATION (SAFETY BOX) ---
-        cap_frame = ctk.CTkFrame(tab, fg_color="#111", border_color=COLOR_ACCENT, border_width=1)
-        cap_frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=20, pady=15)
+        ctk.CTkLabel(box_section, text="Limit the maximum total funds the bot is allowed to deploy at once.",
+                     font=("Inter", 11), text_color=COLOR_TEXT_DIM, justify="left").pack(anchor="w", padx=20, pady=(5, 5))
         
-        lbl_safety = ctk.CTkLabel(cap_frame, text="🔒 SAFETY BOX (Allocated Capital)", font=("Arial", 14, "bold"), text_color=COLOR_ACCENT)
-        lbl_safety.pack(anchor="w", padx=15, pady=(10, 0))
+        entry_frame = ctk.CTkFrame(box_section, fg_color="transparent")
+        entry_frame.pack(fill="x", padx=20, pady=(0, 15))
         
-        lbl_desc = ctk.CTkLabel(cap_frame, text="Limit the funds available to the bot. Your main broker balance is safe.", font=("Arial", 11), text_color="#AAA")
-        lbl_desc.pack(anchor="w", padx=15, pady=(0, 10))
-        
-        self.allocated_capital_entry = ctk.CTkEntry(cap_frame, width=200, placeholder_text="50000", font=("Arial", 14))
+        ctk.CTkLabel(entry_frame, text="₹", font=("Inter", 18, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        self.allocated_capital_entry = ctk.CTkEntry(entry_frame, width=200, height=40, font=("Inter", 16, "bold"),
+                                                   placeholder_text="50000", fg_color="#0a0a1a", border_color=COLOR_ACCENT)
         self.allocated_capital_entry.insert(0, str(capital.get("allocated_limit", 50000)))
-        self.allocated_capital_entry.pack(anchor="w", padx=15, pady=(0, 15))
+        self.allocated_capital_entry.pack(side="left", padx=10)
+
+        # --- Section: Sizing Strategy ---
+        sizing_section = SettingsSection(scroll, title="Position Sizing")
+        sizing_section.pack(fill="x", pady=10)
+
+        inner = ctk.CTkFrame(sizing_section, fg_color="transparent")
+        inner.pack(fill="x", padx=20, pady=15)
         
-        # --- STRATEGY LIMITS ---
-        
-        # Per-trade capital %
-        per_trade_label = ctk.CTkLabel(tab, text="Per-Trade Capital (%):", font=("Arial", 12))
-        per_trade_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
-        
-        self.per_trade_var = ctk.DoubleVar(value=capital.get("per_trade_pct", 10.0))
-        per_trade_slider = ctk.CTkSlider(
-            tab,
-            from_=1,
-            to=50,
-            number_of_steps=49,
-            variable=self.per_trade_var,
-            width=300,
-            command=lambda val: per_trade_value_label.configure(text=f"{val:.1f}%")
-        )
-        per_trade_slider.grid(row=1, column=1, sticky="w", padx=10, pady=10)
-        
-        per_trade_value_label = ctk.CTkLabel(tab, text=f"{self.per_trade_var.get():.1f}%", font=("Arial", 12, "bold"))
-        per_trade_value_label.grid(row=1, column=2, sticky="w", padx=5)
-        
-        # Maximum positions
-        max_pos_label = ctk.CTkLabel(tab, text="Max Positions:", font=("Arial", 12))
-        max_pos_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
-        
-        self.max_positions_var = ctk.IntVar(value=capital.get("max_positions", 5))
-        max_pos_slider = ctk.CTkSlider(
-            tab,
-            from_=1,
-            to=20,
-            number_of_steps=19,
-            variable=self.max_positions_var,
-            width=300,
-            command=lambda val: max_pos_value_label.configure(text=f"{int(val)}")
-        )
-        max_pos_slider.grid(row=2, column=1, sticky="w", padx=10, pady=10)
-        
-        max_pos_value_label = ctk.CTkLabel(tab, text=str(self.max_positions_var.get()), font=("Arial", 12, "bold"))
-        max_pos_value_label.grid(row=2, column=2, sticky="w", padx=5)
-        
-        # Sizing Method Selection (MVP1 Feature)
-        sizing_label = ctk.CTkLabel(tab, text="Position Sizing Method:", font=("Arial", 12, "bold"))
-        sizing_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
-        
+        # Method Selection
         self.sizing_method_var = ctk.StringVar(value=capital.get("max_per_stock_type", "percentage"))
         
-        sizing_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        sizing_frame.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        method_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        method_frame.pack(side="left", fill="y")
         
-        ctk.CTkRadioButton(sizing_frame, text="Portfolio %", variable=self.sizing_method_var, value="percentage").grid(row=0, column=0, padx=5)
-        ctk.CTkRadioButton(sizing_frame, text="Fixed Amount (₹)", variable=self.sizing_method_var, value="fixed").grid(row=0, column=1, padx=5)
-        
-        # Fixed Amount entry
-        self.fixed_amount_entry = ctk.CTkEntry(tab, width=120, placeholder_text="5000")
-        self.fixed_amount_entry.insert(0, str(capital.get("max_per_stock_fixed_amount", 5000)))
-        self.fixed_amount_entry.grid(row=3, column=2, sticky="w", padx=5)
+        ctk.CTkRadioButton(method_frame, text="Portfolio %", variable=self.sizing_method_var, 
+                           value="percentage", font=FONT_MAIN).pack(anchor="w", pady=5)
+        ctk.CTkRadioButton(method_frame, text="Fixed Amount", variable=self.sizing_method_var, 
+                           value="fixed", font=FONT_MAIN).pack(anchor="w", pady=5)
 
-        # Compound profits
+        # Dynamic Sizing Controls (Slider/Entry)
+        dynamics = ctk.CTkFrame(inner, fg_color="transparent")
+        dynamics.pack(side="right", fill="both", expand=True, padx=(40, 0))
+
+        # Slider for %
+        self.per_trade_var = ctk.DoubleVar(value=capital.get("per_trade_pct", 10.0))
+        slider_row = ctk.CTkFrame(dynamics, fg_color="transparent")
+        slider_row.pack(fill="x")
+        ctk.CTkSlider(slider_row, from_=1, to=50, variable=self.per_trade_var, width=200, 
+                      progress_color=COLOR_ACCENT, button_color=COLOR_ACCENT,
+                      command=lambda val: val_pct.configure(text=f"{val:.1f}%")).pack(side="left")
+        val_pct = ctk.CTkLabel(slider_row, text=f"{self.per_trade_var.get():.1f}%", font=("Inter", 12, "bold"), width=60)
+        val_pct.pack(side="left", padx=10)
+
+        # Entry for Fixed
+        entry_row = ctk.CTkFrame(dynamics, fg_color="transparent")
+        entry_row.pack(fill="x", pady=(10, 0))
+        ctk.CTkLabel(entry_row, text="OR ₹", font=FONT_MAIN, text_color=COLOR_TEXT_DIM).pack(side="left")
+        self.fixed_amount_entry = ctk.CTkEntry(entry_row, width=120, height=30, placeholder_text="5000",
+                                              fg_color="#0a0a1a", border_color=COLOR_BORDER)
+        self.fixed_amount_entry.insert(0, str(capital.get("max_per_stock_fixed_amount", 5000)))
+        self.fixed_amount_entry.pack(side="left", padx=10)
+
+        # --- Limits & Reinvestment ---
+        limit_section = SettingsSection(scroll, title="Strategy Limits")
+        limit_section.pack(fill="x", pady=10)
+        
+        lim_inner = ctk.CTkFrame(limit_section, fg_color="transparent")
+        lim_inner.pack(fill="x", padx=20, pady=15)
+
+        # Max Positions
+        ctk.CTkLabel(lim_inner, text="MAX OPEN POSITIONS", font=FONT_MAIN, text_color=COLOR_TEXT_DIM).pack(anchor="w")
+        self.max_positions_var = ctk.IntVar(value=capital.get("max_positions", 5))
+        max_pos_row = ctk.CTkFrame(lim_inner, fg_color="transparent")
+        max_pos_row.pack(fill="x", pady=(5, 15))
+        ctk.CTkSlider(max_pos_row, from_=1, to=30, variable=self.max_positions_var, width=300,
+                      progress_color=COLOR_SUCCESS, button_color=COLOR_SUCCESS,
+                      command=lambda val: val_pos.configure(text=str(int(val)))).pack(side="left")
+        val_pos = ctk.CTkLabel(max_pos_row, text=str(self.max_positions_var.get()), font=("Inter", 12, "bold"), width=40)
+        val_pos.pack(side="left", padx=10)
+
+        # Compound Toggle
         self.compound_var = ctk.BooleanVar(value=capital.get("compound_profits", False))
-        compound_check = ctk.CTkCheckBox(
-            tab,
-            text="Compound profits (reinvest gains)",
-            variable=self.compound_var,
-            font=("Arial", 12)
-        )
-        compound_check.grid(row=4, column=0, columnspan=2, sticky="w", padx=20, pady=10)
-        
-        # Info section
-        info_frame = ctk.CTkFrame(tab)
-        info_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
-        
-        info_title = ctk.CTkLabel(info_frame, text="💡 Capital Allocation Example:", font=("Arial", 12, "bold"))
-        info_title.pack(anchor="w", padx=10, pady=5)
-        
-        # Calculate example
-        total_cap = float(self.allocated_capital_entry.get() or 50000)
-        per_trade_pct = self.per_trade_var.get()
-        per_trade_amount = total_cap * (per_trade_pct / 100)
-        
-        info_text = ctk.CTkLabel(
-            info_frame,
-            text=f"• Total Capital: ₹{total_cap:,.0f}\n"
-                 f"• Per Trade: ₹{per_trade_amount:,.0f} ({per_trade_pct:.1f}%)\n"
-                 f"• Max Positions: {self.max_positions_var.get()}\n"
-                 f"• Max Deployed: ₹{per_trade_amount * self.max_positions_var.get():,.0f}\n\n"
-                 f"💡 How Quantity Works:\n"
-                 f"  • CSV Quantity = 0: Calculate shares from capital %\n"
-                 f"  • CSV Quantity > 0: Buy exactly that many shares (ignore %)\n"
-                 f"  • Max Positions limits total # of different stocks held",
-            font=("Arial", 10),
-            justify="left"
-        )
-        info_text.pack(anchor="w", padx=10, pady=5)
+        ctk.CTkCheckBox(lim_inner, text="REINVEST PROFITS (Compounding)", variable=self.compound_var,
+                        font=FONT_MAIN, text_color=COLOR_SUCCESS).pack(anchor="w")
     
     def build_risk_tab(self):
-        """Risk controls configuration"""
+        """Risk controls configuration with professional safety-first layout"""
         tab = self.tabview.tab("Risk Controls")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
         risk = self.settings_mgr.get("risk", {})
-        
-        # Stop-loss %
-        sl_label = ctk.CTkLabel(tab, text="Stop-Loss (%):", font=("Arial", 14, "bold"))
-        sl_label.grid(row=0, column=0, sticky="w", padx=20, pady=15)
-        
-        self.stop_loss_var = ctk.DoubleVar(value=risk.get("stop_loss_pct", 5.0))
-        sl_slider = ctk.CTkSlider(
-            tab,
-            from_=1,
-            to=20,
-            number_of_steps=38,
-            variable=self.stop_loss_var,
-            width=300,
-            command=lambda val: sl_value_label.configure(text=f"{val:.1f}%")
-        )
-        sl_slider.grid(row=0, column=1, sticky="w", padx=10, pady=15)
-        
-        sl_value_label = ctk.CTkLabel(tab, text=f"{self.stop_loss_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="red")
-        sl_value_label.grid(row=0, column=2, sticky="w", padx=5)
-        
-        # Profit target %
-        tp_label = ctk.CTkLabel(tab, text="Profit Target (%):", font=("Arial", 14, "bold"))
-        tp_label.grid(row=1, column=0, sticky="w", padx=20, pady=15)
-        
-        self.profit_target_var = ctk.DoubleVar(value=risk.get("profit_target_pct", 10.0))
-        tp_slider = ctk.CTkSlider(
-            tab,
-            from_=2,
-            to=50,
-            number_of_steps=48,
-            variable=self.profit_target_var,
-            width=300,
-            command=lambda val: tp_value_label.configure(text=f"{val:.1f}%")
-        )
-        tp_slider.grid(row=1, column=1, sticky="w", padx=10, pady=15)
-        
-        tp_value_label = ctk.CTkLabel(tab, text=f"{self.profit_target_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="green")
-        tp_value_label.grid(row=1, column=2, sticky="w", padx=5)
-        
-        # Catastrophic stop %
-        cat_label = ctk.CTkLabel(tab, text="Catastrophic Stop (%):", font=("Arial", 12))
-        cat_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
-        
-        self.cat_stop_var = ctk.DoubleVar(value=risk.get("catastrophic_stop_loss_pct", 15.0))
-        cat_slider = ctk.CTkSlider(
-            tab,
-            from_=10,
-            to=50,
-            number_of_steps=40,
-            variable=self.cat_stop_var,
-            width=300,
-            command=lambda val: cat_value_label.configure(text=f"{val:.1f}%")
-        )
-        cat_slider.grid(row=2, column=1, sticky="w", padx=10, pady=10)
-        
-        cat_value_label = ctk.CTkLabel(tab, text=f"{self.cat_stop_var.get():.1f}%", font=("Arial", 12, "bold"))
-        cat_value_label.grid(row=2, column=2, sticky="w", padx=5)
-        
-        # Daily loss limit %
-        daily_label = ctk.CTkLabel(tab, text="Daily Loss Limit (%):", font=("Arial", 12))
-        daily_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
-        
-        self.daily_loss_var = ctk.DoubleVar(value=risk.get("daily_loss_limit_pct", 10.0))
-        daily_slider = ctk.CTkSlider(
-            tab,
-            from_=5,
-            to=30,
-            number_of_steps=25,
-            variable=self.daily_loss_var,
-            width=300,
-            command=lambda val: daily_value_label.configure(text=f"{val:.1f}%")
-        )
-        daily_slider.grid(row=3, column=1, sticky="w", padx=10, pady=10)
-        
-        daily_value_label = ctk.CTkLabel(tab, text=f"{self.daily_loss_var.get():.1f}%", font=("Arial", 12, "bold"))
-        daily_value_label.grid(row=3, column=2, sticky="w", padx=5)
-        
-        # Never sell at loss option
-        never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        never_sell_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
-        
-        self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
-        never_sell_check = ctk.CTkCheckBox(
-            never_sell_frame,
-            text="⛔ Never Sell at Loss (Override Stop-Loss)",
-            variable=self.never_sell_at_loss_var,
-            font=("Arial", 13, "bold"),
-            command=self.on_never_sell_at_loss_toggled
-        )
-        never_sell_check.pack(anchor="w", padx=15, pady=(15, 5))
-        
-        never_sell_warning = ctk.CTkLabel(
-            never_sell_frame,
-            text="⚠️ WARNING: When enabled, stop-loss will NOT trigger if position is in loss.\n"
-                 "This could lead to unlimited losses if market keeps dropping.\n"
-                 "Catastrophic stop will still work as final safety measure.",
-            font=("Arial", 10),
-            text_color="#FFB84D",
-            justify="left"
-        )
-        never_sell_warning.pack(anchor="w", padx=15, pady=(0, 15))
-        
-        # Risk summary section
-        warning_frame = ctk.CTkFrame(tab, fg_color="darkred")
-        warning_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
-        
-        warning_label = ctk.CTkLabel(
-            warning_frame,
-            text="⚠️ RISK PROTECTION ACTIVE\n"
-                 "Bot will automatically sell if:\n"
-                 f"• Position loss exceeds {self.stop_loss_var.get():.1f}% (Stop-Loss)\n"
-                 f"• Position profit reaches {self.profit_target_var.get():.1f}% (Take Profit)\n"
-                 f"• Position loss exceeds {self.cat_stop_var.get():.1f}% (Emergency Stop)\n"
-                 f"• Daily portfolio loss exceeds {self.daily_loss_var.get():.1f}% (Circuit Breaker)",
-            font=("Arial", 11),
-            justify="left"
-        )
-        warning_label.pack(padx=15, pady=15)
-    
-    def build_stocks_tab(self):
-        """Stock configuration - View and validate interface"""
-        tab = self.tabview.tab("Stocks")
-        
-        # Title
-        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(10, 5))
-        
-        # Table Frame
-        table_frame = ctk.CTkFrame(tab)
-        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # Treeview for symbols
+        # --- Section: Butler Mode / Manual stocks Global Note ---
+        butler_note = ctk.CTkFrame(scroll, fg_color="#1a2e3e", border_width=1, border_color=COLOR_ACCENT, corner_radius=8)
+        butler_note.pack(fill="x", pady=(5, 15))
+        
+        ctk.CTkLabel(butler_note, text="🔔 BUTLER MODE ACTIVE", font=("Inter", 12, "bold"), text_color=COLOR_ACCENT).pack(pady=(10, 2))
+        ctk.CTkLabel(butler_note, text="Note: Manually added stocks in the Hybrid Tab use these Global Risk Settings\n(Stop Loss & Profit Target) for exit logic.",
+                     font=("Inter", 11), text_color=COLOR_TEXT).pack(pady=(0, 10), padx=20)
+
+        # --- Section: Basic Risk Guards ---
+        basic_section = SettingsSection(scroll, title="Strategy Exit Logic")
+        basic_section.pack(fill="x", pady=10)
+        
+        inner = ctk.CTkFrame(basic_section, fg_color="transparent")
+        inner.pack(fill="x", padx=20, pady=15)
+
+        def add_risk_slider(row, title, key, default, from_val, to_val, color):
+            ctk.CTkLabel(inner, text=title.upper(), font=FONT_MAIN, text_color=COLOR_TEXT_DIM).grid(row=row, column=0, sticky="w", pady=10)
+            var = ctk.DoubleVar(value=risk.get(key, default))
+            slider = ctk.CTkSlider(inner, from_=from_val, to=to_val, variable=var, width=250, 
+                                   progress_color=color, button_color=color,
+                                   command=lambda val: val_lbl.configure(text=f"{val:.1f}%"))
+            slider.grid(row=row, column=1, sticky="w", padx=20, pady=10)
+            val_lbl = ctk.CTkLabel(inner, text=f"{var.get():.1f}%", font=("Inter", 12, "bold"), width=60)
+            val_lbl.grid(row=row, column=2, sticky="w")
+            return var
+
+        self.stop_loss_var = add_risk_slider(0, "Stop Loss", "stop_loss_pct", 5.0, 1, 20, COLOR_DANGER)
+        self.profit_target_var = add_risk_slider(1, "Profit Target", "profit_target_pct", 10.0, 2, 50, COLOR_SUCCESS)
+        self.cat_stop_var = add_risk_slider(2, "Catastrophic Stop", "catastrophic_stop_loss_pct", 15.0, 10, 50, "#8b0000")
+        self.daily_loss_var = add_risk_slider(3, "Daily Drawdown Limit", "daily_loss_limit_pct", 10.0, 5, 30, COLOR_WARN)
+
+        # --- Section: Safety Overrides ---
+        safe_section = SettingsSection(scroll, title="Hard Safety Overrides")
+        safe_section.pack(fill="x", pady=10)
+        
+        safe_inner = ctk.CTkFrame(safe_section, fg_color="transparent")
+        safe_inner.pack(fill="x", padx=20, pady=15)
+
+        # Never sell at loss
+        self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
+        ctk.CTkCheckBox(safe_inner, text="NEVER SELL AT LOSS (Ignore Stop-Loss)", variable=self.never_sell_at_loss_var,
+                        font=FONT_MAIN, text_color=COLOR_DANGER, command=self.on_never_sell_at_loss_toggled).pack(anchor="w", pady=5)
+        ctk.CTkLabel(safe_inner, text="Forces the bot to hold until price recovers. HIGH RISK of capital lockup.",
+                     font=("Inter", 10), text_color=COLOR_TEXT_DIM).pack(anchor="w", padx=30, pady=(0, 10))
+
+        # 10% Risk Limit
+        self.use_10_pct_risk_var = ctk.BooleanVar(value=self.settings_mgr.get("risk_controls.use_10_pct_portfolio_limit", True))
+        ctk.CTkCheckBox(safe_inner, text="10% PORTFOLIO EXPOSURE LIMIT", variable=self.use_10_pct_risk_var,
+                        font=FONT_MAIN, text_color=COLOR_WARN).pack(anchor="w", pady=5)
+        ctk.CTkLabel(safe_inner, text="Prevents any single trade from exceeding 10% of total allocated capital.",
+                     font=("Inter", 10), text_color=COLOR_TEXT_DIM).pack(anchor="w", padx=30)
+    
+    def build_buckets_tab(self):
+        """Buckets & Strategies configuration with modernized layout"""
+        tab = self.tabview.tab("Buckets & Strategies")
+        
+        # Main scrollable container
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- Section: Global Optimization ---
+        global_section = SettingsSection(scroll, title="Global Strategy Engine")
+        global_section.pack(fill="x", pady=10)
+        
+        self.use_200_bar_var = ctk.BooleanVar(value=self.settings_mgr.get("strategies.rsi_mean_reversion.use_200_bar_stabilization", True))
+        ctk.CTkCheckBox(global_section, text="200-BAR RSI STABILIZATION (Precision Mode)", variable=self.use_200_bar_var,
+                        font=FONT_MAIN, text_color=COLOR_ACCENT).pack(anchor="w", padx=20, pady=(15, 5))
+        ctk.CTkLabel(global_section, text="Uses 200 bars of historical data for mathematically precise RSI output.",
+                     font=("Inter", 11), text_color=COLOR_TEXT_DIM).pack(anchor="w", padx=50, pady=(0, 15))
+
+        # --- Section: Stock Buckets ---
+        stock_section = SettingsSection(scroll, title="Active Trading Buckets")
+        stock_section.pack(fill="both", expand=True, pady=10)
+
+        # Table Control Row
+        table_ctrl = ctk.CTkFrame(stock_section, fg_color="transparent")
+        table_ctrl.pack(fill="x", padx=15, pady=10)
+        
+        ctk.CTkLabel(table_ctrl, text="INDIVIDUAL SYMBOL RULES", font=("Inter", 11, "bold"), text_color=COLOR_TEXT_DIM).pack(side="left")
+        
+        # Action Buttons (New compact style)
+        def add_btn(text, cmd, color, icon):
+            return ctk.CTkButton(table_ctrl, text=text, command=cmd, width=80, height=28, 
+                                 fg_color=COLOR_CARD, border_width=1, border_color=color,
+                                 hover_color="#1a2e3e", text_color=color, font=("Inter", 11, "bold"))
+
+        add_btn("➕ ADD", self.on_add_stock, COLOR_SUCCESS, "").pack(side="right", padx=5)
+        add_btn("✏️ EDIT", self.on_edit_stock, COLOR_ACCENT, "").pack(side="right", padx=5)
+        add_btn("🗑 REMOVE", self.on_delete_stock, COLOR_DANGER, "").pack(side="right", padx=5)
+
+        # Treeview (Styled for Dark Neon)
+        table_frame = ctk.CTkFrame(stock_section, fg_color="#0a0a1a", corner_radius=8)
+        table_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", 
+                        background="#0a0a1a", 
+                        foreground=COLOR_TEXT, 
+                        fieldbackground="#0a0a1a",
+                        borderwidth=0,
+                        font=("Inter", 10))
+        style.configure("Treeview.Heading", 
+                        background="#1a1a2e", 
+                        foreground=COLOR_ACCENT, 
+                        borderwidth=0,
+                        font=("Inter", 10, "bold"))
+        style.map("Treeview", background=[('selected', '#1e3a5f')])
+
         self.stock_table = ttk.Treeview(
             table_frame,
             columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status"),
             show="headings",
-            height=8
+            height=10
         )
-        self.stock_table.heading("Symbol", text="Symbol")
-        self.stock_table.heading("Exchange", text="Exch")
-        self.stock_table.heading("Enabled", text="Enabled")
-        self.stock_table.heading("Strategy", text="Mode")
-        self.stock_table.heading("Timeframe", text="TF")
-        self.stock_table.heading("Buy RSI", text="Buy")
-        self.stock_table.heading("Sell RSI", text="Sell")
-        self.stock_table.heading("Qty", text="Qty")
-        self.stock_table.heading("Target %", text="Profit %")
-        self.stock_table.heading("Status", text="Status")
-        
-        for col in self.stock_table["columns"]:
+        # Configure headings
+        headings = ["Symbol", "Exch", "ON", "Mode", "TF", "Buy", "Sell", "Qty", "Profit %", "Status"]
+        for i, col in enumerate(self.stock_table["columns"]):
+            self.stock_table.heading(col, text=headings[i])
             self.stock_table.column(col, width=60, anchor="center")
-        self.stock_table.column("Symbol", width=100)
-        self.stock_table.column("Status", width=80)
         
-        self.stock_table.pack(side="left", fill="both", expand=True)
+        self.stock_table.column("Symbol", width=90)
+        self.stock_table.column("Status", width=90)
+        self.stock_table.pack(side="left", fill="both", expand=True, padx=2, pady=2)
         
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.stock_table.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.stock_table.configure(yscrollcommand=scrollbar.set)
+        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.stock_table.yview)
+        sb.pack(side="right", fill="y")
+        self.stock_table.configure(yscrollcommand=sb.set)
 
-        # Load data from CSV
         self.refresh_stock_table()
-
-        # Action Buttons Frame
-        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(btn_frame, text="➕ Add", width=80, fg_color="green", hover_color="darkgreen", command=self.on_add_stock).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=1, padx=5)
-        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=2, padx=5)
         
-        self.validate_btn = ctk.CTkButton(btn_frame, text="🔍 Validate", width=100, command=self.on_validate_symbols)
-        self.validate_btn.grid(row=0, column=3, padx=15)
+        # Validation Row
+        val_row = ctk.CTkFrame(stock_section, fg_color="transparent")
+        val_row.pack(fill="x", padx=15, pady=(0, 15))
+        
+        self.validate_btn = ctk.CTkButton(val_row, text="🔍 SCAN & VALIDATE SYMBOLS", command=self.on_validate_symbols,
+                                         width=250, height=35, fg_color=COLOR_ACCENT, text_color="#000", font=("Inter", 12, "bold"))
+        self.validate_btn.pack(side="left")
 
     def build_notifications_tab(self):
-        """Telegram notifications configuration"""
+        """Telegram notifications configuration with modernized layout"""
         tab = self.tabview.tab("Notifications")
+        scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=10, pady=10)
         
         notif = self.settings_mgr.get("notifications", {})
+
+        # --- Section: Telegram Config ---
+        tg_section = SettingsSection(scroll, title="Telegram Alert Guard")
+        tg_section.pack(fill="x", pady=10)
         
-        title = ctk.CTkLabel(tab, text="📲 Mobile Notifications", font=("Arial", 16, "bold"))
-        title.pack(pady=(20, 10))
-        
-        # Telegram Bot Token
-        token_label = ctk.CTkLabel(tab, text="Telegram Bot Token:", font=("Arial", 12))
-        token_label.pack(anchor="w", padx=100, pady=(10, 0))
-        
-        self.tg_token_entry = ctk.CTkEntry(tab, width=400, placeholder_text="Enter Bot Token from @BotFather", show="*")
-        self.tg_token_entry.insert(0, self.settings_mgr.get_decrypted("notifications.telegram_bot_token", ""))
-        self.tg_token_entry.pack(padx=100, pady=(0, 10))
-        
-        # Telegram Chat ID
-        chat_label = ctk.CTkLabel(tab, text="Telegram Chat ID:", font=("Arial", 12))
-        chat_label.pack(anchor="w", padx=100, pady=(10, 0))
-        
-        self.tg_chat_id_entry = ctk.CTkEntry(tab, width=400, placeholder_text="Enter Chat ID")
-        self.tg_chat_id_entry.insert(0, str(notif.get("telegram_chat_id", "")))
-        self.tg_chat_id_entry.pack(padx=100, pady=(0, 20))
-        
-        # Enable toggle
         self.tg_enabled_var = ctk.BooleanVar(value=notif.get("enabled", False))
-        self.tg_enabled_check = ctk.CTkCheckBox(tab, text="Enable Telegram Alerts", variable=self.tg_enabled_var)
-        self.tg_enabled_check.pack(padx=100, pady=10)
+        ctk.CTkCheckBox(tg_section, text="ENABLE MOBILE ALERTS (Push Notifications)", variable=self.tg_enabled_var,
+                        font=FONT_MAIN, text_color=COLOR_SUCCESS).pack(anchor="w", padx=20, pady=(15, 10))
+
+        fields = ctk.CTkFrame(tg_section, fg_color="transparent")
+        fields.pack(fill="x", padx=20, pady=10)
         
-        # Help link
-        help_btn = ctk.CTkButton(
-            tab, 
-            text="❓ How to set up Telegram notifications?", 
-            fg_color="transparent", 
-            text_color="#3498DB",
-            hover_color="#1E1E1E",
-            command=lambda: messagebox.showinfo("Setup Help", "1. Message @BotFather on Telegram to create a bot.\n2. Copy the token and paste it here.\n3. Search for @userinfobot to get your Chat ID.\n4. Enable alerts and save!")
-        )
-        help_btn.pack(pady=20)
+        ctk.CTkLabel(fields, text="BOT TOKEN", font=FONT_MAIN, text_color=COLOR_TEXT_DIM).grid(row=0, column=0, sticky="w", pady=10)
+        self.tg_token_entry = ctk.CTkEntry(fields, width=400, height=35, placeholder_text="Enter API Token from @BotFather",
+                                           show="*", fg_color="#0a0a1a", border_color=COLOR_BORDER)
+        self.tg_token_entry.insert(0, self.settings_mgr.get_decrypted("notifications.telegram_bot_token", ""))
+        self.tg_token_entry.grid(row=0, column=1, sticky="w", padx=20, pady=10)
+
+        ctk.CTkLabel(fields, text="CHAT ID", font=FONT_MAIN, text_color=COLOR_TEXT_DIM).grid(row=1, column=0, sticky="w", pady=10)
+        self.tg_chat_id_entry = ctk.CTkEntry(fields, width=400, height=35, placeholder_text="Enter your Chat ID",
+                                             fg_color="#0a0a1a", border_color=COLOR_BORDER)
+        self.tg_chat_id_entry.insert(0, str(notif.get("telegram_chat_id", "")))
+        self.tg_chat_id_entry.grid(row=1, column=1, sticky="w", padx=20, pady=10)
+
+        # Help Footer
+        help_frame = ctk.CTkFrame(tg_section, fg_color="#131326", corner_radius=0)
+        help_frame.pack(fill="x", pady=(10, 0))
+        
+        ctk.CTkLabel(help_frame, text="❓ HOW TO CONNECT: Message @BotFather to create a bot. Get your Chat ID from @userinfobot.",
+                     font=("Inter", 11), text_color=COLOR_TEXT_DIM).pack(pady=10)
 
     def refresh_stock_table(self):
         """Load symbols from CSV into the table"""
@@ -779,16 +632,20 @@ class SettingsGUI:
                 is_valid = result
                 message = "Valid" if is_valid else "Invalid symbol"
             
-            # Check for exchange suggestion
-            if not is_valid and "Found on" in message:
-                # Suggest alternate exchange
-                status_icon = f"⚠️ {message}"
+            # Check for exchange suggestion or detailed message
             if is_valid:
-                status_icon = "✅ Valid"
+                # If it's a "Likely Valid" or other nuanced success, show it
+                if "Valid" not in message:
+                    status_icon = f"✅ {message}"
+                else:
+                    status_icon = "✅ Valid"
                 valid_count += 1
                 self.validation_cache[key] = True # Mark as valid in cache
             else:
-                status_icon = f"❌ {message[:30]}"
+                if "Found on" in message:
+                    status_icon = f"⚠️ {message}"
+                else:
+                    status_icon = f"❌ {message[:30]}"
                 if key in self.validation_cache: del self.validation_cache[key] # Remove invalid from cache
             
             # Add tooltip with full message
@@ -1086,26 +943,29 @@ class SettingsGUI:
                     "max_positions": self.max_positions_var.get(),
                     "compound_profits": self.compound_var.get()
                 },
-                "risk": {
+                "risk_controls": {
                     "stop_loss_pct": self.stop_loss_var.get(),
                     "profit_target_pct": self.profit_target_var.get(),
                     "catastrophic_stop_loss_pct": self.cat_stop_var.get(),
                     "daily_loss_limit_pct": self.daily_loss_var.get(),
-                    "never_sell_at_loss": self.never_sell_at_loss_var.get()
+                    "never_sell_at_loss": self.never_sell_at_loss_var.get(),
+                    "use_10_pct_portfolio_limit": self.use_10_pct_risk_var.get()
                 },
                 "notifications": {
                     "enabled": self.tg_enabled_var.get(),
                     "telegram_bot_token": self.tg_token_entry.get(),
                     "telegram_chat_id": self.tg_chat_id_entry.get()
+                },
+                "strategies": {
+                    "rsi_mean_reversion": {
+                        "use_200_bar_stabilization": self.use_200_bar_var.get()
+                    }
                 }
             }
             
             # Merge with existing settings (preserve other sections)
             current_settings = self.settings_mgr.settings
             current_settings.update(new_settings)
-            
-            # Save to JSON
-            self.settings_mgr.save()
             
             # Save to JSON
             self.settings_mgr.save()
@@ -1377,7 +1237,7 @@ class SettingsGUI:
                     df = pd.read_csv(csv_path)
                     # If editing, remove old entry
                     if edit_values:
-                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[edit_values[1]]))]
+                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[1]))]
                     
                     # Append new entry
                     df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)

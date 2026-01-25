@@ -77,6 +77,14 @@ except ImportError:
     print("⚠️ notifications module not found, alerts disabled")
     NOTIFICATIONS_AVAILABLE = False
 
+# BUG-010 FIX: Secure Credential Manager for on-demand decryption
+try:
+    from secure_credentials import SecureCredentialManager, get_credential_manager
+    SECURE_CREDS_AVAILABLE = True
+except ImportError:
+    print("⚠️ secure_credentials not found, using legacy credential handling")
+    SECURE_CREDS_AVAILABLE = False
+
 try:
     from utils import retry_on_failure, safe_divide, safe_get, setup_logging
     # Map retry_on_failure to retry_with_backoff if needed by other parts of the code
@@ -215,8 +223,97 @@ def ensure_inflight(key: str) -> InflightState:
     return st
 
 # ============================================================================
+# BUG-006 FIX: Non-Blocking Input for VPS/Headless Mode
+# ============================================================================
+
+def get_input_with_timeout(prompt: str, timeout: int = 30) -> Optional[str]:
+    """
+    Get user input with timeout to prevent headless mode freeze.
+    
+    BUG-006 FIX: Non-blocking input for VPS/server deployment.
+    
+    Args:
+        prompt: Message to display to user
+        timeout: Seconds to wait before returning None
+        
+    Returns:
+        User input string, or None if timeout/headless mode
+    """
+    import sys
+    
+    # Check if running in headless mode (no tty)
+    if not sys.stdin.isatty():
+        log_ok(f"⚠️ Headless mode detected - skipping user input, will attempt auto-TOTP...")
+        return None
+    
+    # For Windows, use threading approach since select doesn't work on stdin
+    if sys.platform == 'win32':
+        from queue import Queue, Empty
+        
+        q = Queue()
+        
+        def input_thread():
+            try:
+                result = input(prompt)
+                q.put(result)
+            except EOFError:
+                q.put(None)
+        
+        thread = threading.Thread(target=input_thread, daemon=True)
+        thread.start()
+        
+        try:
+            return q.get(timeout=timeout)
+        except Empty:
+            log_ok(f"⚠️ Input timeout ({timeout}s) - will attempt auto-TOTP")
+            return None
+    else:
+        # Unix: Use select for timeout
+        import select
+        print(prompt, end='', flush=True)
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        if ready:
+            return sys.stdin.readline().strip()
+        else:
+            log_ok(f"⚠️ Input timeout ({timeout}s) - will attempt auto-TOTP")
+            return None
+
+# ============================================================================
 # API Response Validation Helpers (BUG-005 FIX)
 # ============================================================================
+
+def validate_api_response(response, operation: str, required_keys: list = []) -> bool:
+    """
+    Validate API response to prevent crashes. (BUG-005 FIX)
+    
+    Args:
+        response: The JSON dictionary from API
+        operation: Name of operation for logging (e.g., 'Place Order')
+        required_keys: List of keys that MUST be present
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    if response is None:
+        log_ok(f"❌ Invalid {operation} response: Connection failed (None)")
+        return False
+
+    if not isinstance(response, dict):
+        log_ok(f"⚠️ Invalid {operation} response: Expected dict, got {type(response)}")
+        return False
+        
+    # Standard mStock error check
+    if response.get("status") == "error":
+        msg = safe_get(response, 'message', 'Unknown error')
+        log_ok(f"❌ {operation} API Error: {msg}")
+        return False
+        
+    for key in required_keys:
+        if safe_get(response, key) is None:
+             log_ok(f"⚠️ Invalid {operation} response: Missing required key '{key}'")
+             return False
+             
+    return True
 
 def safe_get(data: dict, path: str, default=None):
     """
@@ -253,35 +350,13 @@ def safe_get(data: dict, path: str, default=None):
 
     return result
 
-def validate_api_response(response: dict, required_keys: list, operation: str) -> bool:
-    """
-    Validate API response has required keys.
 
-    BUG-005 FIX: Provides centralized validation with logging.
-
-    Args:
-        response: API response dictionary
-        required_keys: List of required keys (supports dot notation)
-        operation: Name of operation for logging
-
-    Returns:
-        True if valid, False otherwise
-    """
-    if not isinstance(response, dict):
-        log_ok(f"⚠️ Invalid {operation} response: not a dictionary")
-        return False
-
-    for key in required_keys:
-        if safe_get(response, key) is None:
-            log_ok(f"⚠️ Invalid {operation} response: missing key '{key}'")
-            return False
-
-    return True
 
 def fetch_market_data_once(symbol: str, exchange: str) -> Tuple[Optional[dict], Optional[str]]:
     if is_offline():
         # Check if we should try probing (every 15s)
-        if OFFLINE["since"] and (now_ist() - OFFLINE["since"]).total_seconds() < 15:
+        since = get_offline_since()
+        if since and (now_ist() - since).total_seconds() < 15:
             return None, None
         else:
             # Probe attempt
@@ -364,6 +439,11 @@ def mark_online_if_needed():
             OFFLINE["active"] = False
             OFFLINE["since"] = None
 
+def get_offline_since() -> Optional[datetime]:
+    """Thread-safe getter for offline timestamp (BUG-002 FIX)"""
+    with offline_lock:
+        return OFFLINE.get("since")
+
 def safe_request(method, url, **kwargs):
     try:
         if "timeout" not in kwargs:
@@ -437,11 +517,35 @@ if SETTINGS_AVAILABLE:
 
 load_dotenv()
 
+# ============================================================================
+# BUG-010 NOTE: Credential Handling
+# ============================================================================
+# The global variables below (API_KEY, API_SECRET, etc.) are kept for backward
+# compatibility with existing code throughout kickstart.py.
+#
+# For NEW code, prefer using SecureCredentialManager for on-demand decryption:
+#
+#   from secure_credentials import SecureCredentialManager
+#   cred_manager = SecureCredentialManager(settings)
+#   headers = cred_manager.get_auth_headers()  # Credentials only briefly in memory
+#
+# The SecureCredentialManager minimizes plaintext credential exposure by:
+# - Decrypting credentials only when needed
+# - Not storing decrypted values as global variables
+# - Helping with memory cleanup after use
+# ============================================================================
+
 # Prioritize settings.json, fallback to .env
+# BUG-010: These are kept for backward compatibility; new code should use SecureCredentialManager
 API_KEY = settings.get_decrypted("broker.api_key") if settings else os.getenv('API_KEY')
 API_SECRET = settings.get_decrypted("broker.api_secret") if settings else os.getenv('API_SECRET')
 CLIENT_CODE = settings.get("broker.client_code") if settings else os.getenv('CLIENT_CODE')
 PASSWORD = settings.get_decrypted("broker.password") if settings else os.getenv('PASSWORD')
+
+# Initialize SecureCredentialManager for new code paths (BUG-010 FIX)
+cred_manager = None
+if SECURE_CREDS_AVAILABLE and settings:
+    cred_manager = SecureCredentialManager(settings)
 
 if not all([API_KEY, API_SECRET, CLIENT_CODE]):
     log_ok("⚠️ Warning: Missing broker credentials. Please configure them in the Settings GUI.")
@@ -454,17 +558,25 @@ EXCHANGES = ["NSE", "BSE"]
 STOP_REQUESTED = False
 
 def request_stop():
-    global STOP_REQUESTED
-    STOP_REQUESTED = True
+    # BUG-002 FIX: Use thread-safe helper with lock
+    set_stop_requested(True)
     if state_mgr:
-        state_mgr.set_stop_requested(True)
+        try:
+            state_mgr.set_stop_requested(True)
+        except Exception as e:
+            log_ok(f"⚠️ Warning: Failed to set stop request in StateManager: {e}")
+            pass
     log_ok("🛑 STOP SIGNAL RECEIVED - Persisting and Stopping Engine...")
 
 def reset_stop_flag():
-    global STOP_REQUESTED
-    STOP_REQUESTED = False
+    # BUG-002 FIX: Use thread-safe helper with lock
+    set_stop_requested(False)
     if state_mgr:
-        state_mgr.set_stop_requested(False)
+        try:
+            state_mgr.set_stop_requested(False)
+        except Exception as e:
+            log_ok(f"⚠️ Warning: Failed to reset stop flag in StateManager: {e}")
+            pass
     log_ok("🔄 STOP FLAG RESET - Engine Ready.")
 
 def reload_config():
@@ -975,6 +1087,11 @@ def perform_auto_login() -> bool:
     return False
 
 def handle_token_exception_and_refresh_token():
+    """
+    Handle token expiry by attempting auto-TOTP first, then manual input with timeout.
+    
+    BUG-006 FIX: Prevents headless mode freeze with non-blocking input and auto-TOTP fallback.
+    """
     global ACCESS_TOKEN
     log_ok("⚠️ Token refresh required (mStock session expired).")
     
@@ -985,6 +1102,14 @@ def handle_token_exception_and_refresh_token():
             log_ok("📲 Authentication alert sent via configured channels.")
         except Exception as e:
             log_ok(f"⚠️ Failed to send auth alert: {e}")
+
+    # BUG-006 FIX: Try auto-TOTP first (for VPS/headless mode)
+    log_ok("🔐 Attempting auto-login with TOTP...")
+    if perform_auto_login():
+        log_ok("✅ Auto-TOTP login successful!")
+        return True
+    
+    log_ok("⚠️ Auto-TOTP failed, falling back to manual OTP entry...")
 
     try:
         login_url = "https://api.mstock.trade/openapi/typea/connect/login"
@@ -1007,7 +1132,17 @@ def handle_token_exception_and_refresh_token():
             log_ok(f"❌ Login error during token refresh: {login_data}")
             return False
 
-        request_token = input("📩 Enter OTP sent to your registered device for token refresh: ")
+        # BUG-006 FIX: Use non-blocking input with timeout instead of blocking input()
+        request_token = get_input_with_timeout(
+            "📩 Enter OTP sent to your registered device for token refresh: ",
+            timeout=60  # 60 seconds for manual entry
+        )
+        
+        if request_token is None:
+            log_ok("❌ No OTP provided (timeout or headless mode)")
+            log_ok("💡 Tip: Configure TOTP secret in Settings → Broker for auto-login on VPS")
+            return False
+            
         checksum_str = API_KEY + request_token + API_SECRET
         checksum = hashlib.sha256(checksum_str.encode()).hexdigest()
 
@@ -1162,7 +1297,8 @@ def get_positions():
         return {}
     
     log_ok(f"🔍 Fetching holdings from mStock API...")
-    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {API_KEY[:10] if API_KEY else 'NONE'}...")
+    # BUG-009 FIX: Don't log credential values - only log presence status
+    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {'✓ SET' if API_KEY else '✗ MISSING'}")
     
     url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
     headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
@@ -1179,7 +1315,13 @@ def get_positions():
             if "TokenException" in resp.text or "invalid session" in resp.text:
                 raise Exception("TokenException")
         return {}
+    
     data_json = resp.json() or {}
+    
+    # BUG-005 FIX: Use the helper to validate response structure
+    if not validate_api_response(data_json, "Fetch Holdings"):
+        return {}
+    
     positions = data_json.get("data", []) or []
     
     # Mark token as validated for today (Smart Session Persistence)
@@ -1227,10 +1369,23 @@ def get_daywise_positions():
         if resp is None or resp.status_code != 200:
             return {}
             
-        data = resp.json().get("data", []) or []
-        pos_dict = {}
+        data_json = resp.json()
+        if not validate_api_response(data_json, "Fetch Daywise Positions"):
+            return {}
+            
+        data = data_json.get("data", []) or []
         
+        if not isinstance(data, list):
+            # Probably a "No records found" string
+            if isinstance(data, str) and "no" in data.lower():
+                return {}
+            log_ok(f"⚠️ Unexpected data format in daywise positions: {type(data)}")
+            return {}
+
+        pos_dict = {}
         for p in data:
+            if not isinstance(p, dict):
+                continue
             sym = p.get("tradingsymbol", "").upper()
             ex = (p.get("exchange") or "NSE").upper()
             
@@ -1404,7 +1559,9 @@ def merge_positions_and_orders():
                         "pnl": 0.0,
                         "source": "BOT (SETTLING)"
                     }
-            except Exception: pass
+            except Exception as e: 
+                log_ok(f"⚠️ Error processing settlement for {sym}: {e}")
+                pass
 
     # 5. Remove closed
     to_delete = [k for k, v in merged.items() if v["qty"] == 0] # Keep negative for short?
@@ -1626,7 +1783,8 @@ def wait_for_market_open():
     LOG_SUPPRESS = True
     try:
         while not is_market_open_now_ist():
-            if STOP_REQUESTED:
+            # BUG-002 FIX: Use thread-safe check
+            if is_stop_requested():
                 log_ok("⏹ Cycle stopped by user during market wait.", force=True)
                 return
             target = next_market_open_dt_ist()
@@ -2216,10 +2374,17 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 resp_dict = resp_json[0]
             else:
                 resp_dict = resp_json
+            
+            # BUG-005 FIX: Use the helper to validate response structure and content
+            if not validate_api_response(resp_dict, "Place Order", required_keys=["status"]):
+                if state_mgr:
+                    state_mgr.increment_trade_counter('failed')
+                return False
 
             status = resp_dict.get("status")
             message = resp_dict.get("message")
-            if response.status_code == 200 and status == "success":
+            
+            if status == "success":
                 log_ok(f"✅ {side} order placed for {symbol} (Qty: {qty})")
                 if state_mgr:
                     state_mgr.increment_trade_counter('success')
@@ -2232,7 +2397,9 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                     raise Exception("TokenException")
                 return False
         except Exception as e:
-            log_ok(f"❌ Response parsing error: {e} - Raw: {response.text}")
+            if "TokenException" in str(e):
+                raise
+            log_ok(f"❌ Response parsing error during order placement: {e}")
             if state_mgr:
                 state_mgr.increment_trade_counter('failed')
             return False
@@ -2286,11 +2453,16 @@ def send_engine_heartbeat():
 
 def run_cycle():
     # ---------------- Persisted Stop Check ----------------
-    global STOP_REQUESTED
-    if state_mgr and state_mgr.is_stop_requested():
-        STOP_REQUESTED = True
+    # BUG-002 FIX: Use thread-safe accessors
+    # Sync with state manager if available
+    try:
+        if state_mgr and state_mgr.is_stop_requested():
+            set_stop_requested(True)
+    except Exception as e:
+        log_ok(f"⚠️ Error checking persisted stop flag: {e}")
+        pass
         
-    if STOP_REQUESTED:
+    if is_stop_requested():
         return
 
     if is_offline():

@@ -5,8 +5,13 @@
 - [ ] Prepare `kickstart.py` for headless extraction testing.
 
 ## Active Sprint (Phase 4)
-- [ ] Initialize `streamlit_app.py` prototype.
-- [ ] Test Database connectivity from a separate process.
+- [x] Fix Settings Tab Attribute Error
+- [x] Fix create_founder_zip.py timestamp issue
+- [x] Push final fixes to GitHub main branch
+- [x] Declutter project root (Clean up batch files)
+- [ ] Implement RSI display in Dashboard & Trades view
+- [ ] Perform Full Regression Testing (Core strategies, UI tabs)
+- [ ] Final project hand-off and walkthrough check
 
 ### 🛠️ Maintenance & Excellence
 - [ ] Clean up legacy files (`kickstart_gui.py`, old test scripts).

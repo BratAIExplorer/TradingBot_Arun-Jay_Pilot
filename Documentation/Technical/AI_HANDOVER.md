@@ -278,3 +278,25 @@ COLOR_SUCCESS = "#00E676" # Green
 > ```
 > 
 > **Testing:** Use paper trading mode and verify regime detection halts trading during BEARISH/CRISIS conditions. The regime monitor is the CRITICAL P0 safety feature.
+
+### Session: January 26, 2026 - Google Gemini (Antigravity)
+**Objective:** RSI Logic Integration, Dashboard Enhancements, and Stability Fixes
+
+**Work Completed:**
+1.  **Metric Integration (RSI)**:
+    -   **Database**: Added `rsi` column to `trades` table via auto-migration in `trades_db.py`.
+    -   **Execution**: Patched `kickstart.py` to capture RSI at the exact moment of order placement and log it to the DB.
+    -   **Dashboard**: Upgraded "Trades View" to a full Treeview table displaying historical Execution RSI. Added "RSI" column to Live Positions table.
+2.  **UI/UX Stability**:
+    -   **Fixed Flicker**: Resolved issue where Dashboard PnL flickered to 0. (Root cause: `safe_get_live_positions_merged` returning empty dict on transient error; changed to return `None`).
+    -   **Stats Update**: Implemented auto-refresh loop for Trade History stats to ensure counters are live.
+3.  **Project Maintenance**:
+    -   **Decluttering**: Moved legacy batch files to `Documentation/Legacy_Launchers/` and dev tools to `_dev_tools/`.
+    -   **Dependency Fix**: Restored `getRSI.py` and `nifty50.py` to root after accidental move.
+
+**Next Steps:**
+-   [ ] **Mobile App**: Phase 4 Streamlit implementation.
+-   [ ] **Strategy Optimization**: Refine "Deep Dip" logic.
+-   [ ] **Backtesting**: Build dedicated backtest framework using stored data.
+
+**Status:** Phase 3 (RSI & Stability) Complete ✅

@@ -72,7 +72,11 @@ class DashboardV2:
         self.data_queue = queue.Queue(maxsize=100)
         self.running = False
         self.alerts_list = [] # Store recent alerts
-
+        self.latest_rsi = {} # Store latest RSI values
+        
+        # Trade Activity Tracking
+        self.trade_stats = {'attempts': 0, 'success': 0, 'failed': 0}
+        
         # Log redirection
         sys.stdout.write = self.write_log
         sys.stderr.write = self.write_log
@@ -131,6 +135,108 @@ class DashboardV2:
     # This tool call handles __init__ refactor.
 
 
+    def build_trades_view(self):
+        """Dedicated view for monitoring LIVE trade requests and execution stats"""
+        # Header
+        header = ctk.CTkFrame(self.view_trades, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 20), padx=20)
+        
+        # Title
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.pack(side="left")
+        ctk.CTkFrame(title_frame, width=4, height=24, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
+        ctk.CTkLabel(title_frame, text=" TRADE HISTORY & METRICS", font=("Inter", 20, "bold"), text_color=COLOR_TEXT).pack(side="left", padx=10)
+
+        # 1. Counter Row
+        counter_row = ctk.CTkFrame(self.view_trades, fg_color="transparent")
+        counter_row.pack(fill="x", pady=(0, 20), padx=20)
+        
+        def make_count_box(parent, title, color):
+            box = TitanCard(parent, title=title, border_color=COLOR_BORDER)
+            box.pack(side="left", fill="both", expand=True, padx=5)
+            # Override title color to match box theme
+            lbl = ctk.CTkLabel(box, text="0", font=("JetBrains Mono", 36, "bold"), text_color=color)
+            lbl.pack(pady=20)
+            return lbl
+
+        self.lbl_trades_attempts = make_count_box(counter_row, "TOTAL TRADES (30D)", COLOR_ACCENT)
+        self.lbl_trades_success = make_count_box(counter_row, "PROFITABLE TRADES", COLOR_SUCCESS)
+        self.lbl_trades_failed = make_count_box(counter_row, "LOSS TRADES", COLOR_DANGER)
+
+        # 2. Execution Table
+        log_card = TitanCard(self.view_trades, title="ORDER EXECUTION HISTORY")
+        log_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        
+        # Create Treeview for Trades
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", background=COLOR_CARD, foreground=COLOR_TEXT, fieldbackground=COLOR_CARD, rowheight=30, borderwidth=0)
+        style.map("Treeview", background=[('selected', COLOR_ACCENT)], foreground=[('selected', '#000')])
+        
+        cols = ("TIME", "SYMBOL", "ACTION", "QTY", "PRICE", "RSI", "P&L", "STRATEGY")
+        self.trades_table = ttk.Treeview(log_card, columns=cols, show="headings", style="Treeview")
+        
+        for col in cols:
+            self.trades_table.heading(col, text=col)
+            self.trades_table.column(col, anchor="center", width=100)
+        
+        self.trades_table.column("TIME", width=140)
+        self.trades_table.column("STRATEGY", width=150)
+        
+        self.trades_table.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Refresh Button
+        ctk.CTkButton(header, text="🔄 REFRESH DATA", command=self.refresh_trades_history, height=30, 
+                     fg_color=COLOR_CARD, border_width=1, border_color=COLOR_ACCENT, text_color=COLOR_ACCENT).pack(side="right")
+        
+        self.refresh_trades_history()
+
+    def refresh_trades_history(self):
+        """Fetch recent trades from DB and populate table"""
+        if not DATABASE_AVAILABLE or not db:
+            return
+            
+        try:
+            # Clear table
+            for item in self.trades_table.get_children():
+                self.trades_table.delete(item)
+                
+            trades = db.get_recent_trades(limit=50) # Use DB method
+            
+            pnl_wins = 0
+            pnl_loss = 0
+            
+            for t in trades:
+                ts = t.get('timestamp', '').replace('T', ' ')[:19]
+                sym = t.get('symbol')
+                action = t.get('action')
+                qty = t.get('quantity')
+                price = t.get('price')
+                rsi = t.get('rsi', 0)
+                rsi_str = f"{rsi:.1f}" if rsi and rsi > 0 else "-"
+                pnl = t.get('pnl_net', 0)
+                strat = t.get('strategy', 'Manual')
+                
+                if pnl > 0: pnl_wins += 1
+                elif pnl < 0: pnl_loss += 1
+                
+                pnl_str = f"₹{pnl:.2f}" if pnl != 0 else "-"
+                tag = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+                
+                self.trades_table.insert("", END, values=(ts, sym, action, qty, f"₹{price:.2f}", rsi_str, pnl_str, strat), tags=(tag,))
+            
+            # Update counters
+            self.lbl_trades_attempts.configure(text=str(len(trades)))
+            self.lbl_trades_success.configure(text=str(pnl_wins))
+            self.lbl_trades_failed.configure(text=str(pnl_loss))
+            
+            # Configure tags
+            self.trades_table.tag_configure("green", foreground=COLOR_SUCCESS)
+            self.trades_table.tag_configure("red", foreground=COLOR_DANGER)
+            
+        except Exception as e:
+            self.write_log(f"Error refreshing trades history: {e}\n")
+
     def build_header(self):
         """Top Navigation Bar"""
         header = ctk.CTkFrame(self.root, height=60, fg_color=COLOR_CARD, corner_radius=0)
@@ -146,7 +252,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "KNOWLEDGE", "STRATEGIES", "SETTINGS"],
+            values=["DASHBOARD", "TRADES", "KNOWLEDGE", "STRATEGIES", "SETTINGS"], # Added TRADES
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -548,7 +654,7 @@ class DashboardV2:
         table_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=0)
         table_frame.pack(fill="both", expand=True, padx=2, pady=5)
 
-        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "P&L", "P&L %")
+        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "RSI", "P&L", "P&L %")
 
         style = ttk.Style()
         style.theme_use("clam")
@@ -560,11 +666,12 @@ class DashboardV2:
             self.pos_table.heading(col, text=col.upper())
             self.pos_table.column(col, anchor="center")
 
-        self.pos_table.column("Source", width=70)
         self.pos_table.column("Symbol", width=100)
+        self.pos_table.column("Source", width=70)
         self.pos_table.column("Qty", width=60)
         self.pos_table.column("Entry", width=80)
         self.pos_table.column("LTP", width=80)
+        self.pos_table.column("RSI", width=60) # New RSI column
         self.pos_table.column("P&L", width=90)
         self.pos_table.column("P&L %", width=70)
 
@@ -729,7 +836,9 @@ class DashboardV2:
                 dtype, data = self.data_queue.get_nowait()
                 if dtype == "positions": self.update_positions(data)
                 elif dtype == "sentiment": self.update_sentiment(data)
-                elif dtype == "rsi": pass # Update rsi list if we had one
+                elif dtype == "rsi": 
+                    sym, val = data
+                    self.latest_rsi[sym] = val
         except queue.Empty: pass
         finally: self.root.after(1000, self.update_ui_loop)
 
@@ -782,9 +891,12 @@ class DashboardV2:
             # Icon prefix for source
             source_icon = "🤖" if source == "BOT" else "👤"
 
+            rsi_val = self.latest_rsi.get(s, 0)
+            rsi_str = f"{rsi_val:.1f}" if rsi_val > 0 else "--"
+
             self.pos_table.insert(
                 "", END,
-                values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
+                values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", rsi_str, f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
                 tags=(tag, source_tag)
             )
 

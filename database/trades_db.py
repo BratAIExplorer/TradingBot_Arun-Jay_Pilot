@@ -105,6 +105,12 @@ class TradesDatabase:
                 self.conn.commit()
                 print("✅ Migration 'source' complete")
 
+            if 'rsi' not in columns:
+                print("🔄 Migrating database: Adding 'rsi' column...")
+                self.cursor.execute("ALTER TABLE trades ADD COLUMN rsi REAL")
+                self.conn.commit()
+                print("✅ Migration 'rsi' complete")
+
         except Exception as e:
             print(f"⚠️ Migration warning: {e}")
     
@@ -121,6 +127,7 @@ class TradesDatabase:
                     reason: str = "",
                     broker: str = "mstock",
                     source: str = "BOT",
+                    rsi: float = 0.0,
                     fee_breakdown: Optional[Dict] = None) -> int:
         """
         Insert a trade record
@@ -142,13 +149,13 @@ class TradesDatabase:
                 timestamp, symbol, exchange, action, quantity, price,
                 gross_amount, brokerage_fee, stt_fee, exchange_fee,
                 gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
-                strategy, reason, broker, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                strategy, reason, broker, source, rsi
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             timestamp, symbol, exchange, action, quantity, price,
             gross_amount, brokerage, stt, exchange_fee,
             gst, sebi, stamp, total_fees, net_amount,
-            strategy, reason, broker, source
+            strategy, reason, broker, source, rsi
         ))
         
         self.conn.commit()

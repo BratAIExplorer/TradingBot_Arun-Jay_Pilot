@@ -1553,7 +1553,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                     # Check if we already bought today to avoid duplicates
                     if not check_existing_orders(symbol, exchange, qty, "BUY"):
                         log_ok(f"🎯 SIP TRIGGER: {reason} for {symbol}", force=True)
-                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0)
+                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0, rsi_val=last_rsi)
                         
                         # Notify user
                         if notifier:
@@ -1592,7 +1592,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
                     log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
-                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0)
+                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, rsi_val=last_rsi)
                 return
 
         if has_existing_position:
@@ -1603,7 +1603,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             need_qty = qty - max(0, available_qty)
             if need_qty > 0:
                 log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
+                safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0, rsi_val=last_rsi)
     finally:
         SYMBOL_LOCKS[symbol] = False
 
@@ -1648,12 +1648,17 @@ def connectivity_monitor():
 
 # ---------------- Orders ----------------
 
-def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
+def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, rsi_val=0.0):
     if is_offline():
         return False
 
-    # Check Paper Trading Mode
+    # Simulate Paper Trading (Phase 0A)
+    # Check if paper mode is enabled
+    is_paper = False
     if settings and settings.get("app_settings.paper_trading_mode"):
+        is_paper = True
+    
+    if is_paper:
         log_ok(f"🧪 PAPER TRADE: {side} {symbol} Qty: {qty} @ {price or 'MKT'}")
 
         # Log to database as a paper trade
@@ -1682,7 +1687,8 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                     net_amount=net_amount,
                     strategy="RSI (Paper)",
                     reason=f"Paper Trade {side.upper()}",
-                    broker="PAPER"
+                    broker="PAPER",
+                    rsi=rsi_val
                 )
                 log_ok("✅ Paper trade logged to DB")
                 return True
@@ -1726,6 +1732,31 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
             message = resp_dict.get("message")
             if response.status_code == 200 and status == "success":
                 log_ok(f"✅ {side} order placed for {symbol} (Qty: {qty})")
+                
+                # LOG REAL TRADE TO DB
+                if db:
+                    try:
+                        # Estimate fees (Placeholder roughly 0.1%)
+                        est_val = float(price) * int(qty) if float(price) > 0 else 0
+                        
+                        db.insert_trade(
+                            symbol=symbol,
+                            exchange=exchange,
+                            action=side.upper(),
+                            quantity=int(qty),
+                            price=float(price) if float(price) > 0 else 0, # Note: Market orders might have 0 here, ideally fetch fill price
+                            gross_amount=est_val,
+                            total_fees=0, # To be updated later via order sync
+                            net_amount=est_val,
+                            strategy="Manual/Algo",
+                            reason="Trade Executed",
+                            broker="mstock",
+                            source="BOT",
+                            rsi=rsi_val
+                        )
+                    except Exception as e:
+                         log_ok(f"⚠️ Failed to log real trade to DB: {e}")
+
                 return True
             else:
                 log_ok(f"❌ Order failed for {symbol}: {message or response.text}")

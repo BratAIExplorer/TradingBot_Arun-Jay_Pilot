@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2  
-**Last Updated**: January 17, 2026  
-**Status**: Phase 2 Complete (UX Intelligence)  
+**Project**: ARUN Trading Bot Titan V2 + VPS Deployment
+**Last Updated**: January 18, 2026
+**Status**: Phase 2 Complete + Phase 4 Infrastructure Sprint ✅ COMPLETE
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -21,20 +21,59 @@ Build a **safe, smart, and user-friendly** algorithmic trading bot for the India
    - Capital Allocation ("Safety Box") - limits bot to specific funds
    - Position Tagging (BOT vs MANUAL trades)
    - Stop Loss / Profit Target automation
+   - **NEW**: "Never Sell Below Entry Price" enforcement (kickstart.py:1584-1590)
 4. **Smart UX**:
    - Market Sentiment Meter with AI Reasoning
    - Knowledge Tab (trading education)
    - Sector-based "Baskets" for panic exits
 5. **Simulation Mode**: Realistic random-walk prices for paper trading
 
+### Recent Critical Fix (Jan 18, 2026) 🔧
+**Issue**: RSI sell signals could trigger even when price was below entry (potential loss)
+**Fix**: Added strict enforcement of `risk.never_sell_at_loss` setting
+- Location: `kickstart.py:1584-1590`
+- Behavior: When RSI ≥ sell_threshold but current_price ≤ entry_price, bot HOLDS
+- User Control: Configurable via `settings.json` (`risk.never_sell_at_loss`, default: `true`)
+- Compliance: Satisfies trading conditions requirement "Never sell below entry price"
+- Gap Analysis: See `Documentation/GAP_ANALYSIS.md` for full details
+
+### Phase 4 Infrastructure Sprint ✅ COMPLETE (Jan 18, 2026)
+**Achievement**: 24/7 VPS deployment and mobile monitoring
+
+**New Components**:
+1. **bot_daemon.py** (441 lines): Headless VPS runner
+   - Commands: start, stop, restart, status, run
+   - PID file management, logging with rotation
+   - Graceful shutdown (SIGTERM/SIGINT)
+   - Systemd service integration
+
+2. **mobile_dashboard.py** (614 lines): Streamlit web UI
+   - Password-protected remote monitoring
+   - Real-time P&L and performance metrics
+   - Active positions and trades history
+   - System logs viewer with search
+   - Mobile-responsive design (Titan theme)
+
+3. **Documentation/VPS_DEPLOYMENT.md** (650 lines): Cloud deployment guide
+   - Step-by-step VPS setup (DigitalOcean, AWS, Linode)
+   - Systemd service configuration
+   - Security and firewall setup
+   - Troubleshooting and maintenance
+
+**See**: `Documentation/Technical/OPTION_B_IMPLEMENTATION_PLAN.md` for implementation details
+
 ### File Structure
 ```
 kickstart.py          → Core trading logic (headless-capable)
+bot_daemon.py         → NEW: Headless VPS runner (Phase 4)
 dashboard_v2.py       → Main GUI (customtkinter)
+mobile_dashboard.py   → NEW: Streamlit mobile monitor (Phase 4)
 settings_gui.py       → Configuration panel (embedded in dashboard)
 market_sentiment.py   → Sentiment analysis (yfinance + fallback)
 database/trades_db.py → SQLite trade logging
 strategies/          → sector_map.py, trading_tips.json
+Documentation/
+  VPS_DEPLOYMENT.md   → NEW: Cloud deployment guide (Phase 4)
 ```
 
 ---
@@ -131,11 +170,89 @@ strategies/          → sector_map.py, trading_tips.json
 - [x] Capital Safety Box
 - [x] Position Tagging
 - [x] Simulation Refinement
+- [x] "Never Sell Below Entry" compliance fix (Jan 18, 2026)
 
-### 🔜 Phase 4 (Deferred)
-- [ ] Mobile Companion App (Streamlit)
+### ✅ Phase 4: Infrastructure Sprint ✅ COMPLETE (Jan 18, 2026)
+**Achievement**: Headless Core + Mobile Dashboard (Option B)
+
+**Completed Components**:
+- [x] **bot_daemon.py**: Headless daemon for VPS deployment
+  - Runs kickstart.py without GUI ✅
+  - Systemd service integration ✅
+  - Graceful start/stop controls ✅
+  - PID file management ✅
+  - Logging with rotation ✅
+
+- [x] **mobile_dashboard.py**: Streamlit web UI for mobile monitoring
+  - Real-time P&L and positions ✅
+  - Trades history with filters ✅
+  - Password-protected read-only access ✅
+  - System logs viewer ✅
+  - Mobile-responsive Titan theme ✅
+
+- [x] **VPS_DEPLOYMENT.md**: Step-by-step cloud deployment guide
+  - VPS provider comparison ✅
+  - Complete setup instructions ✅
+  - Systemd service configuration ✅
+  - Security and firewall setup ✅
+  - Troubleshooting guide ✅
+
+**Files Added**: bot_daemon.py, mobile_dashboard.py, Documentation/VPS_DEPLOYMENT.md
+**Dependencies Added**: streamlit>=1.30.0, psutil>=5.9.0
+**Implementation Plan**: See `Documentation/Technical/OPTION_B_IMPLEMENTATION_PLAN.md`
+
+### ✅ Collaboration Testing Session (Jan 18, 2026 - Evening)
+**Purpose**: Testing collaboration workflow, resolver branch conflicts, define launcher architecture
+
+**Key Decisions**:
+1. **Branch Strategy**:
+   - Main branch: `claude/sync-github-remote-3461O` (contains all latest features)
+   - User's working directory: `C:\Antigravity\TradingBots-Aruns Project`
+   - Branch switching requires: `git stash` → `git checkout` → `git stash pop`
+   
+2. **Launcher Simplification** (BACKLOG - Post Testing):
+   - **Current State**: 11 different .bat files (confusing for users)
+   - **Target State**: 1-2 essential launchers
+   - **Solution**: `START_ARUN.bat` with smart first-run setup
+     - First run: Install dependencies + create desktop shortcut
+     - Subsequent runs: Quick validation (2s) + launch
+   - **Cleanup Plan**: Move dev tools to `_dev_tools/`, delete deprecated launchers
+
+3. **Architecture: Hybrid Foreground Bot + Web Dashboard**:
+   - **Decision**: NO daemon mode (for now)
+   - **Rationale**: 
+     - User doesn't need 24/7 bot operation
+     - Simpler UX: Close GUI = Bot stops
+     - Mobile monitoring via web dashboard (read-only)
+   - **Components**:
+     - `START_ARUN.bat`: Launches desktop GUI + web dashboard simultaneously
+     - Desktop GUI: Full control (read-write)
+     - Web dashboard: Mobile monitoring via local WiFi (read-only)
+     - Access from phone: `http://192.168.x.x:8501` (same WiFi)
+   - **No STOP_ARUN.bat needed**: Just close GUI window
+
+4. **Dependency Conflicts Fixed**:
+   - Issue: `cachetools` version conflict (python-telegram-bot 13.15 requires 4.2.2, streamlit 1.53.0 requires >=5.5)
+   - Status: Known conflict, both packages installed and working
+   - Future: Consider updating python-telegram-bot or isolating dependencies
+
+**Files to Clean Up** (Post-Testing Backlog):
+- Remove: `LAUNCH_ARUN.bat`, `LAUNCH_V1_BACKUP.bat`, `LAUNCH_V2.bat`, `LAUNCH_BOT_DAEMON.bat`, `LAUNCH_DASHBOARD.bat`, `LAUNCH_DESKTOP_GUI.bat`, `CHECK_BOT_STATUS.bat`
+- Keep: `START_ARUN.bat` (unified launcher)
+- Move to `_dev_tools/`: `build_installer.bat`, `test_installer_gui.bat`
+
+### 🔜 Phase 4.1 (Next)
+- [ ] Implement unified `START_ARUN.bat` launcher
+- [ ] Clean up deprecated .bat files
 - [ ] Smart Order Suggestions ("Grammarly for Trading")
+- [ ] Hybrid Holding Management
+- [ ] Mobile push notifications
+
+### 🔜 Phase 5 (Future)
+- [ ] Daemon mode (optional checkbox in settings)
+- [ ] Confluence Scoring Engine (0-100 stock scoring)
 - [ ] Smart SIP module
+- [ ] News Sentiment Engine
 
 ---
 

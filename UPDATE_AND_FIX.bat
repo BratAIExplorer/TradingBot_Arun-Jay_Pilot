@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title ARUN Bot - Auto Update & Fix Conflicts
+title ARUN Bot - Auto Update ^& Fix Conflicts
 color 0B
 
 :: =================================================================
@@ -38,7 +38,7 @@ if %errorlevel% neq 0 (
 :: Step 2: Fetch Latest Changes
 :: ---------------------------------------------------------
 echo [Step 2/5] Fetching latest changes from GitHub...
-git fetch origin claude/fix-ui-exchange-validation-U9IPJ
+git fetch origin backup-state-jan26
 if %errorlevel% neq 0 (
     echo ⚠️  Warning: Could not fetch from remote.
     echo    Continuing with local version...
@@ -83,7 +83,7 @@ if %CONFLICTS%==1 (
     echo ✅ No conflicts detected.
 
     :: Try to pull if no conflicts
-    git pull origin claude/fix-ui-exchange-validation-U9IPJ >nul 2>&1
+    git pull origin backup-state-jan26 >nul 2>&1
     if %errorlevel% neq 0 (
         echo ⚠️  Could not pull changes (might already be up to date)
     ) else (

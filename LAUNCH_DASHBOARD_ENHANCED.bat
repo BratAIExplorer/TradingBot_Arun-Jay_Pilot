@@ -68,10 +68,10 @@ if not exist "settings.json" (
 :: AUTO-UPDATE CHECK (OPTIONAL)
 :: ---------------------------------------------------------
 echo.
-echo [Update Check] Checking for updates...
-git fetch origin claude/fix-ui-exchange-validation-U9IPJ >nul 2>&1
+:: Check for updates on backup-state-jan26
+git fetch origin backup-state-jan26 >nul 2>&1
 
-git diff --quiet HEAD origin/claude/fix-ui-exchange-validation-U9IPJ 2>nul
+git diff --quiet HEAD origin/backup-state-jan26 2>nul
 if %errorlevel% neq 0 (
     echo ⚠️  New updates available!
     echo.
@@ -167,8 +167,8 @@ echo. >> %LOG_FILE%
 echo [INFO] Launching Enhanced Dashboard... >> %LOG_FILE%
 echo 🚀 Launching dashboard...
 
-:: Launch the dashboard
-python dashboard_v2.py 2>&1 | tee -a %LOG_FILE%
+:: Launch the dashboard (Fixed tee removal)
+python dashboard_v2.py >> %LOG_FILE% 2>&1
 
 :: Capture exit code
 set EXIT_CODE=%errorlevel%

@@ -3,7 +3,7 @@
 import requests
 import hashlib
 from strategies.nifty_sip import NiftySIPStrategy
-print("✅ LOADED KICKSTART V3.0.1 (Emergency Fixes)")
+print("[OK] LOADED KICKSTART V3.0.1 (Emergency Fixes)")
 
 # Strategy Engines
 sip_engine = None

@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+set PYTHONUTF8=1
 title ARUN TITAN V2 - Enhanced Dashboard Launcher
 color 0A
 

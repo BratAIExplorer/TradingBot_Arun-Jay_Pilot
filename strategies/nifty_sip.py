@@ -20,6 +20,9 @@ class NiftySIPStrategy:
         1. Is it the SIP day?
         2. Is the price significantly lower than last buy? (Buy the dip)
         """
+        if current_price <= 0:
+            return False, "Invalid Price"
+
         now = datetime.now()
         
         # 1. SIP Day Check (e.g., Buy every Monday)

@@ -100,18 +100,24 @@ STRATEGY_GUIDES = {
     },
     "RSI_STRATEGY": {
         "title": "📊 RSI Mean Reversion (Seamless Edition)",
-        "summary": "Professional-grade RSI strategy using direct broker data and 200-bar stabilization.",
+        "summary": "Professional-grade RSI strategy using direct broker data and optional precision controls.",
         "how_it_works": [
-            "Current Implementation: Option A (The Deep Historical Seed)",
-            "1. Warm-up 🌡️: On startup, the bot fetches 200 bars from m.Stock to stabilize its math.",
-            "2. Precision 🎯: Local RSI calculation matches TradingView perfectly (14-period RMA).",
-            "3. Seamless Polling 📡: After setup, the bot only polls for the latest price, saving data.",
-            "4. Dynamic Buy/Sell: Buys at oversold (< 35) and sells at profit target or overbought (> 70).",
+            "1. Warm-up (Optional) 🌡️",
+            "   - If '200-bar Stabilization' is ON: The bot fetches deep history to ensure math is 100% stable (matches TradingView).",
+            "   - If OFF: Setup is faster, but first few RSI readings might differ slightly from pro charts.",
             "",
-            "Future Enhancement Options:",
-            "- ⚓ 15-Min Anchor: Move from 1m to 15m intervals to filter out market noise.",
-            "- 🛡️ Margin Cushion: Ensure no single trade exceeds 10% of your total portfolio.",
-            "- 📈 Trend Filter: Only buy if RSI is oversold AND the long-term trend is up."
+            "2. Incremental Polling 📡",
+            "   - The bot maintains a smart memory buffer. It only fetches new data, saving bandwidth and improving speed.",
+            "",
+            "3. Precision Math 🎯",
+            "   - Uses the 'TradingView-Exact' (RMA) calculation method for reliable signals.",
+            "",
+            "4. Portfolio Safety (Optional) 🛡️",
+            "   - If '10% Risk Limit' is ON: The bot will block any single trade that consumes >10% of your allocated capital.",
+            "   - This prevents 'Single Stock Risk' and keeps your investments diversified.",
+            "",
+            "5. Dynamic Exit 📈",
+            "   - Sells when stock is Overbought (>65) or your Profit Target is hit."
         ]
     },
     "SIP_STRATEGY": {

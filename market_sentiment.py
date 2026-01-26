@@ -28,15 +28,20 @@ class MarketSentiment:
             warnings.filterwarnings("ignore")
             
             # Fetch Data (1 day period to get today's change)
-            tickers = yf.Tickers(f"{self.nifty_ticker} {self.vix_ticker}")
-            
-            # Get previous close and current price
-            # Note: yfinance might be slow, so we wrap in try/except
-            nifty_info = tickers.tickers[self.nifty_ticker].history(period="2d")
-            vix_info = tickers.tickers[self.vix_ticker].history(period="2d")
+            # Fetch Data (1 day period to get today's change)
+            # NOTE: Disabling live fetch for now to prevent "^INDIAVIX possibly delisted" errors spamming logs.
+            # We will default to a NEUTRAL stance until a better data source is available.
+            return {
+                "score": 50, "status": "NEUTRAL 😐", 
+                "details": "Market data disabled (using safe defaults).",
+                "nifty_change": 0.0, "vix_change": 0.0
+            }
 
-            if nifty_info.empty or vix_info.empty:
-                raise Exception("Data fetch failed or market closed/no data")
+            """
+            try:
+                tickers = yf.Tickers(f"{self.nifty_ticker} {self.vix_ticker}")
+                # ... (rest of old logic commented out)
+            """
 
             # Calculate Changes
             nifty_change = ((nifty_info['Close'].iloc[-1] - nifty_info['Close'].iloc[0]) / nifty_info['Close'].iloc[0]) * 100

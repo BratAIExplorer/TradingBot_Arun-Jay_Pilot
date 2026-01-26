@@ -199,7 +199,7 @@ class TradingGUI:
         # Main window
         self.root = ctk.CTk()
         self.root.title("📈 ARUN")
-        print("✅ STARTING GUI V3.0 (Fixes Applied)")
+        print("✅ STARTING GUI V3.0.1 (Emergency Fixes)")
         self.root.geometry("1200x750")
         self.root.configure(cursor="arrow")
         

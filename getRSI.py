@@ -6,6 +6,12 @@ import numpy as np
 import pytz
 from datetime import time as dtime
 from typing import Optional
+import logging
+
+# Suppress yfinance noisy logging
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('peewee').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
 
 IST = pytz.timezone("Asia/Kolkata")
 

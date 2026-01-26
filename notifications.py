@@ -92,6 +92,40 @@ class NotificationManager:
         
         if self.telegram_enabled:
             self._send_telegram_circuit_breaker(details)
+
+    def send_heartbeat(self, details: Dict[str, Any]):
+        """Send periodic status update to Telegram"""
+        if not self.telegram_enabled: return
+        
+        status = details.get('status', 'RUNNING')
+        pnl = details.get('total_pnl', 0)
+        positions = details.get('positions_count', 0)
+        
+        heart_emoji = "💙" if status == "RUNNING" else "⏳"
+        
+        message = f"""
+{heart_emoji} <b>ARUN HEARTBEAT</b>
+Status: {status}
+Positions: {positions}
+Total P&L: ₹{pnl:,.2f}
+Time: {datetime.now().strftime('%H:%M')}
+        """
+        self._send_telegram(message)
+
+    def send_sos(self, error_msg: str):
+        """Send emergency alert if engine crashes"""
+        if not self.telegram_enabled: return
+        
+        message = f"""
+🚨 <b>ARUN ENGINE ALERT (SOS)</b>
+The trading engine has encountered a critical error or manual stop.
+
+<b>Error:</b> {error_msg}
+<b>Action:</b> Trading Suspended.
+
+Please check the Desktop GUI for details.
+        """
+        self._send_telegram(message)
         """Send email notification for trade"""
         if not self.sender_email or not self.sender_password:
             return

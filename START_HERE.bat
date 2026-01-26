@@ -99,7 +99,7 @@ if not exist ".venv" (
 echo.
 echo [Step 3/5] Installing Dependencies...
 echo [Step 3/5] Installing dependencies from requirements.txt... >> %LOG_FILE%
-call .venv\Scripts\activate
+if exist .venv\Scripts\activate.bat call .venv\Scripts\activate.bat
 pip install --prefer-binary -r requirements.txt >> %LOG_FILE% 2>&1
 if %errorlevel% neq 0 (
     echo ❌ Dependency installation failed. See install.log for details. >> %LOG_FILE%

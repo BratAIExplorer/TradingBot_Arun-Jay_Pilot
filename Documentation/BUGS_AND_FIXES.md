@@ -12,6 +12,8 @@
 | **GUI-101** | 🔴 Critical | **Settings GUI Crash**: Settings tab crashed with `AttributeError` when clicking Save. | Fixed missing `broker_var` attribute in `SettingsGUI` class used by the V2 dashboard. | **VERIFIED** |
 | **POS-102** | 🟠 High | **P&L Sync Failure**: `TypeError` when fetching positions if the user's portfolio was empty. | Added type-guards to `get_daywise_positions` to handle string responses from the broker API. | **VERIFIED** |
 | **RISK-103** | 🟡 Medium | **Outdated Risk Limits**: Risk Manager ignored GUI setting changes until manual restart. | Refactored RiskManager to fetch thresholds dynamically in every cycle. Bot now respects user sliders in real-time. | **VERIFIED** |
+| **SIP-006** | 🔴 Critical | **SIP Buy Logic Failure**: "Buy the Dip" logic was returning early, preventing profit target checks and potentially causing order placement issues. | Refactored `kickstart.py` to allow SIP logic to fall through to sell logic. Added `strategy` tags to orders. | **VERIFIED** |
+| **RISK-007** | 🟠 High | **Paper Trading Risk Check**: Risk Manager ignored paper trading positions, failing to trigger stops/targets in simulation. | Updated `RiskManager` to respect `paper_trading_mode` setting when fetching positions. | **VERIFIED** |
 
 ---
 

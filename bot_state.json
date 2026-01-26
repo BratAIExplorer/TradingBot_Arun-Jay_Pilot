@@ -1,9 +1,163 @@
 {
-  "positions": {},
+  "positions": {
+    "('BAJFINANCE', 'NSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 970.0,
+      "ltp": 927.85,
+      "pnl": -210.75,
+      "source": "MANUAL"
+    },
+    "('BIRET', 'NSE')": {
+      "qty": 1,
+      "used_quantity": 0,
+      "price": 344.8,
+      "ltp": 346.49,
+      "pnl": 1.69,
+      "source": "MANUAL"
+    },
+    "('BSE', 'NSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 2688.5,
+      "ltp": 2685.4,
+      "pnl": -15.5,
+      "source": "MANUAL"
+    },
+    "('DIXON', 'NSE')": {
+      "qty": 1,
+      "used_quantity": 0,
+      "price": 12105.0,
+      "ltp": 10360.0,
+      "pnl": -1745.0,
+      "source": "MANUAL"
+    },
+    "('EMBASSY', 'NSE')": {
+      "qty": 1,
+      "used_quantity": 0,
+      "price": 438.78,
+      "ltp": 435.6,
+      "pnl": -3.18,
+      "source": "MANUAL"
+    },
+    "('GOLDBEES', 'NSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 124.2,
+      "ltp": 127.42,
+      "pnl": 16.1,
+      "source": "BOT"
+    },
+    "('IDEA', 'NSE')": {
+      "qty": 4000,
+      "used_quantity": 0,
+      "price": 10.59,
+      "ltp": 9.93,
+      "pnl": -2640.0,
+      "source": "MANUAL"
+    },
+    "('MICEL', 'NSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 34.08,
+      "ltp": 34.03,
+      "pnl": -0.25,
+      "source": "MANUAL"
+    },
+    "('MOSCHIP', 'NSE')": {
+      "qty": 10,
+      "used_quantity": 0,
+      "price": 175.44,
+      "ltp": 169.22,
+      "pnl": -62.2,
+      "source": "BOT"
+    },
+    "('TATSILV', 'NSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 28.43,
+      "ltp": 29.62,
+      "pnl": 5.95,
+      "source": "BOT"
+    },
+    "('MICEL', 'BSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 34.02,
+      "ltp": 34.02,
+      "pnl": 0.0,
+      "source": "BOT (SETTLING)"
+    },
+    "('MOSCHIP', 'BSE')": {
+      "qty": 5,
+      "used_quantity": 0,
+      "price": 175.5,
+      "ltp": 175.5,
+      "pnl": 0.0,
+      "source": "BOT (SETTLING)"
+    }
+  },
   "portfolio_value": 0,
   "circuit_breaker_active": false,
   "daily_start_capital": 0.0,
-  "last_update": "2026-01-17T22:32:22.261883",
-  "bot_started_at": "2026-01-15T23:17:28.409294",
-  "total_trades_today": 0
+  "last_update": "2026-01-26T12:22:55.620381",
+  "bot_started_at": "2026-01-21T15:35:01.485317",
+  "total_trades_today": 1,
+  "token_validation": {
+    "last_validated": "2026-01-25T20:48:19.692250",
+    "validated_date": "2026-01-25"
+  },
+  "broker_holdings": {
+    "data": {
+      "MOSCHIP:BSE": {
+        "qty": 5,
+        "used_quantity": 0,
+        "price": 175.5,
+        "ltp": 175.5,
+        "pnl": 0.0,
+        "source": "BOT (SETTLING)"
+      },
+      "GOLDBEES:NSE": {
+        "qty": 5,
+        "used_quantity": 0,
+        "price": 124.16,
+        "ltp": 124.16,
+        "pnl": 0.0,
+        "source": "BOT (SETTLING)"
+      },
+      "TATSILV:NSE": {
+        "qty": 5,
+        "used_quantity": 0,
+        "price": 28.39,
+        "ltp": 28.39,
+        "pnl": 0.0,
+        "source": "BOT (SETTLING)"
+      },
+      "MOSCHIP:NSE": {
+        "qty": 5,
+        "used_quantity": 0,
+        "price": 175.5,
+        "ltp": 175.5,
+        "pnl": 0.0,
+        "source": "BOT (SETTLING)"
+      },
+      "MICEL:BSE": {
+        "qty": 5,
+        "used_quantity": 0,
+        "price": 34.02,
+        "ltp": 34.02,
+        "pnl": 0.0,
+        "source": "BOT (SETTLING)"
+      }
+    },
+    "fetched_at": "2026-01-23T12:28:59.622832",
+    "source": "mStock API"
+  },
+  "trade_counters": {
+    "attempts": 0,
+    "success": 0,
+    "failed": 0,
+    "last_reset_date": "2026-01-26"
+  },
+  "stop_requested": true
 }

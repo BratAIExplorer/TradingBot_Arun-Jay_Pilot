@@ -934,6 +934,12 @@ class SettingsGUI:
             print(error_msg)
             print("=====================\n")
     
+    def on_never_sell_at_loss_toggled(self):
+        """Handle Never Sell At Loss toggle"""
+        if self.never_sell_at_loss_var.get():
+            messagebox.showwarning("⚠️ High Risk Warning", 
+                                   "Enabling 'Never Sell At Loss' means the bot will hold losing positions indefinitely until they return to profit.\n\nThis can lead to significant capital lockup if a stock crashes and never recovers.")
+
     def toggle_password_visibility(self):
         """Toggle password and API key field visibility"""
         show = self.show_pass_var.get()

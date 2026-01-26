@@ -29,7 +29,18 @@ def create_founder_zip():
                 
                 path = os.path.join(root, file)
                 print(f"Adding {path}")
-                zipf.write(path)
+                try:
+                    zipf.write(path)
+                except ValueError: # Likely invalid timestamp
+                    print(f"⚠️ Fixing timestamp for {path}...")
+                    # Read file content
+                    with open(path, 'rb') as f:
+                        data = f.read()
+                    # Create ZipInfo with current time
+                    zinfo = zipfile.ZipInfo(filename=path, date_time=datetime.datetime.now().timetuple()[:6])
+                    zinfo.compress_type = zipfile.ZIP_DEFLATED
+                    # Write with explicit info
+                    zipf.writestr(zinfo, data)
                 
     print(f"\n✅ Created {zip_name}")
     print("You can send this file directly to the founder!")

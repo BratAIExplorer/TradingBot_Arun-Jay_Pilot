@@ -1,20 +1,14 @@
 @echo off
-:: =================================================================
-:: QUICK LAUNCH - No checks, instant start
-:: Use this if you're sure everything is set up correctly
-:: =================================================================
-
-title ARUN Dashboard - Quick Launch
+TITLE ARUN HEADLESS ENGINE (Performance Mode)
 cd /d "%~dp0"
 
-echo 🚀 Quick Launch - Starting Dashboard...
-call .venv\Scripts\activate
-python dashboard_v2.py
+echo [INFO] Launching ARUN Engine in Headless Mode...
+echo [INFO] This mode has minimal latency and maximum reliability.
+echo.
 
-if %errorlevel% neq 0 (
-    echo.
-    echo ❌ Dashboard crashed!
-    echo    Use LAUNCH_DASHBOARD_ENHANCED.bat for full diagnostics.
-    pause
-)
-exit
+if exist .venv\Scripts\activate.bat call .venv\Scripts\activate.bat
+python kickstart.py
+
+echo.
+echo [INFO] Engine closed.
+pause

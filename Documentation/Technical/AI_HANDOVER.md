@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
 **Project**: ARUN Trading Bot Titan V2  
-**Last Updated**: January 17, 2026  
-**Status**: Phase 2 Complete (UX Intelligence)  
+**Last Updated**: January 26, 2026  
+**Status**: Phase 3 Complete (RSI & Stability)  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -58,7 +58,6 @@ strategies/          → sector_map.py, trading_tips.json
 ### 4. GUI is Desktop-Only (CustomTkinter)
 - This is NOT a web app
 - Mobile requires Streamlit (Phase 4, deferred)
-- See `Founder_Package/mobile_architecture.md`
 
 ---
 
@@ -66,237 +65,52 @@ strategies/          → sector_map.py, trading_tips.json
 
 ### 1. yfinance Spam (Cosmetic)
 - `market_sentiment.py` logs VIX errors when market closed
-- Already suppressed with `warnings.filterwarnings("ignore")`
-- Harmless (falls back to simulation)
 
 ### 2. Settings Embedded Height
 - Settings view is scrollable when embedded
 - Save button at bottom (user must scroll)
-- Working as designed
 
 ### 3. Hardcoded Credentials
 - User must manually edit `settings.json` for API keys
-- Encrypted storage exists (`settings_manager.py`)
-- TOTP auto-login implemented
 
 ---
 
 ## 📂 Key Files Explained
 
-### `kickstart.py` (1880 lines)
+### `kickstart.py`
 **PURPOSE**: Headless trading engine  
 **ENTRY**: `run_cycle()` - fetches data, calculates RSI, places orders  
-**CRITICAL GLOBALS**:
-- `ALLOCATED_CAPITAL` - max capital bot can use
-- `MOCK_PRICES` - simulation state (random walk)
-- `config_dict` - loaded from `stocks.csv`
 
-**DEPENDENCIES**: `settings_manager`, `database`, `risk_manager`
-
-### `dashboard_v2.py` (715 lines)
+### `dashboard_v2.py`
 **PURPOSE**: Main GUI window (Titan design)  
-**KEY METHODS**:
-- `build_dashboard_view()` - 4-card grid layout
-- `build_strategies_view()` - Bento baskets + algo cards
-- `build_knowledge_view()` - Tips of the day
-- `sell_sector_positions(sector)` - Panic exit for sector
-
-**THREADING**: 
-- `sentiment_worker()` - fetches VIX data every 5 mins
-- `update_ui_loop()` - refreshes UI every 1 sec
-
-### `settings_gui.py` (1182 lines)
-**PURPOSE**: Settings panel (5 tabs)  
-**TABS**: Broker, Capital, Risk, Notifications, Stocks  
-**NEW FEATURE**: "Safety Box" slider in Capital tab (line 301)
-
-### `market_sentiment.py` (129 lines)
-**PURPOSE**: Fear/Greed meter logic  
-**DATA SOURCE**: Yahoo Finance (^NSEI, ^INDIAVIX)  
-**FALLBACK**: Random walk when offline
-
-### `database/trades_db.py` (144 lines)
-**PURPOSE**: SQLite trade logger  
-**SCHEMA**: `trades` table with `source` column (BOT/MANUAL)  
-**MIGRATIONS**: Auto-runs on init (backward compatible)
-
----
-
-## 🔮 Roadmap (What's Next)
-
-### ✅ Phase 2 Complete
-- [x] Bento Grid (Sector Baskets)
-- [x] AI Reasoning Engine
-- [x] Knowledge Tab
-- [x] Capital Safety Box
-- [x] Position Tagging
-- [x] Simulation Refinement
-
-### 🔜 Phase 4 (Deferred)
-- [ ] Mobile Companion App (Streamlit)
-- [ ] Smart Order Suggestions ("Grammarly for Trading")
-- [ ] Smart SIP module
-
----
-
-## 🛠️ Development Guide
-
-### Running Locally
-```bash
-# Windows
-LAUNCH_ARUN.bat
-
-# Python directly
-.venv\Scripts\python dashboard_v2.py
-```
-
-### Testing Simulation Mode
-1. Settings → App Settings → Enable "Paper Trading Mode"
-2. Start Engine
-3. Prices will random-walk (no real API calls)
-
-### Adding a New Feature
-1. Update `task.md` in brain folder
-2. If backend: modify `kickstart.py`
-3. If UI: modify `dashboard_v2.py` or `settings_gui.py`
-4. Test in Paper Mode first
-5. Update `walkthrough.md`
-
-### Color Palette (Titan Theme)
-```python
-COLOR_BG = "#050505"      # Background
-COLOR_CARD = "#121212"    # Cards
-COLOR_ACCENT = "#00F0FF"  # Cyan (primary)
-COLOR_DANGER = "#FF003C"  # Red
-COLOR_SUCCESS = "#00E676" # Green
-```
-
----
-
-## 📞 External Dependencies
-
-### APIs
-- **mStock API** (Type A): Market data, orders, positions
-- **Yahoo Finance**: Nifty/VIX sentiment (via `yfinance`)
-
-### Python Packages
-- `customtkinter` - GUI framework
-- `pandas` - Data processing
-- `requests` - HTTP calls
-- `sqlite3` - Database (built-in)
-- `pyotp` - 2FA/TOTP
-
----
-
-## 🎓 Founder Preferences
-
-### Communication Style
-- User prefers **clear, honest feedback**
-- "Do not sugarcoat" - direct answers
-- Wants to understand WHY, not just WHAT
-
-### UX Philosophy
-- "Human-first" - explain technical terms
-- Safety > Speed (capital protection is #1)
-- Mobile is future but desktop is priority
-
-### Code Quality
-- Stability over features
-- "Do No Harm" policy (don't break working code)
-- Test in Paper Mode before Live
 
 ---
 
 ## 🚀 Quick Start for Next AI
 
-1. Read `Founder_Package/roadmap_and_state.md`
-2. Check `task.md` for current status
+1. Read `Documentation/roadmap_and_state.md`
+2. Check `Documentation/task.md` for current status
 3. Run `LAUNCH_ARUN.bat` to see live system
 4. Test changes in Paper Trading Mode first
-5. Update this handover when done
-
-**Good luck! 🤖**
 
 ---
 
 ## 📝 SESSION LOG (AI Collaboration Tracking)
-
-### Session: January 18, 2026 - Google Gemini (Antigravity)
-**Objective:** Project foundation setup + Regime Monitor implementation
-
-**Work Completed:**
-1. ✅ Reviewed existing AI_HANDOVER.md (this file)
-2. ✅ Confirmed Documentation structure (Technical/, Product/ folders exist)
-3. ✅ Created Reference/CryptoBot_Intelligence_Inspiration/ folder
-4. ✅ Moved crypto reference docs:
-   - REFERENCE_confluence.md → Reference/CryptoBot_Intelligence_Inspiration/
-   - REFERENCE_final_summary.md → Reference/CryptoBot_Intelligence_Inspiration/
-   - REFERENCE_intelligence.md → Reference/CryptoBot_Intelligence_Inspiration/ 
-   - cryptobot_investment_analysis.md → Reference/CryptoBot_Intelligence_Inspiration/
-5. ✅ Created README.md in Reference folder clarifying these are STOCK trading inspiration (not crypto implementation)
-6. ✅ Implemented Regime Monitor (`regime_monitor.py` - 430 lines)
-   - ✅ Nifty 50 index data fetching via yfinance
-   - ✅ 50/200 SMA trend detection
-   - ✅ ADX calculation for trend strength
-   - ✅ Volatility (20-day) and drawdown metrics
-   - ✅ Regime classification (BULLISH/BEARISH/SIDEWAYS/VOLATILE/CRISIS)
-   - ✅ Caching mechanism (1-hour default)
-   - ✅ Fallback handling when data unavailable
-   - ✅ Tested successfully (runs without errors)
-
-**Next Steps:**
-- [x] Implement Regime Monitor (regime_monitor.py) ✅ COMPLETE
-- [ ] Integrate Regime Monitor into kickstart.py
-  - Import regime_monitor module
-  - Add regime check at start of trading loop
-  - Halt trading if regime is BEARISH or CRISIS
-  - Adjust position sizes based on regime multiplier
-  - Log regime status to console
-- [ ] Test integration with paper trading mode
-- [ ] Test with historical crash data (2020 COVID scenario)
-- [ ] Add regime status display to dashboard_v2.py (optional)
-- [ ] Implement Backtest Engine (next major component)
-
-**Status:** Phase 1 Complete ✅ - Regime Monitor implemented and tested
-
-**Handoff Notes for Next AI:**
-> **Foundation work is complete.** The Regime Monitor (`regime_monitor.py`) is implemented and tested - it successfully fetches Nifty 50 data, calculates indicators, and classifies market regime.
-> 
-> **Next session should focus on integration:** Modify `kickstart.py` to use the Regime Monitor before executing trades. Add the check at the start of the trading loop (around line 1450 in kickstart.py where the main cycle runs).
->
-> **Integration pattern:**
-> ```python
-> from regime_monitor import RegimeMonitor
-> 
-> regime_monitor = RegimeMonitor()  # Initialize once
-> 
-> # In trading loop:
-> regime = regime_monitor.get_market_regime()
-> if not regime['should_trade']:
->     log_warning(f"⛔ Trading halted: {regime['reason']}")
->     continue  # Skip all trading for this cycle
-> ```
-> 
-> **Testing:** Use paper trading mode and verify regime detection halts trading during BEARISH/CRISIS conditions. The regime monitor is the CRITICAL P0 safety feature.
 
 ### Session: January 26, 2026 - Google Gemini (Antigravity)
 **Objective:** RSI Logic Integration, Dashboard Enhancements, and Stability Fixes
 
 **Work Completed:**
 1.  **Metric Integration (RSI)**:
-    -   **Database**: Added `rsi` column to `trades` table via auto-migration in `trades_db.py`.
-    -   **Execution**: Patched `kickstart.py` to capture RSI at the exact moment of order placement and log it to the DB.
-    -   **Dashboard**: Upgraded "Trades View" to a full Treeview table displaying historical Execution RSI. Added "RSI" column to Live Positions table.
+    -   **Database**: Added `rsi` column to `trades` table.
+    -   **Execution**: Patched `kickstart.py` to capture RSI during order placement.
+    -   **Dashboard**: Upgraded "Trades View" to a full Treeview table and added RSI columns.
 2.  **UI/UX Stability**:
-    -   **Fixed Flicker**: Resolved issue where Dashboard PnL flickered to 0. (Root cause: `safe_get_live_positions_merged` returning empty dict on transient error; changed to return `None`).
-    -   **Stats Update**: Implemented auto-refresh loop for Trade History stats to ensure counters are live.
+    -   **Fixed Flicker**: Resolved issue where PnL flickered to 0 by returning `None` correctly on API errors.
+    -   **Stats Update**: Implemented auto-refresh loop for trade history statistics.
 3.  **Project Maintenance**:
-    -   **Decluttering**: Moved legacy batch files to `Documentation/Legacy_Launchers/` and dev tools to `_dev_tools/`.
-    -   **Dependency Fix**: Restored `getRSI.py` and `nifty50.py` to root after accidental move.
+    -   **Decluttered Project Root**: Moved legacy files to `Documentation/Legacy_Launchers/` and `_dev_tools/`.
+    -   **Dependency Fix**: Restored `getRSI.py` and `nifty50.py` to root.
+    -   **Launcher Fix**: Restored `LAUNCH_ARUN.bat` and recreated `.venv` from scratch following a "path not found" crash.
 
-**Next Steps:**
--   [ ] **Mobile App**: Phase 4 Streamlit implementation.
--   [ ] **Strategy Optimization**: Refine "Deep Dip" logic.
--   [ ] **Backtesting**: Build dedicated backtest framework using stored data.
-
-**Status:** Phase 3 (RSI & Stability) Complete ✅
+**Status:** Phase 3 Complete ✅

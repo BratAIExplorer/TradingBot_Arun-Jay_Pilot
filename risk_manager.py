@@ -49,8 +49,9 @@ class RiskManager:
         """
         actions = []
         
-        # 1. Get BOT positions from database
-        db_positions = self.db.get_open_positions() if self.db else []
+        # 1. Get BOT positions from database (respect paper trading mode)
+        is_paper = self.settings.get("app_settings.paper_trading_mode", False) if self.settings else False
+        db_positions = self.db.get_open_positions(is_paper=is_paper) if self.db else []
         
         # 2. Identify Manual positions to watch (Butler Mode)
         watched_symbols = self.settings.get("app_settings.watched_manual_positions", [])

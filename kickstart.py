@@ -1805,7 +1805,7 @@ def wait_for_market_open():
     finally:
         LOG_SUPPRESS = False
 
-def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, avg_price=0):
+def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, avg_price=0, strategy="RSI", reason=None):
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
@@ -1879,8 +1879,8 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 gross_amount=round(gross_amount, 2),
                 total_fees=round(total_fees, 2),
                 net_amount=round(net_amount, 2),
-                strategy="RSI",
-                reason=f"RSI-based {side.upper()}",
+                strategy=strategy,
+                reason=reason or f"{strategy}-based {side.upper()}",
                 broker="mstock",
                 pnl_gross=round(pnl_gross, 2),
                 pnl_net=round(pnl_net, 2),
@@ -1901,8 +1901,8 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                         "gross_amount": round(gross_amount, 2),
                         "total_fees": round(total_fees, 2),
                         "net_amount": round(net_amount, 2),
-                        "strategy": "RSI",
-                        "reason": f"RSI-based {side.upper()}",
+                        "strategy": strategy,
+                        "reason": reason or f"{strategy}-based {side.upper()}",
                         "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     }
                     notifier.send_trade_alert(trade_info)
@@ -2174,7 +2174,10 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                     # Check if we already bought today to avoid duplicates
                     if not check_existing_orders(symbol, exchange, qty, "BUY"):
                         log_ok(f"🎯 SIP TRIGGER: {reason} for {symbol}", force=True)
-                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0)
+                        safe_place_order_when_open(
+                            symbol, exchange, qty, "BUY", instrument_token, 0,
+                            strategy="SIP", reason=reason
+                        )
                         
                         # Notify user
                         if notifier:
@@ -2183,7 +2186,9 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                                 'quantity': qty, 'price': current_close, 'strategy': 'SIP',
                                 'reason': reason
                             })
-            return # Exit SIP processing (SIP never sells via RSI)
+            # Fall through to allow Profit Target sells for SIP positions
+            # SIP never sells via RSI, but should respect Profit Targets.
+        
 
         if pos["active"] and pos["price"] > 0:
             can_consider_sell = current_close > pos["price"]
@@ -2213,14 +2218,19 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
                     log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
-                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, avg_price=pos.get("price", 0))
+                    safe_place_order_when_open(
+                        symbol, exchange, sell_qty, "SELL", instrument_token, 0, 
+                        avg_price=pos.get("price", 0),
+                        strategy=strategy_type,
+                        reason=sell_reason
+                    )
                 return
 
-        if has_existing_position:
+        if has_existing_position and strategy_type != "SIP":
             log_ok(f"⚠️ Skipped {symbol}:{exchange}: Existing position detected")
             return
 
-        if last_rsi <= buy_rsi and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY"):
+        if last_rsi <= buy_rsi and strategy_type != "SIP" and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY"):
             need_qty = qty - max(0, available_qty)
             if need_qty > 0:
                 required_funds = need_qty * current_close
@@ -2240,7 +2250,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                     log_ok(f"🛡️ Trade Skipped for {symbol}: Risk Limit Hit (Trade ₹{required_funds:,.2f} > 10% of portfolio ₹{portfolio_risk_limit:,.2f})")
                 else:
                     log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
+                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0, strategy=strategy_type)
     finally:
         SYMBOL_LOCKS[symbol] = False
 
@@ -2493,7 +2503,9 @@ def run_cycle():
                     # Trigger sell order
                     safe_place_order_when_open(
                         symbol, exchange, qty, "SELL", 
-                        instrument_token, price=0, use_amo=False
+                        instrument_token, price=0, use_amo=False,
+                        strategy="RISK",
+                        reason=reason
                     )
 
                     # 🔔 Notify user (MVP1 Feature)

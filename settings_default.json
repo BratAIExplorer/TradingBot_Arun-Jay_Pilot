@@ -75,6 +75,7 @@
         "default_trailing_stop_pct": 3,
         "catastrophic_stop_enabled": true,
         "catastrophic_stop_pct": 20,
+        "use_10_pct_portfolio_limit": true,
         "hold_quality_stocks": true,
         "quality_stock_hold_days": 60,
         "quality_criteria": {
@@ -93,6 +94,7 @@
             "sell_rsi_threshold": 65,
             "use_stop_loss": true,
             "stop_loss_pct": 5,
+            "use_200_bar_stabilization": true,
             "use_profit_target": true,
             "profit_target_pct": 10,
             "never_sell_at_loss": false,

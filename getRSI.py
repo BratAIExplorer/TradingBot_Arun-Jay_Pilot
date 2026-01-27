@@ -95,9 +95,16 @@ def calculate_intraday_rsi_tv(
     if lookback is None:
         lookback = "6mo" if _is_daily_interval(interval) else "60d"  # Yahoo intraday limit ~60 days
 
-    df = yf.Ticker(yf_symbol).history(period=lookback, interval=interval, auto_adjust=False)
+    try:
+        df = yf.Ticker(yf_symbol).history(period=lookback, interval=interval, auto_adjust=False)
+    except Exception as e:
+        # Catch Yahoo API errors, connectivity issues, or 'Expecting value' (JSON decode errors)
+        # print(f"WARNING: yfinance failed for {yf_symbol}: {e}")
+        return "", 0.0, pd.DataFrame()
+        
     if df.empty:
-        raise ValueError(f"No {interval} data for {yf_symbol}. Try a longer lookback or check hours.")
+        # print(f"WARNING: No {interval} data for {yf_symbol}")
+        return "", 0.0, pd.DataFrame()
 
     # Ensure timezone-aware index in IST
     if df.index.tz is None:

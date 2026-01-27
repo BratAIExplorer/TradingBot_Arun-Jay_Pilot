@@ -9,8 +9,8 @@
 - [x] Fix create_founder_zip.py timestamp issue
 - [x] Push final fixes to GitHub main branch
 - [x] Declutter project root (Clean up batch files)
-- [ ] Implement RSI display in Dashboard & Trades view
-- [ ] Perform Full Regression Testing (Core strategies, UI tabs)
+- [x] Implement RSI display in Dashboard & Trades view
+- [x] Perform Full Regression Testing (Core strategies, UI tabs)
 - [ ] Final project hand-off and walkthrough check
 
 ### 🛠️ Maintenance & Excellence

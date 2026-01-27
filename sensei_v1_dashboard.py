@@ -107,15 +107,16 @@ class DashboardV2:
         self.view_start = ctk.CTkFrame(self.main_container, fg_color="transparent") # Restored to prevent crash
         self.view_hybrid = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_trades = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_stocks = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
         self.build_dashboard_view()
         self.build_strategies_view()
         self.build_settings_view()
         self.build_knowledge_view()
         self.build_logs_view()
-        # self.build_start_here_view() # Disabled
         self.build_hybrid_view()
         self.build_trades_view()
+        self.build_stocks_view()
         
         # Default View (Always Dashboard for Sensei V1)
         self.show_view("DASHBOARD")
@@ -239,7 +240,7 @@ class DashboardV2:
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "HYBRID", "TRADES", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
+            values=["DASHBOARD", "HYBRID", "TRADES", "STOCKS", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
             command=self.show_view,
             font=("Roboto", 12, "bold"),
             selected_color=COLOR_ACCENT,
@@ -249,7 +250,7 @@ class DashboardV2:
             text_color="white",
             fg_color="#000",
             height=32,
-            width=550
+            width=650
         )
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
@@ -267,7 +268,8 @@ class DashboardV2:
         success = reload_config()
         if success:
              self.write_log("✅ Settings Reloaded & Applied.\n")
-             # Could also refresh UI elements if needed
+             # Trigger immediate Capital/Balance refresh
+             self.refresh_balance()
         else:
              self.write_log("❌ Failed to reload settings.\n")
 
@@ -280,7 +282,8 @@ class DashboardV2:
         self.view_logs.pack_forget()
         self.view_start.pack_forget()
         self.view_trades.pack_forget()
-        self.view_hybrid.pack_forget() # Fixed Overlap Issue
+        self.view_hybrid.pack_forget() 
+        self.view_stocks.pack_forget()
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -301,6 +304,8 @@ class DashboardV2:
             self.refresh_hybrid_holdings()
         elif view_name == "TRADES":
             self.view_trades.pack(fill="both", expand=True)
+        elif view_name == "STOCKS":
+            self.view_stocks.pack(fill="both", expand=True)
 
     def build_dashboard_view(self):
         """Redesigned Dashboard v2: Enhanced Quick Monitor + Compact Engine Commander"""
@@ -482,12 +487,71 @@ class DashboardV2:
         self.trades_table.column("STRATEGY", width=150)
         
         self.trades_table.pack(fill="both", expand=True, padx=10, pady=10)
+
+    def build_stocks_view(self):
+        """Promoted Top-Level Stocks Configuration View"""
+        container = ctk.CTkFrame(self.view_stocks, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Header Info
+        header = ctk.CTkFrame(container, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(header, text="📦 SYMBOL CONFIGURATION", font=("Roboto", 24, "bold"), text_color="white").pack(side="left")
+        ctk.CTkLabel(header, text="Manage your trading universe and RSI rules", font=("Roboto", 12), text_color="#666").pack(side="left", padx=20, pady=(8,0))
+        
+        # Integration with SettingsGUI instance
+        if not hasattr(self, 'settings_gui_instance'):
+            from settings_gui import SettingsGUI
+            try:
+                 self.settings_gui_instance = SettingsGUI(parent=self.view_settings, on_save_callback=self.refresh_bot_settings)
+            except: pass
+
+        if hasattr(self, 'settings_gui_instance'):
+            # Standard Stock Table from SettingsGUI
+            table_card = TitanCard(container, title="ACTIVE TRADING LIST")
+            table_card.pack(fill="both", expand=True)
+            
+            # We rebuild the table specifically in this view for better sizing
+            table_frame = ctk.CTkFrame(table_card, fg_color="transparent")
+            table_frame.pack(fill="both", expand=True, padx=15, pady=15)
+            
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status")
+            self.settings_gui_instance.stock_table = ttk.Treeview(
+                table_frame,
+                columns=columns,
+                show="headings",
+                height=15,
+                style="Treeview"
+            )
+            for col in columns:
+                self.settings_gui_instance.stock_table.heading(col, text=col)
+                self.settings_gui_instance.stock_table.column(col, width=80, anchor="center")
+            self.settings_gui_instance.stock_table.column("Symbol", width=120)
+            self.settings_gui_instance.stock_table.pack(side="left", fill="both", expand=True)
+            
+            scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.settings_gui_instance.stock_table.yview)
+            scroll.pack(side="right", fill="y")
+            self.settings_gui_instance.stock_table.configure(yscrollcommand=scroll.set)
+            
+            # Initial Load
+            self.settings_gui_instance.refresh_stock_table()
+            
+            # Action Row
+            btn_row = ctk.CTkFrame(container, fg_color="transparent")
+            btn_row.pack(fill="x", pady=10)
+            
+            ctk.CTkButton(btn_row, text="+ ADD NEW STOCK", command=self.settings_gui_instance.on_add_stock, fg_color=COLOR_SUCCESS, font=("Roboto", 12, "bold"), height=35).pack(side="left", padx=5)
+            ctk.CTkButton(btn_row, text="✏ EDIT SELECTED", command=self.settings_gui_instance.on_edit_stock, fg_color="#3498DB", font=("Roboto", 12, "bold"), height=35).pack(side="left", padx=5)
+            ctk.CTkButton(btn_row, text="🗑 DELETE", command=self.settings_gui_instance.on_delete_stock, fg_color=COLOR_DANGER, font=("Roboto", 12), height=35).pack(side="right", padx=5)
+            ctk.CTkButton(btn_row, text="🔍 VALIDATE SYMBOLS", command=self.settings_gui_instance.on_validate_symbols, fg_color="#555", font=("Roboto", 12), height=35).pack(side="right", padx=20)
+            
+        else:
+            ctk.CTkLabel(container, text="Error: Could not link to settings module.").pack()
         
         # Refresh Button
-        ctk.CTkButton(header, text="🔄 REFRESH DATA", command=self.refresh_trades_history, height=30, 
+        ctk.CTkButton(header, text="🔄 REFRESH DATA", command=self.settings_gui_instance.refresh_stock_table if hasattr(self, 'settings_gui_instance') else None, height=30, 
                      fg_color=COLOR_CARD, border_width=1, border_color=COLOR_ACCENT, text_color=COLOR_ACCENT).pack(side="right")
-        
-        self.refresh_trades_history()
 
     def refresh_trades_history(self):
         """Fetch recent trades from DB and populate table"""
@@ -1149,6 +1213,12 @@ class DashboardV2:
                 tags=(tag, source_tag)
             )
 
+        # Update Summary Stats Label
+        if hasattr(self, 'lbl_position_stats'):
+            self.lbl_position_stats.configure(
+                text=f"Positions: {len(data)} • Bot: {bot_count} • Manual: {manual_count}"
+            )
+
         # Update position stats with Live indicator
         total_positions = bot_count + manual_count
         now_str = datetime.now().strftime("%H:%M")
@@ -1306,9 +1376,16 @@ class DashboardV2:
                     recent_trades_list = db.get_recent_trades(limit=5)
                     today_trades_list = db.get_today_trades()
 
-                # 3. Schedule UI Update
+                # 3. Fetch Positions (API - Shared with engine)
+                live_pos_data = {}
+                try:
+                    from kickstart import safe_get_live_positions_merged
+                    live_pos_data = safe_get_live_positions_merged()
+                except: pass
+
+                # 4. Schedule UI Update
                 self.root.after(0, lambda: self._update_quick_monitor_ui(
-                    wallet_balance, perf_data, recent_trades_list, today_trades_list
+                    wallet_balance, perf_data, recent_trades_list, today_trades_list, live_pos_data
                 ))
             except Exception as e:
                 # self.write_log(f"Quick Monitor Fetch Error: {e}\n")
@@ -1319,78 +1396,132 @@ class DashboardV2:
         # Schedule next refresh (every 10 seconds)
         self.root.after(10000, self.refresh_quick_monitor)
 
-    def _update_quick_monitor_ui(self, balance, perf, recent_trades, today_trades):
+    def _update_quick_monitor_ui(self, balance, perf, recent_trades, today_trades, live_pos):
         """Update UI elements on main thread"""
         try:
-            # Update Wallet Balance if valid
+            # 1. Update Positions Table
+            if live_pos:
+                self.update_positions(live_pos)
+                
+            # 2. Update Wallet Balance with change detection
             if balance != -1 and hasattr(self, 'lbl_total_balance'):
-                self.lbl_total_balance.configure(text=f"₹{balance:,.2f}")
+                new_balance = f"₹{balance:,.2f}"
+                if getattr(self.lbl_total_balance, "_current_text", "") != new_balance:
+                    self.lbl_total_balance.configure(text=new_balance)
+                    self.lbl_total_balance._current_text = new_balance
 
-            # Update P&L
+            # 3. Update Bot Capital Usage (Sync with Settings)
+            try:
+                # Hot-reload settings to ensure capital is current
+                self.settings_mgr.load()
+                allocated = self.settings_mgr.get("capital.allocated_limit", 0)
+                if allocated <= 0:
+                    allocated = self.settings_mgr.get("capital.total_capital", 50000.0)
+                
+                # Calculate currently deployed (BOT only)
+                deployed = 0.0
+                if live_pos:
+                    for sym, pos in live_pos.items():
+                        if pos.get("source") == "BOT":
+                            deployed += pos.get("qty", 0) * pos.get("price", 0)
+
+                # Update Bot Capital labels with change detection
+                if hasattr(self, 'lbl_total_allocated'):
+                    new_alloc_txt = f"₹{allocated:,.0f}"
+                    if getattr(self.lbl_total_allocated, "_current_text", "") != new_alloc_txt:
+                        self.lbl_total_allocated.configure(text=new_alloc_txt)
+                        self.lbl_total_allocated._current_text = new_alloc_txt
+
+                if hasattr(self, 'lbl_deployed'):
+                    new_dep_txt = f"Used: ₹{deployed:,.0f}"
+                    if getattr(self.lbl_deployed, "_current_text", "") != new_dep_txt:
+                        self.lbl_deployed.configure(text=new_dep_txt)
+                        self.lbl_deployed._current_text = new_dep_txt
+
+                if hasattr(self, 'wallet_progress') and allocated > 0:
+                    new_prog = min(1.0, deployed / allocated)
+                    if getattr(self, "_current_prog", -1) != new_prog:
+                        self.wallet_progress.set(new_prog)
+                        self._current_prog = new_prog
+                        
+                        # Dynamic color
+                        pct = new_prog * 100
+                        color = COLOR_SUCCESS if pct < 70 else COLOR_WARN if pct < 90 else COLOR_DANGER
+                        self.wallet_progress.configure(progress_color=color)
+
+                if hasattr(self, 'lbl_available_wallet') and allocated > 0:
+                    avail = max(0, allocated - deployed)
+                    avail_pct = max(0, 100 - (deployed/allocated*100))
+                    new_avail_txt = f"₹{avail:,.0f} ({avail_pct:.0f}%) Available"
+                    if getattr(self.lbl_available_wallet, "_current_text", "") != new_avail_txt:
+                        self.lbl_available_wallet.configure(text=new_avail_txt)
+                        self.lbl_available_wallet._current_text = new_avail_txt
+            except: pass
+
+            # 4. Update P&L
             net_profit = perf.get('net_profit', 0)
             if hasattr(self, 'lbl_pnl'):
                 color = COLOR_SUCCESS if net_profit >= 0 else COLOR_DANGER
                 prefix = "+" if net_profit > 0 else ""
-                # Only update if changed to avoid flicker
                 new_text = f"{prefix}₹{net_profit:,.2f}"
                 if getattr(self.lbl_pnl, "_current_text", "") != new_text:
                     self.lbl_pnl.configure(text=new_text, text_color=color)
                     self.lbl_pnl._current_text = new_text
             
-            # Update trade count
+            # 5. Update Trade Count
             if hasattr(self, 'lbl_trade_count'):
                 count = len(today_trades) if today_trades is not None else 0
-                self.lbl_trade_count.configure(text=f"{count} trades today")
+                new_text = f"{count} trades today"
+                if getattr(self.lbl_trade_count, "_current_text", "") != new_text:
+                    self.lbl_trade_count.configure(text=new_text)
+                    self.lbl_trade_count._current_text = new_text
             
-            # Update win rate
+            # 6. Update Win Rate
             if hasattr(self, 'lbl_win_rate'):
                 win = perf.get('winning_trades', 0)
                 lose = perf.get('losing_trades', 0)
                 rate = perf.get('win_rate', 0)
-                self.lbl_win_rate.configure(text=f"{rate}% ({win}W / {lose}L)")
+                new_text = f"{rate}% ({win}W / {lose}L)"
+                if getattr(self.lbl_win_rate, "_current_text", "") != new_text:
+                    self.lbl_win_rate.configure(text=new_text)
+                    self.lbl_win_rate._current_text = new_text
             
-            # Update Last 5 Trades
+            # 7. Update Recent Trades (Smart Refresh)
             if hasattr(self, 'recent_trades_frame') and recent_trades:
-                # Smart refresh: only rebuild if list changed (simple check: ID of top trade)
-                # For now, just rebuild to be safe but efficient
-                for widget in self.recent_trades_frame.winfo_children():
-                    widget.destroy()
-                
-                for trade in recent_trades:
-                    action = trade.get('action', '?').upper()
-                    symbol = trade.get('symbol', '?')
-                    qty = trade.get('quantity', 0)
-                    price = trade.get('price', 0)
-                    time_str = ""
-                    try:
-                        ts = trade.get('timestamp', '')
-                        if ts:
-                            time_str = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").strftime("%H:%M")
-                    except: pass
-
-                    action_icon = "🟢" if action == "BUY" else "🔴"
-                    color = COLOR_SUCCESS if action == "BUY" else COLOR_DANGER
+                current_top_id = f"{recent_trades[0].get('symbol')}_{recent_trades[0].get('timestamp')}"
+                if getattr(self, "_prev_top_trade_id", "") != current_top_id:
+                    for widget in self.recent_trades_frame.winfo_children():
+                        widget.destroy()
                     
-                    row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
-                    row.pack(fill="x", pady=1)
+                    for trade in recent_trades:
+                        action = trade.get('action', '?').upper()
+                        symbol = trade.get('symbol', '?')
+                        qty = trade.get('quantity', 0)
+                        price = trade.get('price', 0)
+                        
+                        action_icon = "🟢" if action == "BUY" else "🔴"
+                        color = COLOR_SUCCESS if action == "BUY" else COLOR_DANGER
+                        
+                        row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
+                        row.pack(fill="x", pady=1)
+                        ctk.CTkLabel(row, text=f"{action_icon} {action}", font=("Roboto", 10, "bold"), text_color=color).pack(side="left")
+                        ctk.CTkLabel(row, text=f" {symbol} {qty} @ ₹{price:.1f}", font=("Roboto", 10), text_color="#CCC").pack(side="left")
                     
-                    ctk.CTkLabel(row, text=f"{action_icon} {action}", font=("Roboto", 10, "bold"), text_color=color).pack(side="left")
-                    ctk.CTkLabel(row, text=f" {symbol} {qty} @ ₹{price:.1f}", font=("Roboto", 10), text_color="#CCC").pack(side="left")
-                    if time_str:
-                        ctk.CTkLabel(row, text=f" [{time_str}]", font=("Roboto", 9), text_color="#666").pack(side="right")
-            elif hasattr(self, 'lbl_last_trade'):
-                self.lbl_last_trade.configure(text="No trades found today")
+                    self._prev_top_trade_id = current_top_id
 
-            # Update counters from StateManager
+            # 8. Update Live Execution Counters
             try:
                 counters = state_mgr.get_trade_counters()
-                if hasattr(self, 'lbl_attempt_count'):
-                    self.lbl_attempt_count.configure(text=str(counters.get('attempts', 0)))
-                if hasattr(self, 'lbl_success_count'):
-                    self.lbl_success_count.configure(text=str(counters.get('success', 0)))
-                if hasattr(self, 'lbl_fail_count'):
-                    self.lbl_fail_count.configure(text=str(counters.get('failed', 0)))
+                for key, attr in [('attempts', 'lbl_attempt_count'), ('success', 'lbl_success_count'), ('failed', 'lbl_fail_count')]:
+                    if hasattr(self, attr):
+                        lbl = getattr(self, attr)
+                        val = str(counters.get(key, 0))
+                        if getattr(lbl, "_current_val", "") != val:
+                            lbl.configure(text=val)
+                            lbl._current_val = val
             except: pass
+        except Exception as e:
+            pass # Silent fail to prevent UI lockup in loop
             
         except Exception as e:
             print(f"UI Update Error: {e}")
@@ -1403,8 +1534,13 @@ class DashboardV2:
     def _write_log_main_thread(self, text):
         if not text.strip(): return
         
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted = f"{timestamp} | {text}"
+        # Avoid redundancy: if the text already contains a timestamp or level tag, don't wrap it again
+        if "|" in text and any(x in text for x in ["INFO", "ERROR", "WARNING", "DEBUG"]):
+            formatted = text.strip()
+            timestamp = formatted.split("|")[0].strip()[:8] # Extract existing time if possible
+        else:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            formatted = f"{timestamp} | {text.strip()}"
         
         # 1. Technical Log (Bottom/Logs Tab) - Show Everything
         try:
@@ -1435,11 +1571,22 @@ class DashboardV2:
                 if is_success: self.trade_stats['success'] += 1
                 if is_failure: self.trade_stats['failed'] += 1
                 
-                # Update UI Counters (Safe Check)
+                # Update UI Counters (Safe Check with Anti-Flicker)
                 if hasattr(self, 'lbl_attempt_count'):
-                    self.lbl_attempt_count.configure(text=str(self.trade_stats['attempts']))
-                    self.lbl_success_count.configure(text=str(self.trade_stats['success']))
-                    self.lbl_fail_count.configure(text=str(self.trade_stats['failed']))
+                    att_val = str(self.trade_stats['attempts'])
+                    if getattr(self.lbl_attempt_count, "_current_val", "") != att_val:
+                        self.lbl_attempt_count.configure(text=att_val)
+                        self.lbl_attempt_count._current_val = att_val
+                        
+                    succ_val = str(self.trade_stats['success'])
+                    if getattr(self.lbl_success_count, "_current_val", "") != succ_val:
+                        self.lbl_success_count.configure(text=succ_val)
+                        self.lbl_success_count._current_val = succ_val
+                        
+                    fail_val = str(self.trade_stats['failed'])
+                    if getattr(self.lbl_fail_count, "_current_val", "") != fail_val:
+                        self.lbl_fail_count.configure(text=fail_val)
+                        self.lbl_fail_count._current_val = fail_val
                 
                 # Update Activity Log Textbox
                 if hasattr(self, 'trade_log'):

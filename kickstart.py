@@ -1039,8 +1039,10 @@ SYMBOLS_TO_TRACK = list(zip(mstock_config['Symbol'].str.upper(), mstock_config['
 config_dict = mstock_config.set_index(['Symbol', 'Exchange']).to_dict('index')
 
 # ---------------- Initialize Other Modules (Phase 0A) ----------------
-settings = None
-db = None
+if 'settings' not in globals() or settings is None:
+    settings = None
+if 'db' not in globals() or db is None:
+    db = None
 risk_mgr = None
 state_mgr = None
 notifier = None
@@ -1064,7 +1066,14 @@ if DATABASE_AVAILABLE:
 if RISK_MANAGER_AVAILABLE and db:
     try:
         # RiskManager(settings, database, market_data_fetcher)
-        risk_mgr = RiskManager(settings, db, fetch_market_data)
+        # Wrapper to handle (dict, exchange) tuple and key mapping (last_price -> lp)
+        def risk_md_fetcher(s, e):
+            raw_md, _ = fetch_market_data(s, e)
+            if raw_md and "last_price" in raw_md:
+                raw_md["lp"] = raw_md["last_price"] # Map for RiskManager compatibility
+            return raw_md
+            
+        risk_mgr = RiskManager(settings, db, risk_md_fetcher)
         log_ok("✅ Risk Manager initialized", force=True)
     except Exception as e:
         log_ok(f"⚠️ Risk Manager init failed: {e}", force=True)
@@ -1265,7 +1274,7 @@ def get_orders_today():
     return executed
 
 def merge_positions_and_orders():
-    log_ok("🔄 Merging Holdings and Today's Orders for live dashboard...")
+    # log_ok("🔄 Merging Holdings and Today's Orders for live dashboard...")
     holdings = get_positions()
     executed = get_orders_today()
     
@@ -1303,7 +1312,7 @@ def merge_positions_and_orders():
             "pnl": float(pos.get("pnl", 0.0)),
             "source": source
         }
-        log_ok(f"  Holdings Match: {sym_upper}:{ex} -> Qty: {merged[key]['qty']}, Source: {source}")
+        # Reduced logging for performance/clarity
 
     # 2. Add Net changes from today's executed orders
     net_changes = {}
@@ -1401,7 +1410,8 @@ def safe_get_live_positions_merged():
             return {}
         log_ok(f"❌ Position merge failed: {e}")
         return {}
-live_positions = safe_get_positions()
+live_positions = {}
+# Removed top-level safe_get_positions() to prevent import-time hangs
 
 # ---------------- RSI Helpers ----------------
 
@@ -1465,14 +1475,15 @@ def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price
     from settings_manager import settings
     # Force OFF for testing (was True)
     use_stabilization = False 
-    from getRSI import calculate_rsi_from_df
-    
     if not use_stabilization:
         # Standard Fetch (Non-cached, lightweight)
         df = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=None) 
         if df is None or df.empty:
             return None, None
-        ts, last_rsi, _ = calculate_rsi_from_df(df, period=14, live_price=live_price)
+        
+        # Local calculation using validated helpers
+        last_rsi = tv_rsi_with_last_price(df['close'], live_price, length=14)
+        ts = df.index[-1].strftime("%Y-%m-%d %H:%M:%S")
         return ts, last_rsi
 
     # --- Stabilized Cache Logic ---
@@ -1506,8 +1517,9 @@ def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price
     current_df = CANDLE_CACHE.get(cache_key)
     if current_df is not None and not current_df.empty:
         try:
-            ts, rsi_val, _ = calculate_rsi_from_df(current_df, period=14, live_price=live_price)
-            return ts, rsi_val
+            last_rsi = tv_rsi_with_last_price(current_df['close'], live_price, length=14)
+            ts = current_df.index[-1].strftime("%Y-%m-%d %H:%M:%S")
+            return ts, last_rsi
         except Exception as e:
             if "Insufficient history" in str(e):
                 log_ok(f"⚠️ Buffer too small for {symbol}, flushing cache to re-seed.")

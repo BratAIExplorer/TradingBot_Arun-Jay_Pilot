@@ -390,11 +390,12 @@ class SettingsGUI:
         info_frame = ctk.CTkFrame(tab)
         info_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
         
-        info_title = ctk.CTkLabel(info_frame, text="💡 Capital Allocation Example:", font=("Arial", 12, "bold"))
-        info_title.pack(anchor="w", padx=10, pady=5)
-        
         # Calculate example
-        total_cap = float(self.total_capital_entry.get() or 50000)
+        try:
+            total_cap = float(self.allocated_capital_entry.get() or 50000)
+        except:
+            total_cap = 50000
+            
         per_trade_pct = self.per_trade_var.get()
         per_trade_amount = total_cap * (per_trade_pct / 100)
         
@@ -1148,9 +1149,13 @@ class SettingsGUI:
         """Show dialog for adding/editing a stock"""
         dialog = ctk.CTkToplevel(self.root)
         dialog.title("Edit Stock" if edit_values else "Add New Stock")
-        dialog.geometry("400x550")
+        dialog.geometry("450x600")
         dialog.grab_set()  # Modal
         
+        # Use a scrollable frame to ensure everything fits
+        scroll_frame = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
         # Center dialog
         dialog.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
@@ -1158,44 +1163,43 @@ class SettingsGUI:
         dialog.geometry(f"+{x}+{y}")
 
         # Fields
-        ctk.CTkLabel(dialog, text="Symbol:").pack(pady=(20, 0))
-        sym_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Symbol:").pack(pady=(10, 0))
+        sym_entry = ctk.CTkEntry(scroll_frame, width=200)
         sym_entry.pack(pady=5)
         if edit_values: sym_entry.insert(0, edit_values[0])
         
-        ctk.CTkLabel(dialog, text="Exchange:").pack(pady=(10, 0))
+        ctk.CTkLabel(scroll_frame, text="Exchange:").pack(pady=(10, 0))
         exch_var = ctk.StringVar(value=edit_values[1] if edit_values else "NSE")
-        ctk.CTkOptionMenu(dialog, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
+        ctk.CTkOptionMenu(scroll_frame, values=["NSE", "BSE"], variable=exch_var).pack(pady=5)
         
         # Strategy Mode
-        ctk.CTkLabel(dialog, text="Strategy Mode:").pack(pady=(10, 0))
+        ctk.CTkLabel(scroll_frame, text="Strategy Mode:").pack(pady=(10, 0))
         strat_var = ctk.StringVar(value=edit_values[3] if edit_values else "TRADE")
-        ctk.CTkOptionMenu(dialog, values=["TRADE", "INVEST", "SIP"], variable=strat_var).pack(pady=5)
+        ctk.CTkOptionMenu(scroll_frame, values=["TRADE", "INVEST", "SIP"], variable=strat_var).pack(pady=5)
 
-        ctk.CTkLabel(dialog, text="Timeframe:").pack(pady=(10, 0))
-        # Adjust index for edit_values because we added a column
-        tf_index = 4 if edit_values else 3
-        tf_var = ctk.StringVar(value=edit_values[tf_index] if edit_values else "15T")
-        ctk.CTkOptionMenu(dialog, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
+        ctk.CTkLabel(scroll_frame, text="Timeframe:").pack(pady=(10, 0))
+        # Index 4 in table is Timeframe
+        tf_var = ctk.StringVar(value=edit_values[4] if edit_values else "15T")
+        ctk.CTkOptionMenu(scroll_frame, values=["1T", "3T", "5T", "15T", "30T", "1H", "1D"], variable=tf_var).pack(pady=5)
         
         # RSI Inputs in a grid
-        rsi_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        rsi_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
         rsi_frame.pack(pady=10)
         
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
-        buy_rsi_entry.insert(0, edit_values[buy_rsi_index] if edit_values else "35")
+        # Table indices: 0:Sym, 1:Ex, 2:En, 3:Strat, 4:TF, 5:BuyRSI, 6:SellRSI, 7:Qty, 8:Profit
+        buy_rsi_entry.insert(0, edit_values[5] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
         sell_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         sell_rsi_entry.grid(row=1, column=1, padx=10)
-        sell_rsi_index = 6 if edit_values else 5
-        sell_rsi_entry.insert(0, edit_values[sell_rsi_index] if edit_values else "65")
+        sell_rsi_entry.insert(0, edit_values[6] if edit_values else "65")
         
         # Sell Strategy Presets (New MVP1 Feature)
-        ctk.CTkLabel(dialog, text="Quick Presets (Auto-fills Sell Rules):", font=("Arial", 11, "bold"), text_color="#3498DB").pack(pady=(10, 0))
-        preset_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        ctk.CTkLabel(scroll_frame, text="Quick Presets (Auto-fills Sell Rules):", font=("Arial", 11, "bold"), text_color="#3498DB").pack(pady=(10, 0))
+        preset_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
         preset_frame.pack(pady=5)
         
         def set_preset_rsi():
@@ -1221,20 +1225,18 @@ class SettingsGUI:
         ctk.CTkButton(preset_frame, text="Hybrid", width=80, height=24, font=("Arial", 10), command=set_preset_hybrid).grid(row=0, column=2, padx=2)
         
         # Qty and Target
-        ctk.CTkLabel(dialog, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
-        qty_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
+        qty_entry = ctk.CTkEntry(scroll_frame, width=200)
         qty_entry.pack(pady=5)
-        qty_index = 7 if edit_values else 6
-        qty_entry.insert(0, edit_values[qty_index] if edit_values else "0")
+        qty_entry.insert(0, edit_values[7] if edit_values else "0")
         
-        ctk.CTkLabel(dialog, text="Profit Target %:").pack(pady=(10, 0))
-        target_entry = ctk.CTkEntry(dialog, width=200)
+        ctk.CTkLabel(scroll_frame, text="Profit Target %:").pack(pady=(10, 0))
+        target_entry = ctk.CTkEntry(scroll_frame, width=200)
         target_entry.pack(pady=5)
-        target_index = 8 if edit_values else 7
-        target_entry.insert(0, edit_values[target_index] if edit_values else "10.0")
+        target_entry.insert(0, edit_values[8] if edit_values else "10.0")
 
         enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
-        ctk.CTkCheckBox(dialog, text="Enabled", variable=enabled_var).pack(pady=15)
+        ctk.CTkCheckBox(scroll_frame, text="Enabled", variable=enabled_var).pack(pady=15)
 
         def save_stock():
             symbol = sym_entry.get().upper().strip()
@@ -1245,15 +1247,15 @@ class SettingsGUI:
             try:
                 new_data = {
                     'Symbol': symbol,
-                    'Broker': 'mstock', # Default or fetched from broker tab
+                    'Exchange': exch_var.get(),
+                    'Broker': 'mstock', 
                     'Enabled': enabled_var.get(),
                     'Strategy': strat_var.get(),
                     'Timeframe': tf_var.get(),
                     'Buy RSI': int(buy_rsi_entry.get()),
                     'Sell RSI': int(sell_rsi_entry.get()),
                     'Profit Target %': float(target_entry.get()),
-                    'Quantity': int(qty_entry.get()),
-                    'Exchange': exch_var.get()
+                    'Quantity': int(qty_entry.get())
                 }
                 
                 csv_path = 'config_table.csv'
@@ -1274,7 +1276,7 @@ class SettingsGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid data: {e}")
 
-        ctk.CTkButton(dialog, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
+        ctk.CTkButton(scroll_frame, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
 
 if __name__ == "__main__":
     app = SettingsGUI()

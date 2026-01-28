@@ -109,15 +109,17 @@ def build_scanner_view(self):
     info_card.pack(fill="x", padx=20, pady=(0, 10))
 
     info_text = """
-    🔍 Scans 300 most liquid NSE/BSE stocks for MACD bullish crossovers
-    📊 Filters signals using confluence score (MACD + Moving Averages + RSI)
-    ⚡ Runs in background - takes 8-10 minutes
+    🔍 Scans 1200+ PRE-FILTERED high-liquidity NSE/BSE stocks
+    📊 MACD bullish crossovers + Confluence scoring (MA + RSI filters)
+    ⚡ Runs in background - FULL scan takes 30-40 minutes
     🎯 Shows only actionable opportunities (STRONG BUY / BUY)
 
     Confluence Score Explained:
     • 75-100: STRONG BUY (MACD + Above 20MA + Above 50MA + Healthy RSI + Fresh signal)
     • 60-74:  BUY (MACD + Some trend confirmation)
     • Below 60: Filtered out (not shown)
+
+    💡 Start with FULL scan to see baseline results, then adjust filters if needed
     """
 
     ctk.CTkLabel(
@@ -146,10 +148,10 @@ def build_scanner_view(self):
         text_color="#1a1a1a"
     ).pack(side="left", padx=(0, 10))
 
-    self.scan_mode_var = ctk.StringVar(value="QUICK")
+    self.scan_mode_var = ctk.StringVar(value="FULL")
     scan_mode_selector = ctk.CTkSegmentedButton(
         scan_mode_frame,
-        values=["QUICK (300)", "MEDIUM (800)"],
+        values=["QUICK (300)", "FULL (1200+)"],
         variable=self.scan_mode_var,
         font=("Roboto", 13),  # +2pt
         height=36,
@@ -349,12 +351,12 @@ def start_scanner(self):
         from scanner_engine import MACDScanner
 
         # Get scan mode
-        mode = self.scan_mode_var.get()
-        if "300" in mode:
-            max_stocks = 300
-        elif "800" in mode:
-            max_stocks = 800
+        mode_str = self.scan_mode_var.get()
+        if "300" in mode_str:
+            mode = "QUICK"
+            max_stocks = None  # Let scanner handle it
         else:
+            mode = "FULL"  # 1200+ stocks (RECOMMENDED)
             max_stocks = None
 
         # UI updates
@@ -367,7 +369,7 @@ def start_scanner(self):
         for item in self.scanner_table.get_children():
             self.scanner_table.delete(item)
 
-        self.write_log(f"🔍 Starting market scan ({mode} mode)...\n")
+        self.write_log(f"🔍 Starting market scan ({mode_str} mode)...\n")
 
         # Create scanner instance
         scanner = MACDScanner(progress_callback=self.scanner_progress_update)
@@ -375,7 +377,7 @@ def start_scanner(self):
         # Run in background thread (NON-BLOCKING)
         def scan_worker():
             try:
-                results = scanner.scan_market(max_stocks=max_stocks)
+                results = scanner.scan_market(max_stocks=max_stocks, mode=mode)
                 self.root.after(0, lambda: self.scanner_complete(results))
             except Exception as e:
                 self.root.after(0, lambda: self.scanner_error(str(e)))

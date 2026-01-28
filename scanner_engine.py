@@ -48,10 +48,16 @@ class MACDScanner:
         """Request scanner to stop gracefully"""
         self.stop_requested = True
 
-    def get_stock_list(self) -> List[str]:
+    def get_stock_list(self, mode="FULL") -> List[str]:
         """
-        Get comprehensive stock list (1200+ stocks)
-        Curated list of liquid NSE/BSE stocks
+        Get comprehensive stock list - PRE-FILTERED for high liquidity
+
+        Args:
+            mode: "FULL" (1200+ stocks, RECOMMENDED) or "QUICK" (300 stocks, testing only)
+
+        Note: These are NOT penny stocks. All stocks in this list have been
+        curated for trading liquidity and are the ACTUAL tradeable universe.
+        Scanning all 1200 is the proper baseline, not an upper limit.
         """
         stocks = [
             # DEFENSE & AEROSPACE (20)
@@ -126,6 +132,11 @@ class MACDScanner:
         bse_variants = [s.replace('.NS', '.BO') for s in stocks[:100]]
         all_stocks = stocks + bse_variants
 
+        # QUICK mode for initial testing only
+        if mode == "QUICK":
+            return all_stocks[:300]
+
+        # FULL mode is the proper baseline (RECOMMENDED)
         return all_stocks
 
     def calculate_macd(self, prices: pd.Series, fast=12, slow=26, signal=9) -> Tuple[Optional[pd.Series], Optional[pd.Series], Optional[pd.Series]]:
@@ -332,12 +343,13 @@ class MACDScanner:
             # Silent fail for individual stocks
             return None
 
-    def scan_market(self, max_stocks: Optional[int] = None) -> List[Dict]:
+    def scan_market(self, max_stocks: Optional[int] = None, mode: str = "FULL") -> List[Dict]:
         """
         Scan market and return results
 
         Args:
-            max_stocks: Limit number of stocks (None = all)
+            max_stocks: Limit number of stocks (for manual override)
+            mode: "FULL" (1200+, RECOMMENDED) or "QUICK" (300, testing only)
 
         Returns:
             List of result dictionaries
@@ -345,8 +357,8 @@ class MACDScanner:
         self.results = []
         self.stop_requested = False
 
-        # Get stock list
-        stock_list = self.get_stock_list()
+        # Get stock list (defaults to FULL 1200+ stocks)
+        stock_list = self.get_stock_list(mode=mode)
         if max_stocks:
             stock_list = stock_list[:max_stocks]
 

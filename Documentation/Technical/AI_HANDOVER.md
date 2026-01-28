@@ -114,3 +114,64 @@ strategies/          → sector_map.py, trading_tips.json
     -   **Launcher Fix**: Restored `LAUNCH_ARUN.bat` and recreated `.venv` from scratch following a "path not found" crash.
 
 **Status:** Phase 3 Complete ✅
+
+### Session: January 28, 2026 - Google Gemini (Antigravity)
+**Objective:** Resolve "Possibly Delisted" / "Expecting Value" Errors
+
+**Issue:**
+- `yfinance` (v0.2.40) failed to fetch data for standard tickers (`^NSEI`, `^INDIAVIX`), returning 403 or JSON decode errors.
+- **Root Cause:** Yahoo Finance tightened API restrictions, requiring a valid browser `User-Agent`.
+
+**Work Completed:**
+1.  **Library Upgrade**: Upgraded `yfinance` to `v1.1.0+` which handles new Yahoo API requirements natively.
+2.  **Robustness Patch**: Added `get_yfinance_session()` helper in `utils.py` and patched `market_sentiment.py`, `regime_monitor.py`, and `getRSI.py` to inject browser-like headers (best practice even with newer lib).
+3.  **Verification**: Confirmed successful data fetch for Nifty and VIX.
+
+**Status:** v2.0.1 stable ✅
+
+---
+
+### Session: January 28, 2026 - Claude Sonnet 4.5 (Anthropic)
+**Objective:** Integrate MACD Scanner + Dual-Bot Strategy Architecture Review
+
+**Work Completed:**
+1.  **Strategic Analysis**: Conducted comprehensive architectural review of dual-bot strategy proposal:
+    -   Identified critical risks: signal conflicts, capital fragmentation, timeframe mismatch
+    -   Recommended "Unified Strategy Orchestrator" pattern instead of independent bots
+    -   Designed confluence scoring system (MACD + MA + RSI + Volume + Regime)
+    -   Provided phased implementation roadmap (Display → Orchestrator → Execution)
+
+2.  **MACD Scanner Engine** (`scanner_engine.py`):
+    -   Lightweight scanner for 300-1200+ NSE/BSE stocks
+    -   MACD crossover detection with latest-date filtering
+    -   Confluence scoring (0-100 scale) combining multiple indicators
+    -   Background thread execution (non-blocking)
+    -   NO external dependencies (Google Sheets removed - fully embedded)
+
+3.  **Dashboard Integration** (v2.0.1 Light Theme):
+    -   Created `SCANNER_INTEGRATION_PATCH_v2.0.1.py` for safe integration
+    -   Designed scanner tab matching Light Theme (#EFEBE3 bg, #479FB6 accent)
+    -   High contrast text (#1a1a1a) for accessibility
+    -   Increased font sizes (+2pt) per v2.0.1 standards
+    -   One-click operation (no manual CSV/Google Sheets workflow)
+
+4.  **User Experience Improvements**:
+    -   Eliminated manual workflows (scanner runs on button click)
+    -   Progress bar with real-time status updates
+    -   Result filtering (ALL / STRONG BUY / BUY)
+    -   Sorted by confluence score (highest first)
+    -   Color-coded results (green/yellow tints for light theme)
+
+**Files Created:**
+-   `scanner_engine.py` - Core scanning logic
+-   `dashboard_scanner_integration.py` - Integration guide (legacy, superseded)
+-   `SCANNER_INTEGRATION_PATCH_v2.0.1.py` - Production-ready patch
+
+**Status:** Ready for integration ⏸️ (Awaiting manual merge)
+
+**Next Steps:**
+1.  Apply patch to `sensei_v1_dashboard.py` (follow checklist in patch file)
+2.  Test scanner functionality (8-10 min scan of 300 stocks)
+3.  Verify no regression in existing tabs
+4.  Optional: Implement Strategy Orchestrator (Phase 2 - see architectural review)
+

@@ -41,9 +41,12 @@ except ImportError:
 # ---------------- New Module Imports (Phase 0A) ----------------
 try:
     from settings_manager import SettingsManager
+    settings = SettingsManager() # Initialize Global Instance
+    settings.load()
     SETTINGS_AVAILABLE = True
 except ImportError:
     print("⚠️ settings_manager not found, using legacy config")
+    settings = None
     SETTINGS_AVAILABLE = False
 
 try:
@@ -460,9 +463,13 @@ def fetch_market_data(symbol, exchange):
                 if result:
                     return result, exchange
         except Exception as e:
-            # If simulaton is allowed, suppress the error to avoid log spam
+            # If simulation is allowed, suppress the error to avoid log spam, otherwise log it
             if not should_simulate:
                 log_ok(f"❌ API Error for {symbol}: {e}")
+            else:
+                # Log sparingly in simulation mode to indicate fallback
+                if random.random() < 0.05: # 5% chance to log fallback
+                    log_ok(f"🧪 Using simulated data for {symbol} (API down/offline)")
             pass # Fallthrough to simulation if allowed
 
     # 2. Generate Fabricated Data if Allowed
@@ -683,42 +690,44 @@ def square_off_all_positions() -> int:
     log_ok(f"🚨 Panic Mode: Squared off {count} positions.")
     return count
 
-def initialize_from_csv():
+def initialize_stock_configs():
     """
-    Load SYMBOLS_TO_TRACK and config_dict from config_table.csv
+    Load SYMBOLS_TO_TRACK and config_dict from settings.json (via SettingsManager)
     """
     global SYMBOLS_TO_TRACK, config_dict
     SYMBOLS_TO_TRACK.clear()
     config_dict.clear()
     
     try:
-        csv_path = "config_table.csv"
-        if not os.path.exists(csv_path):
-             log_ok("⚠️ config_table.csv not found!")
+        if not settings:
+             log_ok("⚠️ Settings Manager not initialized!")
              return
-             
-        df = pd.read_csv(csv_path)
+
+        stocks = settings.get_stock_configs()
         count = 0
-        for _, row in df.iterrows():
-            if str(row.get('Enabled', 'False')).lower() == 'true':
-                sym = row['Symbol']
-                ex = row['Exchange']
+        
+        for stock in stocks:
+            if stock.get('enabled', False):
+                sym = stock.get('symbol', '').upper()
+                ex = stock.get('exchange', 'NSE').upper()
                 
+                if not sym: continue
+
                 # Add to lists
                 SYMBOLS_TO_TRACK.append((sym, ex))
                 
-                # Add to config dict with defaults
+                # Add to config dict
                 config_dict[(sym, ex)] = {
                     "instrument_token": None, # Will be resolved dynamically
-                    "Timeframe": row.get('Timeframe', '15T'),
-                    "RSI_Buy_Threshold": float(row.get('Buy RSI', 30)),
-                    "RSI_Sell_Threshold": float(row.get('Sell RSI', 70)),
-                    "Quantity": int(row.get('Quantity', 1)),
-                    "Profit_Target": float(row.get('Profit Target %', 1.0))
+                    "Timeframe": stock.get('timeframe', '15T'),
+                    "RSI_Buy_Threshold": float(stock.get('buy_rsi', 30)),
+                    "RSI_Sell_Threshold": float(stock.get('sell_rsi', 70)),
+                    "Quantity": int(stock.get('quantity', 0)),
+                    "Profit_Target": float(stock.get('profit_target_pct', 1.0))
                 }
                 count += 1
                 
-        log_ok(f"✅ Initialized {count} symbols from CSV.")
+        log_ok(f"✅ Initialized {count} symbols from Settings.")
     except Exception as e:
         log_ok(f"❌ Init Error: {e}")
 
@@ -782,7 +791,22 @@ def run_cycle():
 
     # --- Main Loop ---
     for symbol, exchange in SYMBOLS_TO_TRACK:
+        # 1. External Control Check (Database)
+        # Allows the Web API to stop the bot remotely
+        if DATABASE_AVAILABLE and db:
+            try:
+                status = db.get_control_flag("bot_status")
+                if status == "STOPPED":
+                     if not STOP_REQUESTED:
+                         log_ok("🛑 REMOTE STOP SIGNAL RECEIVED via Dashboard")
+                         request_stop()
+            except: pass
+
         if STOP_REQUESTED: break
+        
+        # Rate Limiting: Prevent API Hammering (yfinance/mStock)
+        time.sleep(0.5)
+        
         # log_ok(f"➡️ checking {symbol}...")
         
         try:
@@ -818,7 +842,8 @@ def run_cycle():
             ts, rsi_val = get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=ltp)
             
             if rsi_val is None:
-                log_ok(f"⚠️ {symbol}: RSI skipped (No Data)")
+                # Suppress log spam if it's just a transient data issue
+                # log_ok(f"⚠️ {symbol}: RSI skipped (No Data)") 
                 continue
 
             log_ok(f"📊 {symbol} RSI: {rsi_val:.2f} | Buy<{conf.get('RSI_Buy_Threshold', 30)} Sell>{conf.get('RSI_Sell_Threshold', 70)}")
@@ -1024,19 +1049,12 @@ if not ACCESS_TOKEN:
     else:
         log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
 
-config_df = pd.read_csv('config_table.csv')
-config_df['Enabled'] = config_df['Enabled'].astype(bool)
-mstock_config = config_df[(config_df['Enabled']) & (config_df['Broker'] == 'mstock')]
+# Modified initialization to wait for SettingsManager
+SYMBOLS_TO_TRACK = []
+config_dict = {}
 
-duplicates = mstock_config[mstock_config.duplicated(subset=['Symbol', 'Exchange'], keep=False)]
-if not duplicates.empty:
-    log_ok("⚠️ Duplicate Symbol-Exchange pairs found in config_table.csv:")
-    log_ok(duplicates)
-    log_ok("Keeping the first occurrence of each duplicate pair.")
-    mstock_config = mstock_config.drop_duplicates(subset=['Symbol', 'Exchange'], keep='first')
-
-SYMBOLS_TO_TRACK = list(zip(mstock_config['Symbol'].str.upper(), mstock_config['Exchange'].str.upper()))
-config_dict = mstock_config.set_index(['Symbol', 'Exchange']).to_dict('index')
+# We cannot initialize SYMBOLS_TO_TRACK here because 'settings' might not be instantiated yet.
+# We will call initialize_stock_configs() after SettingsManager is ready (around line 1052).
 
 # ---------------- Initialize Other Modules (Phase 0A) ----------------
 if 'settings' not in globals() or settings is None:
@@ -1051,6 +1069,8 @@ if SETTINGS_AVAILABLE:
     try:
         settings = SettingsManager()
         log_ok("✅ Settings Manager initialized", force=True)
+        # Initialize stocks after settings is ready
+        initialize_stock_configs()
     except Exception as e:
         log_ok(f"⚠️ Settings Manager init failed: {e}", force=True)
         settings = None
@@ -1231,17 +1251,17 @@ def get_orders_today():
             if df is None: df = pd.DataFrame() # Fix NoneType error
             
             executed = []
-            for _, row in df.iterrows():
+            for row in df.itertuples(index=False):
                 executed.append({
-                    "tradingsymbol": row['symbol'],
-                    "exchange": row['exchange'],
-                    "transaction_type": row['action'],
-                    "quantity": row['quantity'],
-                    "filled_quantity": row['quantity'],
-                    "price": row['price'],
-                    "average_price": row['price'],
+                    "tradingsymbol": row.symbol,
+                    "exchange": row.exchange,
+                    "transaction_type": row.action,
+                    "quantity": row.quantity,
+                    "filled_quantity": row.quantity,
+                    "price": row.price,
+                    "average_price": row.price,
                     "status": "COMPLETE",
-                    "order_timestamp": row['timestamp']
+                    "order_timestamp": row.timestamp
                 })
             return executed
         except Exception as e:
@@ -1728,6 +1748,9 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
 
     # return False
 
+# Alias for consistent usage across the file
+execute_order = safe_place_order_when_open
+
 # ---------------- Market Data ----------------
 
 def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
@@ -1826,7 +1849,7 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
     orders = (response.json() or {}).get("data", []) or []
     
     # Define blocking statuses
-    blocking = {"OPEN", "PENDING", "TRIGGERED", "TRADED"}
+    blocking = {"OPEN", "PENDING", "TRIGGERED"}
     
     # Track existence and quantities of buy and sell orders
     has_buy = False
@@ -1928,15 +1951,17 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
         }
         api_timeframe = timeframe_map.get(tf, tf)
 
-        # Reverted to YFinance (Audit Fix)
+        # Reverted to mStock API for stability (Fixing 'Expecting Value' errors)
         try:
-            ts_str, tv_rsi_last_val, _ = calculate_intraday_rsi_tv(
-                ticker=symbol,
-                period=14,
-                interval=api_timeframe,
-                live_price=current_close,
-                exchange=exchange
+            # MVP1 Fix: Use get_stabilized_rsi which uses mStock API instead of yfinance
+            ts_str, tv_rsi_last_val = get_stabilized_rsi(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=tf, # Use original timeframe string (e.g. 15T)
+                instrument_token=instrument_token,
+                live_price=current_close
             )
+            # Dummy 3rd return for compatibility if needed, but we don't use the df here
         except Exception as e:
             # Track failed symbols to avoid log spam (log once per symbol, then silent)
             if not hasattr(process_market_data, 'rsi_failed_symbols'):
@@ -1944,7 +1969,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             
             if symbol not in process_market_data.rsi_failed_symbols:
                 # Log only FIRST occurrence
-                print(f"⚠️ RSI data unavailable for {symbol} (yfinance issue) - will skip this symbol")
+                log_ok(f"⚠️ RSI data unavailable for {symbol} (API issue) - will skip this symbol")
                 process_market_data.rsi_failed_symbols.add(symbol)
             # Silent skip on subsequent occurrences
             return
@@ -2004,13 +2029,13 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
             should_sell = False
             sell_reason = ""
 
-            # Check Profit Target (Available in both TRADE and INVEST)
-            if target_price and current_close >= target_price:
-                should_sell = True
-                sell_reason = f"Profit Target Hit ({profit_pct}%)"
+            # Check Profit Target (Handled by RiskManager, only here for strategy-specific RSI sells)
+            # if target_price and current_close >= target_price:
+            #     should_sell = True
+            #     sell_reason = f"Profit Target Hit ({profit_pct}%)"
 
             # Check RSI Sell (Only for TRADE strategy)
-            elif strategy_type == "TRADE":
+            if strategy_type == "TRADE":
                 if last_rsi >= sell_rsi and can_consider_sell:
                     should_sell = True
                     sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
@@ -2041,7 +2066,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 can_afford, remaining = check_capital_safety(required_funds)
                 
                 # SMART CHECK 2: Portfolio Risk (Buffett Rule - Max 10% in one trade)
-                from settings_manager import settings
+                # settings is already available globally, do not import it locally
                 use_risk_limit = settings.get("risk_controls.use_10_pct_portfolio_limit", True)
                 portfolio_risk_limit = ALLOCATED_CAPITAL * 0.10
                 is_concentrated = use_risk_limit and (required_funds > portfolio_risk_limit)
@@ -2258,9 +2283,14 @@ def run_cycle():
                 instrument_token = market_data.get("instrument_token") if market_data else None
                 
                 if instrument_token:
+                    # Prevent redundant sells if an order is already open
+                    if action['action'] == "SELL" and check_existing_orders(symbol, exchange, qty, "SELL"):
+                        log_ok(f"⏭️ Risk SELL already in progress for {symbol}, skipping duplicate trigger.")
+                        continue
+
                     # Trigger sell order
                     safe_place_order_when_open(
-                        symbol, exchange, qty, "SELL", 
+                        symbol, exchange, qty, action['action'], 
                         instrument_token, price=0, use_amo=False
                     )
 

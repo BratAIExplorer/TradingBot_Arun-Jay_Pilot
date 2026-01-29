@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import TradesTable, { Trade } from "@/components/TradesTable";
-import { fetcher, endpoints } from "@/lib/api";
+import { fetcher, endpoints, sendCommand } from "@/lib/api";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [systemStatus, setSystemStatus] = useState("ONLINE");
+  const [botControlStatus, setBotControlStatus] = useState("UNKNOWN"); // RUNNING | STOPPED
 
   const refreshData = async () => {
     try {
@@ -39,6 +40,12 @@ export default function Dashboard() {
 
       // 2. Fetch Recent Trades
       const recentTrades = await fetcher(endpoints.recentTrades);
+
+      // 3. Fetch Bot Status
+      const statusData = await fetcher(endpoints.controlStatus);
+      if (statusData && statusData.status) {
+        setBotControlStatus(statusData.status);
+      }
 
       // Update State
       setStats(prev => ({
@@ -56,9 +63,19 @@ export default function Dashboard() {
 
       setLastUpdated(new Date());
       setLoading(false);
+      setSystemStatus("ONLINE");
     } catch (error) {
       console.error("Failed to refresh data", error);
       setSystemStatus("OFFLINE");
+    }
+  };
+
+  const handleBotControl = async (action: "START" | "STOP") => {
+    const targetState = action === "START" ? "RUNNING" : "STOPPED";
+    const success = await sendCommand(targetState);
+    if (success) {
+      setBotControlStatus(targetState);
+      // Optimistic update
     }
   };
 
@@ -130,14 +147,26 @@ export default function Dashboard() {
           <div className="space-y-4">
             <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center">
               <span className="text-sm font-medium text-gray-300">Bot Service</span>
-              <button className="px-4 py-1.5 rounded-lg bg-success text-black text-xs font-bold hover:bg-success/90 transition-colors">
-                RUNNING
-              </button>
+              {botControlStatus === "RUNNING" ? (
+                <button
+                  onClick={() => handleBotControl("STOP")}
+                  className="px-4 py-1.5 rounded-lg bg-success text-black text-xs font-bold hover:bg-success/90 transition-colors animate-pulse">
+                  RUNNING
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleBotControl("START")}
+                  className="px-4 py-1.5 rounded-lg bg-gray-600 text-white text-xs font-bold hover:bg-gray-500 transition-colors">
+                  STOPPED
+                </button>
+              )}
             </div>
 
             <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between items-center">
               <span className="text-sm font-medium text-gray-300">Emergency Stop</span>
-              <button className="p-2 rounded-lg bg-danger/20 text-danger hover:bg-danger/30 transition-colors">
+              <button
+                onClick={() => handleBotControl("STOP")}
+                className="p-2 rounded-lg bg-danger/20 text-danger hover:bg-danger/30 transition-colors border border-danger/20 hover:border-danger">
                 <Power className="w-5 h-5" />
               </button>
             </div>
@@ -145,12 +174,14 @@ export default function Dashboard() {
             <div className="mt-8 pt-6 border-t border-white/5">
               <h4 className="text-xs font-bold uppercase text-gray-500 mb-3">Last Activity</h4>
               <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex gap-3 text-xs">
-                    <span className="text-gray-600 font-mono">10:4{i}:12</span>
-                    <span className="text-gray-400">Scanning NIFTY50 symbols...</span>
-                  </div>
-                ))}
+                <div className="flex gap-3 text-xs">
+                  <span className="text-gray-600 font-mono">
+                    {lastUpdated.toLocaleTimeString()}
+                  </span>
+                  <span className="text-gray-400">
+                    {botControlStatus === "RUNNING" ? "Bot is active & scanning..." : "Bot is stopped."}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

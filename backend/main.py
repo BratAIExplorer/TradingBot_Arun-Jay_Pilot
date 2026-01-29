@@ -66,3 +66,29 @@ def get_trades(limit: int = 10):
     if not db:
         raise HTTPException(status_code=503, detail="Database not available")
     return db.get_recent_trades(limit=limit)
+
+@app.get("/api/control/status")
+def get_bot_status():
+    if not db:
+        return {"status": "UNKNOWN", "reason": "Database disconnected"}
+    try:
+        status = db.get_control_flag("bot_status", default="STOPPED")
+        return {"status": status}
+    except Exception as e:
+        return {"status": "ERROR", "error": str(e)}
+
+@app.post("/api/control/set")
+def set_bot_status(command: dict):
+    # Expects {"status": "RUNNING" | "STOPPED"}
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    new_status = command.get("status")
+    if new_status not in ["RUNNING", "STOPPED"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Use RUNNING or STOPPED")
+        
+    try:
+        db.set_control_flag("bot_status", new_status)
+        return {"status": "success", "new_state": new_status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

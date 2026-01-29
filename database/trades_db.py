@@ -24,10 +24,9 @@ class TradesDatabase:
         # Initialize database
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row  # Return rows as dictionaries
-        self.cursor = self.conn.cursor()
+        # self.cursor removed to prevent recursive cursor usage
         
         # Create tables
-        self._create_tables()
         self._create_tables()
         self._run_migrations()
         print(f"✅ Database initialized: {db_path} (v2 with get_recent_trades)")
@@ -36,83 +35,124 @@ class TradesDatabase:
         """
         Create trades table if it doesn't exist
         """
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                exchange TEXT NOT NULL,
-                action TEXT NOT NULL CHECK(action IN ('BUY', 'SELL')),
-                quantity INTEGER NOT NULL,
-                price REAL NOT NULL,
-                
-                -- Fee breakdown
-                gross_amount REAL NOT NULL,
-                brokerage_fee REAL DEFAULT 0,
-                stt_fee REAL DEFAULT 0,
-                exchange_fee REAL DEFAULT 0,
-                gst_fee REAL DEFAULT 0,
-                sebi_fee REAL DEFAULT 0,
-                stamp_duty_fee REAL DEFAULT 0,
-                total_fees REAL DEFAULT 0,
-                net_amount REAL NOT NULL,
-                
-                -- Trade metadata
-                strategy TEXT,
-                pnl_gross REAL,
-                pnl_net REAL,
-                pnl_pct_gross REAL,
-                pnl_pct_net REAL,
-                reason TEXT,
-                broker TEXT,
-                source TEXT DEFAULT 'BOT', -- 'BOT' or 'MANUAL'
-                
-                -- Additional fields
-                entry_timestamp TEXT,
-                hold_duration_days REAL
-            )
-        """)
-        
-        # Create index for faster queries
-        self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_symbol_timestamp 
-            ON trades(symbol, timestamp)
-        """)
-        
-        self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_action_timestamp 
-            ON trades(action, timestamp)
-        """)
-        
-        self.conn.commit()
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    exchange TEXT NOT NULL,
+                    action TEXT NOT NULL CHECK(action IN ('BUY', 'SELL')),
+                    quantity INTEGER NOT NULL,
+                    price REAL NOT NULL,
+                    
+                    -- Fee breakdown
+                    gross_amount REAL NOT NULL,
+                    brokerage_fee REAL DEFAULT 0,
+                    stt_fee REAL DEFAULT 0,
+                    exchange_fee REAL DEFAULT 0,
+                    gst_fee REAL DEFAULT 0,
+                    sebi_fee REAL DEFAULT 0,
+                    stamp_duty_fee REAL DEFAULT 0,
+                    total_fees REAL DEFAULT 0,
+                    net_amount REAL NOT NULL,
+                    
+                    -- Trade metadata
+                    strategy TEXT,
+                    pnl_gross REAL,
+                    pnl_net REAL,
+                    pnl_pct_gross REAL,
+                    pnl_pct_net REAL,
+                    reason TEXT,
+                    broker TEXT,
+                    source TEXT DEFAULT 'BOT', -- 'BOT' or 'MANUAL'
+                    
+                    -- Additional fields
+                    entry_timestamp TEXT,
+                    hold_duration_days REAL
+                )
+            """)
+            
+            # Create index for faster queries
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_symbol_timestamp 
+                ON trades(symbol, timestamp)
+            """)
+            
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_action_timestamp 
+                ON trades(action, timestamp)
+            """)
+
+            # Create system_control table for inter-process communication
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_control (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                )
+            """)
+            # Initialize default RUNNING state if not exists
+            cursor.execute("INSERT OR IGNORE INTO system_control (key, value, updated_at) VALUES ('bot_status', 'RUNNING', datetime('now'))")
+            
+            self.conn.commit()
+        finally:
+            cursor.close()
+
+    def set_control_flag(self, key: str, value: str):
+        """Set a control flag in the DB"""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO system_control (key, value, updated_at) 
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET value=?, updated_at=datetime('now')
+            """, (key, value, value))
+            self.conn.commit()
+        finally:
+            cursor.close()
+
+    def get_control_flag(self, key: str, default: str = None) -> str:
+        """Get a control flag from the DB"""
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("SELECT value FROM system_control WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row['value'] if row else default
+        finally:
+            cursor.close()
 
     def _run_migrations(self):
         """
         Run schema migrations for existing databases
         """
+        cursor = self.conn.cursor()
         try:
-            self.cursor.execute("PRAGMA table_info(trades)")
-            columns = [info[1] for info in self.cursor.fetchall()]
+            cursor.execute("PRAGMA table_info(trades)")
+            columns = [info[1] for info in cursor.fetchall()]
 
             if 'broker' not in columns:
                 print("🔄 Migrating database: Adding 'broker' column...")
-                self.cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
+                cursor.execute("ALTER TABLE trades ADD COLUMN broker TEXT DEFAULT 'mstock'")
                 self.conn.commit()
 
             if 'source' not in columns:
                 print("🔄 Migrating database: Adding 'source' column...")
-                self.cursor.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'BOT'")
+                cursor.execute("ALTER TABLE trades ADD COLUMN source TEXT DEFAULT 'BOT'")
                 self.conn.commit()
                 print("✅ Migration 'source' complete")
 
             if 'rsi' not in columns:
                 print("🔄 Migrating database: Adding 'rsi' column...")
-                self.cursor.execute("ALTER TABLE trades ADD COLUMN rsi REAL")
+                cursor.execute("ALTER TABLE trades ADD COLUMN rsi REAL")
                 self.conn.commit()
                 print("✅ Migration 'rsi' complete")
 
         except Exception as e:
             print(f"⚠️ Migration warning: {e}")
+        finally:
+            cursor.close()
     
     def insert_trade(self,
                     symbol: str,
@@ -144,25 +184,28 @@ class TradesDatabase:
         sebi = fee_breakdown.get('sebi_charges', 0) if fee_breakdown else 0
         stamp = fee_breakdown.get('stamp_duty', 0) if fee_breakdown else 0
         
-        self.cursor.execute("""
-            INSERT INTO trades (
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO trades (
+                    timestamp, symbol, exchange, action, quantity, price,
+                    gross_amount, brokerage_fee, stt_fee, exchange_fee,
+                    gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
+                    strategy, reason, broker, source, rsi
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
                 timestamp, symbol, exchange, action, quantity, price,
-                gross_amount, brokerage_fee, stt_fee, exchange_fee,
-                gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
+                gross_amount, brokerage, stt, exchange_fee,
+                gst, sebi, stamp, total_fees, net_amount,
                 strategy, reason, broker, source, rsi
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            timestamp, symbol, exchange, action, quantity, price,
-            gross_amount, brokerage, stt, exchange_fee,
-            gst, sebi, stamp, total_fees, net_amount,
-            strategy, reason, broker, source, rsi
-        ))
-        
-        self.conn.commit()
-        trade_id = self.cursor.lastrowid
-        
-        print(f"✅ Trade logged: {action} {symbol} @ ₹{price} (ID: {trade_id})")
-        return trade_id
+            ))
+            
+            self.conn.commit()
+            trade_id = cursor.lastrowid
+            print(f"✅ Trade logged: {action} {symbol} @ ₹{price} (ID: {trade_id})")
+            return trade_id
+        finally:
+            cursor.close()
     
     def get_open_positions(self, is_paper: bool = False) -> List[Dict]:
         """
@@ -184,14 +227,16 @@ class TradesDatabase:
             GROUP BY symbol, exchange
             HAVING net_quantity > 0
         """
-
-        self.cursor.execute(query)
         
-        positions = []
-        for row in self.cursor.fetchall():
-            positions.append(dict(row))
-        
-        return positions
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute(query)
+            positions = []
+            for row in cursor.fetchall():
+                positions.append(dict(row))
+            return positions
+        finally:
+            cursor.close()
     
     def get_trade_history(self, days: int = 30, symbol: Optional[str] = None) -> pd.DataFrame:
         """
@@ -209,6 +254,7 @@ class TradesDatabase:
         
         query += " ORDER BY timestamp DESC"
         
+        # pandas read_sql_query handles cursor/connection safe enough usually, but prefer passing connection
         df = pd.read_sql_query(query, self.conn, params=params)
         return df
     
@@ -224,6 +270,9 @@ class TradesDatabase:
             WHERE DATE(timestamp) = ? AND {broker_filter}
             ORDER BY timestamp DESC
         """
+        params = [today]
+        return pd.read_sql_query(query, self.conn, params=params)
+
     def get_recent_trades(self, limit: int = 10, is_paper: bool = None) -> List[Dict]:
         """
         Get list of recent trades
@@ -237,12 +286,15 @@ class TradesDatabase:
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
         
+        cursor = self.conn.cursor()
         try:
-            self.cursor.execute(query, params)
-            return [dict(row) for row in self.cursor.fetchall()]
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             print(f"⚠️ Error fetching recent trades: {e}")
             return []
+        finally:
+            cursor.close()
     
     def get_performance_summary(self, days: int = 30) -> Dict:
         """

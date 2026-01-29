@@ -20,7 +20,13 @@ app = FastAPI(
 )
 
 # CORS Configuration
-origins = ["*"]
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://72.60.40.29:3000",  # Your VPS IP
+    "http://72.60.40.29",       # For production build access
+    "*"                         # Fallback
+]
 
 app.add_middleware(
     CORSMiddleware,

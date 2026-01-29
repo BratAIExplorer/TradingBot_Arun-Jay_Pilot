@@ -22,9 +22,16 @@ export default function Dashboard() {
   });
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null); // Null initially for hydration fix
   const [systemStatus, setSystemStatus] = useState("ONLINE");
   const [botControlStatus, setBotControlStatus] = useState("UNKNOWN"); // RUNNING | STOPPED
+  const [mounted, setMounted] = useState(false);
+
+  // Hydration Fix: Only render client-side date
+  useEffect(() => {
+    setMounted(true);
+    setLastUpdated(new Date());
+  }, []);
 
   const refreshData = async () => {
     try {
@@ -80,10 +87,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    refreshData();
-    const interval = setInterval(refreshData, 5000); // Poll every 5 seconds
-    return () => clearInterval(interval);
-  }, []);
+    if (mounted) {
+      refreshData();
+      const interval = setInterval(refreshData, 5000); // Poll every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [mounted]);
+
+  // Don't render until client-side hydration is complete to avoid mismatches
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen p-8 max-w-7xl mx-auto space-y-8">
@@ -176,7 +188,7 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex gap-3 text-xs">
                   <span className="text-gray-600 font-mono">
-                    {lastUpdated.toLocaleTimeString()}
+                    {lastUpdated?.toLocaleTimeString() || "--:--:--"}
                   </span>
                   <span className="text-gray-400">
                     {botControlStatus === "RUNNING" ? "Bot is active & scanning..." : "Bot is stopped."}

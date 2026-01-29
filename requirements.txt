@@ -9,7 +9,7 @@ pandas>=2.0.0
 numpy>=1.24.0
 
 # Market Data
-yfinance==0.2.40  # Critical: Fixes crash in V1.0
+yfinance>=1.0.0  # Critical: Fixes 403/JSON errors from Yahoo API (Jan 2026)
 Backtesting==0.3.3
 
 # GUI Framework

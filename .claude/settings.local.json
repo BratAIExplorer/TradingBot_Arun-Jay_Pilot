@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(dir /s /b \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\")",
+      "Bash(dir \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\\\\BOT Scrapper\")"
+    ]
+  }
+}

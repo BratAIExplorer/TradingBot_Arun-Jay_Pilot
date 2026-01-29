@@ -5,7 +5,7 @@
     "api_secret": "37gcDiQSKtGSK7PvDdhWgITHlox8GzhqGuhj0Tn9ndI=",
     "client_code": "MA8224736",
     "password": "Bharat@123",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJVU0VSTkFNRSI6Ik1BODIyNDczNiIsIkNMSUVOVE5BTUUiOiJLSVJBTiBERUVQQUsgU0FNQU5UIiwiVVNFUl9ERVRBSUxTIjoiNGJwOHA1R0sveUxZaHY1Y1Fpc2RjTnY5U1p4dW16VlpIUFZDYmFYVDdHMHVDYmhlLzhQVHJUelM3aDdHZ3NGVUdjKy90d1VidUhheTloU1dTdG10OCttR3dlUUFDTHpMNVRBYnRaSksvR3k2cXRtMk5jSTdXUmxORnRGazdtQjZXbFZYOCtSWnNRUWNhMnJjVlUwYmNMM1ZaWVJyd3Q5ZWFGdmxaQjFicjNTL0cvaXhhN0VOVnB0dUJSdUJPc3ZzQnRLTGdEVTVLTTZseURycXdEbHIzY0FHZlRSUUhBUkhTbWgvcTZjVzhnZXNvM2F0ZDluVEVzb3dyRzU5TlJTYkNJdit6Z1lzRXZHTGRlNGVPQTk1VVhkaDV2TUJKRDlESUdLMzU0TDViZGMyVTJ6Q012Wk5jcWpoL09JREl4OUdldi9tWmE0VFJEM0Z5YXVBVDNHc1NiRUlJaXh6V0xtOFhjNjYybGFkeC9NPSIsIlVTRVJJRCI6Ik1BODIyNDczNiIsIkFDQ0VTU19UT0tFTiI6ImV5SmhiR2NpT2lKSVV6STFOaUlzSW5SNWNDSTZJa3BYVkNKOS5leUpoZFdRaU9pSnRhWEpoWlM1cGJpSXNJbVY0Y0NJNk1UYzJPVFl4TXpNME1pd2lhV0YwSWpveE56WTVOVEkyT1RReUxDSnBjM01pT2lKdGFYSmhaUzVwYmlJc0ltNWlaaUk2TVRRME5EUTNPRFF3TUN3aWNHWnRJam9pTVNJc0luUnBaQ0k2SWpRNElpd2lkV2xrSWpvaU1qWTROalExTnlJc0luWnBaQ0k2SWpJeEluMC5UZDJ5VXJncXRNdFVmWEVuN2dEeUNVMExGY1FQNTFyS0lPRHVtZENvc1h3IiwiQVBJVFlQRSI6IlRZUEVBIiwiVUlEIjoiY2UzZGNjMTAtZTdhNS00NDQzLTk3OGQtMWRiYmJhNGNmMjczIiwibmJmIjoxNzY5NTI2OTQyLCJleHAiOjE3Njk1Mzg2MDAsImlhdCI6MTc2OTUyNjk0Mn0.M8bqty4tDW7G-ljP_ymvrSK3lroddIelNj0SuiInna8",
+    "access_token": "Z0FBQUFBQnBlcm93ekV6aV8ycWVoUjZwUThOTzBzNExFa2VfUHFIajV3enJTa2xPbzZCNzhrbkNCV2xXaThCMnk2WUJKbkxQUHpRckxzeGZQMWdqT3ZTMUNaSENKSHdwWEVGTGQxNWlrVHhwdDJNWHJNbVVtQ3JydmtvQXRIeUpMV0hGTmR0RmY2dzFweHBkbnotRnBTMS1ILUlUQnA5ZFlOQlV0SWU0M0x1SnlFRmF3S0Z1eTVUMVlFcW9NSXV2SEJGSXJOQ3R3cXRXWENtMDRCaDM5MWJyY0JMdkdVWU1lVjFFNWpPMWJKZVpwcVJsOS1MbmVrdFI3M2ItbWlkWENmQzNaam5pUmoyMXdIQmRrdndzUTNXc1FNVjBsTFg1dWJvQmtCRTFaVk5QbHNQeFdSclF6MzUydDNRWHFQTkFzM2RaRGpiNVlMb0twWUdTUkFCV2ZBY1N3ZUNPM1VybnYwd204TENFRU9BYlBnaVlOQ0x3RXAydDcxdWkxd2pOeVFrNmhfdkNWVFAwTFZZRkZSSVJQNjFJX0lpZkNyUTN1NXRQdGdPVGkyZ3JqcjVBbjFTYzFQNmRjNjVvLXRBeFpLYk1zcGcxaG05eXJnWGhRekFBc2pHWHd2cUVuNllKTTNQWEctN0lORVBrYXZqNElFbXNrLXQ4dkx2N1RaZDE5aWxla05tdVNvZXBGR2xtSzVQSDMyVU9NUUtHM3VYUmNSQ1BCMzBnZTB5RFd1cHY0N0JpN3pWa29acWVCa1dWT09CcXhVa0JiS0trcWdfeHplRzZJUmlNaXpBcEhiUWlwYTYyX3ZSVkctZkhuX1hOeWhybzh0d3pBQ05DOElmLUNXQk9Bc0lYWGFUSUFpVWlTV3RhZFRRM0FFek1JV3JfZWJrUDBNSmVkSy11RVU4UWo0bTNtZklXYTZrd08waFRRa0ZNOFVxTnFSamdyd2RjWmFkRFlKTGMtbm1EV3BVN1g4Tkd3LWc1cjlLcWFxWW5KY3c1WXYtTl9NS19TYkJPMXhLRHVMZEJvNmlCcXkyZF9SMnZuYWpxMG9ld2RxdEI0QjlhWTVVbHhwRnZXRWNmaFNRY20zYWR4U2NLYXVIOGwzcm5kekx4Y1BzUXdCVW9ISHE1MXFoR1pVcmRmQTJyM2phWGQyQS1LRlhiNndPNmpmc05YZzBleG9Ra3ZEU3Z5QVNzYzN1MGhVdDBoZ2NTVmNnYmF0d1hyZndTY0hZZHo1QVJBb1h0OEtqSDBtWkVreXhCMGZWb3lzVkZYTkNSOEFNTzQ2aHl3dWV0bXBRVkdRY2RPUXZiNld1eVZfb3MweXRjSFhZTDhMZV9XZ3Y5c1JqbDBMVEE1VVc5UTRrMHdSSnFVR29Qb3JTS3FwWnU2NWRUbHlEcEpGb1pvZWZ2NWpSSFh5aXdfNkJjR21WMkZLQVFtN1lSRm5MRWJSMHBVYld4alR3ZWR5YWNEREVvRU1PVTR0NFIzeXhPQ21lMzRGUERId0JoUDduQVRwRnNubU5waEU5TGQxOEdCWFA2VU1UM291WUNPQVlqNmlsZUctNzBRMFl4cGNwZEZIRElXckNlekZCTGpFbER3S1J4d0Nab3V0QlR3ODlRMlpadk41aUZyUXBuNTJVZ1YwaFdld28xR09PbURMdEVQRFJweHdwWk5GVHV0QmdqVmFPZVp2Y09lZElXRjVVQlg4MW1lMlNNcjJfOVhsZmlLQ0ZacElpUE01U1R3aUJpVGRsWkN2bFZjUHJEZVFHYVFLQjVCOFVJbmppOFo3dFdtR195VmZKczJZZWJUUm1Gck1ELVQ2WTF4OEpMZXV2M3lyRWMxbDhRVWRpM01tLUlobXEyOE4wNmJYQ09kNUVTN2dnLWlHa0otblBLVnc5c3hJZFlEMWJyS1VGUDR5NnpndWxKeE1MV0p3b3FvcV9lX1R3QUROUXNtWXNqVmlOUDVwbUlmTDl5QXZsT0hlcVQyRHBYbTJ0elVyQlc5MXI5VHFRaDFya0RtZEdITlVhMVpKalRFTkM5enhGSDNBcGlqQXZfeEFTYUJZcVBWcVdYSTFzRGs3dlJZdm5leVNlUFJObzFmejVGcXprTEV5RjVBU29MbmlUZW91SUJ4TGJLVWszVlJ3S0lxTmRBdnh4ZTlueUpUZTU0V0VVZk9NcldKYkM4bEp3TDhvTzVlcGQ3WG5yVkNBSzFudXMxc09UNmxCWDlCYlN2OF9CZFU1dDR5cUxST3lyQWVJVDhNU2FwdlFKZlVXTThGRlU3b3dNUHRLTUNhbjFJb2xnPQ==",
     "totp_secret": "I25KMXCXICZ3QIFXR5RXTSY3BGUYP6YR"
   },
   "market": {
@@ -79,9 +79,88 @@
   },
   "risk": {
     "stop_loss_pct": 1.0,
-    "profit_target_pct": 15.0,
+    "profit_target_pct": 20.0,
     "catastrophic_stop_loss_pct": 10.0,
     "daily_loss_limit_pct": 5.0,
     "never_sell_at_loss": true
-  }
+  },
+  "stocks": [
+    {
+      "symbol": "TATASTEEL",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 20,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "GOLDBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 25,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "CPSEETF",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 25,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "ITBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 50,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "BANKBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 15,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "MON100",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 20,
+      "profit_target_pct": 10.0
+    },
+    {
+      "symbol": "NIFTYBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 999,
+      "quantity": 20,
+      "profit_target_pct": 10.0
+    }
+  ]
 }

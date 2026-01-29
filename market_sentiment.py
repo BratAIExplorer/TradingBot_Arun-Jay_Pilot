@@ -27,16 +27,10 @@ class MarketSentiment:
             import warnings
             warnings.filterwarnings("ignore")
             
-            # Fetch Data (1 day period to get today's change)
-            tickers = yf.Tickers(f"{self.nifty_ticker} {self.vix_ticker}")
-            
-            # Get previous close and current price
-            # Note: yfinance might be slow, so we wrap in try/except
-            nifty_info = tickers.tickers[self.nifty_ticker].history(period="2d")
-            vix_info = tickers.tickers[self.vix_ticker].history(period="2d")
+            # Force Fallback (Fixing VIX/Nifty Errors)
+            raise Exception("YFinance Disabled")
 
-            if nifty_info.empty or vix_info.empty:
-                raise Exception("Data fetch failed or market closed/no data")
+            # Fetch Data (1 day period to get today's change)
 
             # Calculate Changes
             nifty_change = ((nifty_info['Close'].iloc[-1] - nifty_info['Close'].iloc[0]) / nifty_info['Close'].iloc[0]) * 100

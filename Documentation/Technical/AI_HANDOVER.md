@@ -30,7 +30,7 @@ Build a **safe, smart, and user-friendly** algorithmic trading bot for the India
 ### File Structure
 ```
 kickstart.py          → Core trading logic (headless-capable)
-dashboard_v2.py       → Main GUI (customtkinter)
+sensei_v1_dashboard.py -> Main GUI (customtkinter) - CURRENT
 settings_gui.py       → Configuration panel (embedded in dashboard)
 market_sentiment.py   → Sentiment analysis (yfinance + fallback)
 database/trades_db.py → SQLite trade logging
@@ -175,3 +175,24 @@ strategies/          → sector_map.py, trading_tips.json
 3.  Verify no regression in existing tabs
 4.  Optional: Implement Strategy Orchestrator (Phase 2 - see architectural review)
 
+
+### Session: January 28, 2026 - Google Gemini (Antigravity)
+**Objective:** Fix "No Data" Validation, Dashboard Price Updates, and Duplicate Sells
+
+**Issue:**
+- **Symbol Validation**: `yfinance` failed with "No Data" due to missing user-agent headers and strict WAF rules.
+- **Dashboard Prices**: Live prices weren't updating due to simulation fallback triggered by API errors and slow refresh rates.
+- **Duplicate Sells**: Redundant profit target logic in both `kickstart.py` and `RiskManager` caused double selling (e.g., MICEL).
+
+**Work Completed:**
+1.  **Validation Fix**: Added browser headers to `symbol_validator.py` and implemented `history()` fallback.
+2.  **Dashboard Live Updates**: 
+    - Integrated RSI worker's live price fetch into the dashboard UI loop.
+    - Increased `positions_worker` refresh rate to 10s (was 30s).
+3.  **Sell Logic Consolidation**: 
+    - Removed redundant profit target check in `kickstart.py`.
+    - Added `check_existing_orders` guard to prevent duplicate risk-triggered orders.
+
+**Status:** Validation & Live Updates Fixed ✅
+
+---

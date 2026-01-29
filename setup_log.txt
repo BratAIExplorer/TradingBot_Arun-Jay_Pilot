@@ -1,0 +1,38 @@
+========================================================
+       🚀 ARUN TRADING BOT - START HERE
+========================================================
+
+Please wait while we set everything up for you...
+
+[Step 1/5] Checking System Requirements...
+✅ Python is already installed.
+
+[Step 2/5] Setting up Isolated Environment...
+
+[Step 3/5] Installing Dependencies...
+
+[Step 4/5] Creating Launcher Shortcut...
+✅ Created 'LAUNCH_ARUN' shortcut in this folder
+
+[Step 5/5] Launching ARUN Bot...
+========================================================
+✅ INSTALLATION COMPLETE
+========================================================
+
+📋 Installation log saved to: install.log
+🚀 You can use 'LAUNCH_ARUN' shortcut to start the bot.
+
+
+🚀 Starting ARUN Bot...
+[INFO] Launching V2 Dashboard...
+Traceback (most recent call last):
+  File "C:\Antigravity\TradingBots-Aruns Project\dashboard_v2.py", line 18, in <module>
+    from kickstart import run_cycle, fetch_market_data, config_dict, SYMBOLS_TO_TRACK, calculate_intraday_rsi_tv, is_system_online, safe_get_positions, safe_get_live_positions_merged
+  File "C:\Antigravity\TradingBots-Aruns Project\kickstart.py", line 6, in <module>
+    print("\u2705 LOADED KICKSTART V3.0 (Fixes Applied)")
+  File "C:\Program Files\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+
+[INFO] Dashboard closed. Exiting...

@@ -1,0 +1,37 @@
+{
+    "TATASTEEL:NSE": {
+        "price": 193.85,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:25:26.638832"
+    },
+    "GOLDBEES:NSE": {
+        "price": 135.82,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:25:51.627283"
+    },
+    "CPSEETF:NSE": {
+        "price": 98.08,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:26:13.282322"
+    },
+    "ITBEES:NSE": {
+        "price": 42.65,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:26:39.660247"
+    },
+    "BANKBEES:NSE": {
+        "price": 614.14,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:27:13.521664"
+    },
+    "NIFTYBEES:NSE": {
+        "price": 286.61,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:27:41.153273"
+    },
+    "MON100:NSE": {
+        "price": 235.28,
+        "status": "\u2705 OK",
+        "timestamp": "2026-01-29T10:28:18.054823"
+    }
+}

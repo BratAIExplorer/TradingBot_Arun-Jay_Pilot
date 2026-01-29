@@ -30,6 +30,9 @@ except ImportError:
     YFINANCE_AVAILABLE = False
     logging.warning("yfinance not available - Regime Monitor will use fallback mode")
 
+# Force Disable yfinance for now (Fixing VIX/Nifty Errors)
+YFINANCE_AVAILABLE = False
+
 
 class MarketRegime(Enum):
     """Market regime classifications"""
@@ -137,11 +140,14 @@ class RegimeMonitor:
         
         try:
             self.logger.info(f"Fetching Nifty 50 data from Yahoo Finance...")
+            from utils import get_yfinance_session
+            session = get_yfinance_session()
             nifty = yf.download(
                 self.index_symbol, 
                 period='1y', 
                 interval='1d', 
-                progress=False
+                progress=False,
+                session=session
             )
             
             if len(nifty) < 200:

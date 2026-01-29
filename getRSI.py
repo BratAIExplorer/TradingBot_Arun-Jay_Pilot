@@ -96,12 +96,30 @@ def calculate_intraday_rsi_tv(
         lookback = "6mo" if _is_daily_interval(interval) else "60d"  # Yahoo intraday limit ~60 days
 
     try:
+        from utils import get_yfinance_session, yf_rate_limit, fetch_yahoo_history_direct
+        yf_rate_limit(0.5) # Spacing out requests even with session
+        session = get_yfinance_session()
+        ticker_obj = yf.Ticker(yf_symbol, session=session)
+        df = ticker_obj.history(period=lookback, interval=interval, auto_adjust=False)
+    except TypeError:
+        # Fallback if yfinance version is old/doesn't support session
         df = yf.Ticker(yf_symbol).history(period=lookback, interval=interval, auto_adjust=False)
     except Exception as e:
         # Catch Yahoo API errors, connectivity issues, or 'Expecting value' (JSON decode errors)
         # print(f"WARNING: yfinance failed for {yf_symbol}: {e}")
-        return "", 0.0, pd.DataFrame()
-        
+        df = pd.DataFrame()
+
+    # Step 2: Direct API Fallback if yfinance failed
+    if df.empty:
+        try:
+             # Try direct fetch
+             # print(f"DEBUG: Attempting direct fallback for {yf_symbol}")
+             from utils import fetch_yahoo_history_direct
+             df = fetch_yahoo_history_direct(yf_symbol, period=lookback, interval=interval)
+        except Exception as e:
+             # print(f"WARNING: Direct fallback failed for {yf_symbol}: {e}")
+             pass
+
     if df.empty:
         # print(f"WARNING: No {interval} data for {yf_symbol}")
         return "", 0.0, pd.DataFrame()

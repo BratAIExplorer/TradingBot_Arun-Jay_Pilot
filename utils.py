@@ -160,3 +160,79 @@ def setup_logging(log_file="bot.log", level=logging.INFO):
     logger.addHandler(console_handler)
     
     logging.info(f"✅ Logging initialized. Writing to {full_path}")
+
+
+def get_yfinance_session():
+    """
+    Returns a requests.Session with headers to mimic a real browser.
+    This helps avoid 403 Forbidden / 'Expecting value' errors from Yahoo Finance.
+    """
+    import requests
+    session = requests.Session()
+    # Comprehensive browser headers to avoid blocking
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://finance.yahoo.com/",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"'
+    })
+    return session
+
+def yf_rate_limit(seconds=0.5):
+    """Simple global rate limit helper for yfinance calls"""
+    time.sleep(seconds)
+
+def fetch_yahoo_history_direct(symbol, period="1d", interval="1d"):
+    """
+    Direct fallback for fetching Yahoo Finance history when yfinance library fails.
+    Returns a pandas DataFrame compatible with yfinance.history() output.
+    """
+    import requests
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime
+    
+    # Map period/interval to range
+    # range=1d, interval=1m etc.
+    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?range={period}&interval={interval}"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Referer": "https://finance.yahoo.com/",
+        "Connection": "keep-alive"
+    }
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return pd.DataFrame()
+            
+        data = resp.json()
+        result = data['chart']['result'][0]
+        timestamp = result['timestamp']
+        quote = result['indicators']['quote'][0]
+        
+        df = pd.DataFrame({
+            'Open': quote.get('open', []),
+            'High': quote.get('high', []),
+            'Low': quote.get('low', []),
+            'Close': quote.get('close', []),
+            'Volume': quote.get('volume', [])
+        })
+        df.index = pd.to_datetime(timestamp, unit='s')
+        
+        return df
+    except Exception as e:
+        print(f"Direct History Fallback Error for {symbol}: {e}")
+        return pd.DataFrame()

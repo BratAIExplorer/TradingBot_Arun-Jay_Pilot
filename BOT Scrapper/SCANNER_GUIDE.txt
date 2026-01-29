@@ -1,0 +1,267 @@
+═══════════════════════════════════════════════════════════════════════════════
+📊 LEGEND MARKET SCANNER - SETUP & USAGE GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+🎯 WHAT THIS SCANNER DOES
+═══════════════════════════════════════════════════════════════════════════════
+
+1. ✅ Scans 7000+ NSE & BSE stocks automatically
+2. ✅ Detects MACD bullish crossovers (LATEST date only)
+3. ✅ Confirms with 20 DMA and 50 DMA
+4. ✅ Analyzes fundamentals (P/E, ROE, Growth)
+5. ✅ Checks news sentiment
+6. ✅ FILTERS: Only writes STRONG BUY/BUY to Google Sheets
+7. ✅ Drops everything else (keeps your sheet clean!)
+
+
+🔍 SIGNAL LOGIC
+═══════════════════════════════════════════════════════════════════════════════
+
+📌 STRONG BUY = MACD bullish crossover + Above 20 DMA + Above 50 DMA
+📌 BUY = MACD bullish crossover + Above 20 DMA OR 50 DMA
+📌 WATCH = MACD bullish crossover but below both MAs (NOT written to sheet)
+📌 NO SIGNAL = No recent MACD crossover (NOT written to sheet)
+
+
+📊 OUTPUT COLUMNS IN GOOGLE SHEETS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Ticker (e.g., HAL.NS)
+2. Company Name
+3. Price (₹)
+4. Signal (STRONG BUY / BUY)
+5. MACD Cross Date (e.g., 23-Jan-2026) ← LATEST crossover date
+6. Days Ago (how recent the crossover was)
+7. Above 20 DMA (Yes/No)
+8. Above 50 DMA (Yes/No)
+9. 20 DMA value
+10. 50 DMA value
+11. P/E Ratio
+12. Market Cap
+13. ROE (Return on Equity)
+14. Profit Margin
+15. Revenue Growth
+16. Earnings Growth
+17. Sentiment Score
+18. Order Win? (Yes/No - detects "ORDER", "CONTRACT", "CRORE")
+19. Top Headline
+20. Last Updated (timestamp)
+
+
+⚙️ SETUP INSTRUCTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Install Required Libraries
+───────────────────────────────────────────────────────────────────────────────
+pip install yfinance pandas nltk gspread oauth2client numpy requests beautifulsoup4 --break-system-packages
+
+
+STEP 2: Google Sheets Setup
+───────────────────────────────────────────────────────────────────────────────
+1. You already have credentials.json (from previous setup)
+2. Create a NEW Google Sheet named: "Legend Market Scanner"
+3. Share it with your service account email (same as before)
+4. Done!
+
+
+STEP 3: Choose Scan Mode
+───────────────────────────────────────────────────────────────────────────────
+
+Open market_scanner_full.py and find this line (near the end):
+
+    df = scan_market(all_stocks, max_stocks=100)
+
+📌 TESTING MODE (recommended first run):
+    max_stocks=100    ← Scans 100 stocks (~2 minutes)
+
+📌 MEDIUM SCAN:
+    max_stocks=1000   ← Scans 1000 stocks (~15 minutes)
+
+📌 FULL MARKET SCAN:
+    max_stocks=None   ← Scans ALL 7000+ stocks (~30-45 minutes)
+
+
+🚀 USAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+RUN THE SCANNER:
+───────────────────────────────────────────────────────────────────────────────
+python market_scanner_full.py
+
+
+WHAT YOU'LL SEE:
+───────────────────────────────────────────────────────────────────────────────
+====================================================================================================
+🔍 LEGEND MARKET SCANNER - Scanning 1000 Stocks
+====================================================================================================
+
+📊 Filtering for MACD Bullish Crossovers (Latest 30 days)
+⏱️ This will take 15-30 minutes... Grab a coffee! ☕
+
+⏳ Scanned 50/1000 stocks... (5.0%)
+✅ HAL.NS          | STRONG BUY   | Cross: 23-Jan-2026
+✅ BAIDFIN.NS      | STRONG BUY   | Cross: 23-Jan-2026
+✅ BAJAJCON.NS     | STRONG BUY   | Cross: 23-Jan-2026
+⏳ Scanned 100/1000 stocks... (10.0%)
+...
+
+====================================================================================================
+✅ SCAN COMPLETE!
+📊 Scanned: 1000 stocks
+🎯 Found: 45 actionable opportunities
+====================================================================================================
+
+📊 Connecting to Google Sheets...
+✅ Google Sheet updated successfully!
+🔗 Sheet: Legend Market Scanner
+
+💾 Local backup saved: market_scan_20260128_170530.csv
+
+====================================================================================================
+📈 SCAN SUMMARY:
+====================================================================================================
+🔥 STRONG BUY: 32 stocks
+✅ BUY: 13 stocks
+📊 Total Opportunities: 45 stocks
+====================================================================================================
+
+
+⏰ WHEN TO RUN THE SCANNER
+═══════════════════════════════════════════════════════════════════════════════
+
+📅 RECOMMENDED SCHEDULE:
+
+1. 🌅 MORNING (9:30 AM) - After market opens
+   → Fresh data, catch overnight moves
+
+2. 🌆 EVENING (6:00 PM) - After market closes
+   → Full day's data, plan for tomorrow
+
+3. 📅 WEEKLY (Saturday/Sunday)
+   → Comprehensive scan, plan for the week
+
+
+🎯 FILTERING LOGIC EXPLAINED
+═══════════════════════════════════════════════════════════════════════════════
+
+Q: Why only write STRONG BUY/BUY to Google Sheets?
+A: To keep your sheet ACTIONABLE. You don't want to see 7000 stocks!
+   Only the best opportunities make it to your sheet.
+
+Q: What happens to stocks without MACD crossover?
+A: They're DROPPED. Not written to the sheet at all.
+
+Q: What if I want to see ALL stocks, even weak signals?
+A: Edit line 540 in the code:
+   
+   CURRENT (only STRONG BUY/BUY):
+   if result['Signal'] in ['STRONG BUY', 'BUY']:
+   
+   CHANGE TO (include WATCH):
+   if result['Signal'] in ['STRONG BUY', 'BUY', 'WATCH']:
+
+
+📊 STOCK LIST SOURCES
+═══════════════════════════════════════════════════════════════════════════════
+
+The scanner includes 1000+ most liquid stocks covering:
+
+✅ Defense & Aerospace
+✅ Infrastructure & Construction
+✅ Railways
+✅ IT & Technology (40 stocks)
+✅ Energy & Power
+✅ Banking & Finance (35 stocks)
+✅ Automobile
+✅ Pharmaceuticals (30 stocks)
+✅ FMCG & Retail
+✅ Metals & Mining
+✅ Cement
+✅ Chemicals
+✅ Textiles
+✅ Real Estate
+✅ Telecom
+✅ Media & Entertainment
+✅ Aviation & Tourism
+✅ Healthcare
+✅ Agriculture
+✅ Logistics
+✅ E-Commerce
+✅ Renewable Energy
+✅ Capital Goods
+✅ Paints & Coatings
+
+Want MORE stocks? The scanner will try to fetch additional stocks from NSE API.
+
+
+⚡ PERFORMANCE TIPS
+═══════════════════════════════════════════════════════════════════════════════
+
+🚀 FASTER SCANNING:
+───────────────────────────────────────────────────────────────────────────────
+1. Run during off-market hours (less API load)
+2. Start with max_stocks=100 to test
+3. Use good internet connection
+4. Don't interrupt the scan
+
+🎯 BETTER RESULTS:
+───────────────────────────────────────────────────────────────────────────────
+1. Run weekly for swing trades
+2. Run daily for active trading
+3. Combine with your own research
+4. Check fundamentals before investing
+
+
+🔧 TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+❌ Error: "credentials.json not found"
+→ Make sure credentials.json is in the same folder as the script
+
+❌ Error: "Sheet not found"
+→ Create Google Sheet named exactly "Legend Market Scanner"
+→ Share it with service account email
+
+❌ Error: "Rate limit exceeded"
+→ Yahoo Finance limits requests. Wait 10 minutes and try again.
+→ Or reduce max_stocks to scan fewer stocks
+
+❌ Scan is too slow
+→ This is normal! 1000 stocks = ~15 minutes
+→ Run overnight or while working on other tasks
+
+❌ No stocks found
+→ Market might be in bearish trend
+→ Try increasing lookback period (edit line 262: lookback_days=60)
+
+
+📈 EXAMPLE OUTPUT
+═══════════════════════════════════════════════════════════════════════════════
+
+Your Google Sheet will look like this:
+
+| Ticker | Company | Price | Signal | MACD Cross Date | Days Ago | 20MA | 50MA | P/E | ...
+|--------|---------|-------|--------|-----------------|----------|------|------|-----|----
+| HAL.NS | Hindustan Aeronautics | ₹4570 | STRONG BUY | 23-Jan-2026 | 5 | Yes | Yes | 35 | ...
+| BAIDFIN.NS | Baid Finserv | ₹11.35 | STRONG BUY | 23-Jan-2026 | 5 | Yes | Yes | 12 | ...
+| BAJAJCON.NS | Bajaj Consumer | ₹305.8 | STRONG BUY | 23-Jan-2026 | 5 | Yes | Yes | 28 | ...
+
+
+🎯 NEXT STEPS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Run the scanner: python market_scanner_full.py
+2. Review results in Google Sheets
+3. Do your own research on STRONG BUY stocks
+4. Make informed investment decisions
+5. Re-run scanner weekly/daily
+
+
+⚠️ DISCLAIMER
+═══════════════════════════════════════════════════════════════════════════════
+
+This scanner is a TOOL, not investment advice.
+Always do your own research before investing.
+Past performance does not guarantee future results.
+
+═══════════════════════════════════════════════════════════════════════════════

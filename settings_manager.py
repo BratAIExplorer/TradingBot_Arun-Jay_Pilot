@@ -200,16 +200,77 @@ class SettingsManager:
     
     def get_stock_configs(self) -> list:
         """
-        Load stock configurations from CSV (backward compatibility)
-        TODO: Migrate to settings.json
+        Get stock configurations from settings.json
+        Migrates from CSV if necessary
+        """
+        # Auto-migrate if stocks not in settings but CSV exists
+        if 'stocks' not in self.settings and os.path.exists('config_table.csv'):
+            self.migrate_stock_configs()
+            
+        return self.settings.get('stocks', [])
+
+    def migrate_stock_configs(self):
+        """
+        Migrate stocks from config_table.csv to settings.json
         """
         import pandas as pd
+        csv_path = 'config_table.csv'
+        if not os.path.exists(csv_path):
+            return
+
+        try:
+            df = pd.read_csv(csv_path)
+            stocks = []
+            for _, row in df.iterrows():
+                stock = {
+                    "symbol": str(row.get('Symbol', '')).upper(),
+                    "exchange": str(row.get('Exchange', 'NSE')).upper(),
+                    "enabled": str(row.get('Enabled', 'False')).lower() == 'true',
+                    "strategy": row.get('Strategy', 'TRADE'),
+                    "timeframe": row.get('Timeframe', '15T'),
+                    "buy_rsi": int(row.get('Buy RSI', 30)),
+                    "sell_rsi": int(row.get('Sell RSI', 70)),
+                    "quantity": int(row.get('Quantity', 0)),
+                    "profit_target_pct": float(row.get('Profit Target %', 1.0))
+                }
+                stocks.append(stock)
+            
+            self.settings['stocks'] = stocks
+            self.save()
+            print(f"✅ Migrated {len(stocks)} stocks from CSV to settings.json")
+            
+            # Optional: Rename CSV to avoid confusion, but keeping it for safety for now
+            # os.rename(csv_path, csv_path + ".bak")
+            
+        except Exception as e:
+            print(f"❌ Migration failed: {e}")
+
+    def add_stock_config(self, stock_data: Dict[str, Any]) -> bool:
+        """
+        Add or update a stock configuration
+        """
+        stocks = self.get_stock_configs()
         
-        if os.path.exists('config_table.csv'):
-            df = pd.read_csv('config_table.csv')
-            return df.to_dict('records')
-        else:
-            return []
+        # Remove existing if present (update mode)
+        stocks = [s for s in stocks if not (s['symbol'] == stock_data['symbol'] and s['exchange'] == stock_data['exchange'])]
+        
+        stocks.append(stock_data)
+        self.settings['stocks'] = stocks
+        return self.save()
+
+    def delete_stock_config(self, symbol: str, exchange: str) -> bool:
+        """
+        Delete a stock configuration
+        """
+        stocks = self.get_stock_configs()
+        initial_count = len(stocks)
+        
+        stocks = [s for s in stocks if not (s['symbol'] == symbol and s['exchange'] == exchange)]
+        
+        if len(stocks) < initial_count:
+            self.settings['stocks'] = stocks
+            return self.save()
+        return False
     
     def get_capital_summary(self) -> Dict[str, float]:
         """

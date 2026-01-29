@@ -206,25 +206,13 @@ class DashboardV2:
                     self.write_log("⚠️ No positions returned from API\n")
             except Exception as e:
                 self.write_log(f"❌ Positions fetch error: {e}\n")
-            time.sleep(30)  # Refresh every 30 seconds
+            time.sleep(10)  # Refresh every 10 seconds
 
     def balance_refresh_timer(self):
         """Auto-refresh balance every 15 minutes"""
         self.refresh_balance()
         # Schedule next refresh (15 minutes = 900000 ms)
         self.root.after(900000, self.balance_refresh_timer)
-
-    # ... (Rest of class methods remain same, will rely on backup or merge context) ...
-
-    # We need to include the rest of the methods here or use replace wisely. 
-    # Since I cannot see the whole file in "ReplacementContent" unless I paste it all, 
-    # I should use a targeted replace for __init__ first, then fix __main__.
-    
-    # Actually, the user's previous code was fully overwritten by me in step 335.
-    # So I have the full content in my context.
-    # I will replace the __init__ and __main__ blocks separately for safety.
-
-    # This tool call handles __init__ refactor.
 
 
     def build_header(self):
@@ -1005,7 +993,7 @@ class DashboardV2:
         import kickstart
         kickstart.reset_stop_flag()
         kickstart.set_log_callback(self.write_log)  # Connect logs to UI
-        kickstart.initialize_from_csv()             # Load Symbols!
+        kickstart.initialize_stock_configs()             # Load Symbols (Migrated from CSV)
         
         self.running = True
         self.stop_update_flag.clear()
@@ -1073,7 +1061,7 @@ class DashboardV2:
             
             ts, rsi_val = get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=ltp)
             if rsi_val: 
-                self.data_queue.put(("rsi", (symbol, rsi_val)))
+                self.data_queue.put(("rsi", (symbol, rsi_val, ltp)))
          except Exception as e:
             # print(f"RSI Task Error for {symbol}: {e}")
             pass
@@ -1092,7 +1080,20 @@ class DashboardV2:
                 dtype, data = self.data_queue.get_nowait()
                 if dtype == "positions": self.update_positions(data)
                 elif dtype == "sentiment": self.update_sentiment(data)
-                elif dtype == "rsi": pass # Update rsi list if we had one
+                elif dtype == "rsi": 
+                    # data = (symbol, rsi_val, ltp)
+                    sym, rsi_val, ltp = data
+                    # Update LTP in all_positions_data if it exists
+                    updated = False
+                    for key in self.all_positions_data:
+                        if (isinstance(key, tuple) and key[0] == sym) or str(key) == sym:
+                            if ltp is not None:
+                                self.all_positions_data[key]['ltp'] = ltp
+                                updated = True
+                    
+                    if updated and hasattr(self, 'filter_positions_display'):
+                        # Refresh display
+                        self.filter_positions_display(self.holdings_filter_var.get() if hasattr(self, 'holdings_filter_var') else "ALL")
         except queue.Empty: pass
         finally: self.root.after(1000, self.update_ui_loop)
 
@@ -1355,16 +1356,19 @@ class DashboardV2:
                     self.lbl_last_trade.configure(text="No trades found today")
 
             # Update trade attempt counters from StateManager
-            try:
-                counters = state_mgr.get_trade_counters()
-                if hasattr(self, 'lbl_attempt_count'):
-                    self.lbl_attempt_count.configure(text=str(counters.get('attempts', 0)))
-                if hasattr(self, 'lbl_success_count'):
-                    self.lbl_success_count.configure(text=str(counters.get('success', 0)))
-                if hasattr(self, 'lbl_fail_count'):
-                    self.lbl_fail_count.configure(text=str(counters.get('failed', 0)))
-            except Exception:
-                pass  # Silent fail if state_mgr not available
+            # Update trade attempt counters from StateManager
+            # CONFLICT FIX: refresh_quick_monitor conflicts with write_log live updates. 
+            # We will rely on write_log for live updates to prevent flickering.
+            # try:
+            #     counters = state_mgr.get_trade_counters()
+            #     if hasattr(self, 'lbl_attempt_count'):
+            #         self.lbl_attempt_count.configure(text=str(counters.get('attempts', 0)))
+            #     if hasattr(self, 'lbl_success_count'):
+            #         self.lbl_success_count.configure(text=str(counters.get('success', 0)))
+            #     if hasattr(self, 'lbl_fail_count'):
+            #         self.lbl_fail_count.configure(text=str(counters.get('failed', 0)))
+            # except Exception:
+            #     pass  # Silent fail if state_mgr not available
             
         except Exception as e:
             print(f"Quick Monitor refresh error: {e}")
@@ -1413,10 +1417,21 @@ class DashboardV2:
                 if is_failure: self.trade_stats['failed'] += 1
                 
                 # Update UI Counters (Safe Check)
+                # Update UI Counters (Safe Check with flickering prevention)
                 if hasattr(self, 'lbl_attempt_count'):
-                    self.lbl_attempt_count.configure(text=str(self.trade_stats['attempts']))
-                    self.lbl_success_count.configure(text=str(self.trade_stats['success']))
-                    self.lbl_fail_count.configure(text=str(self.trade_stats['failed']))
+                    new_val = str(self.trade_stats['attempts'])
+                    if self.lbl_attempt_count.cget("text") != new_val:
+                        self.lbl_attempt_count.configure(text=new_val)
+                        
+                if hasattr(self, 'lbl_success_count'):
+                    new_val = str(self.trade_stats['success'])
+                    if self.lbl_success_count.cget("text") != new_val:
+                        self.lbl_success_count.configure(text=new_val)
+                        
+                if hasattr(self, 'lbl_fail_count'):
+                    new_val = str(self.trade_stats['failed'])
+                    if self.lbl_fail_count.cget("text") != new_val:
+                        self.lbl_fail_count.configure(text=new_val)
                 
                 # Update Activity Log Textbox
                 if hasattr(self, 'trade_log'):

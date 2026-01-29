@@ -8,7 +8,7 @@ from tkinter import messagebox, ttk
 from settings_manager import SettingsManager
 import json
 from typing import Dict, Any
-import pandas as pd
+# import pandas as pd # Removed dependency
 import os
 import time
 import pyotp
@@ -17,7 +17,9 @@ import requests
 from symbol_validator import validate_symbol
 
 # UI Color Constants
-COLOR_ACCENT = "#00F0FF"  # Cyber Cyan
+COLOR_ACCENT = "#479FB6"  # Soft Cyan (Mockup Matching)
+COLOR_BG = "#EFEBE3"     # Soft Cream
+COLOR_TEXT = "#1a1a1a"   # High Contrast Dark Gray
 
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
@@ -26,8 +28,13 @@ class SettingsGUI:
         self.settings_mgr.load()
         self.on_save_callback = on_save_callback
         
+        # Market Data Cache (Persistence)
+        self.cache_file = "market_data_cache.json"
+        self.market_cache = {}
+        self.load_market_cache()
+        
         # Theme
-        ctk.set_appearance_mode("dark")
+        ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("blue")
         
         self.is_embedded = False
@@ -62,9 +69,10 @@ class SettingsGUI:
             header = ctk.CTkLabel(
                 self.root,
                 text="⚙️ ARUN Trading Bot - Configuration",
-                font=("Arial", 20, "bold")
+                font=("Arial", 22, "bold"),
+                text_color=COLOR_TEXT
             )
-            header.pack(pady=20)
+            header.pack(pady=25)
         
         # Create tabbed interface
         self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
@@ -75,14 +83,14 @@ class SettingsGUI:
         self.tabview.add("Capital")
         self.tabview.add("Risk Controls")
         self.tabview.add("Notifications")
-        self.tabview.add("Stocks")
+        # self.tabview.add("Stocks")
         
         # Build each tab
         self.build_broker_tab()
         self.build_capital_tab()
         self.build_risk_tab()
         self.build_notifications_tab()
-        self.build_stocks_tab()
+        # self.build_stocks_tab()
         
         # Bottom buttons
         button_frame = ctk.CTkFrame(self.root)
@@ -112,6 +120,16 @@ class SettingsGUI:
         )
         self.cancel_btn.grid(row=0, column=1, padx=10)
 
+        # Status Bar
+        self.status_label = ctk.CTkLabel(
+            self.root,
+            text="Ready",
+            font=("Consolas", 11),
+            text_color="gray",
+            anchor="w"
+        )
+        self.status_label.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+
         # Disclaimer Section
         disclaimer_label = ctk.CTkLabel(
             self.root,
@@ -119,8 +137,16 @@ class SettingsGUI:
             font=("Arial", 10, "italic"),
             text_color="gray"
         )
-        disclaimer_label.pack(side="bottom", pady=10)
+        disclaimer_label.pack(side="bottom", pady=5)
     
+    def update_status(self, message, color="gray"):
+        """Update the status bar message"""
+        try:
+            self.status_label.configure(text=message, text_color=color)
+            self.root.update_idletasks()
+        except:
+            pass
+
     def build_broker_tab(self):
         """Broker credentials configuration"""
         tab = self.tabview.tab("Broker")
@@ -137,8 +163,8 @@ class SettingsGUI:
             paper_frame,
             text="🧪 Enable Paper Trading (Simulation Mode)",
             variable=self.paper_mode_var,
-            font=("Arial", 13, "bold"),
-            text_color="#3498DB"
+            font=("Arial", 15, "bold"),
+            text_color="#2980B9"
         )
         paper_check.pack(side="left", padx=(15, 5), pady=10)
 
@@ -162,8 +188,8 @@ class SettingsGUI:
             paper_frame,
             text="🛡️ Nifty 50 Only (Safety Filter)",
             variable=self.nifty_filter_var,
-            font=("Arial", 13, "bold"),
-            text_color="#2ECC71"
+            font=("Arial", 15, "bold"),
+            text_color="#27AE60"
         )
         nifty_check.pack(side="left", padx=(15, 5), pady=10)
         
@@ -182,7 +208,7 @@ class SettingsGUI:
         help_btn_2.pack(side="left", padx=(0, 15), pady=10)
 
         # Broker selection
-        broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
+        broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 16, "bold"), text_color=COLOR_TEXT)
         broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
         
         self.broker_var = ctk.StringVar(value=broker.get("name", "mstock"))
@@ -195,7 +221,7 @@ class SettingsGUI:
         broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)
         
         # API Key
-        api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 12))
+        api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 14), text_color=COLOR_TEXT)
         api_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
         
         self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
@@ -543,8 +569,8 @@ class SettingsGUI:
         tab = self.tabview.tab("Stocks")
         
         # Title
-        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(10, 5))
+        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration & Live Pricing", font=("Arial", 18, "bold"), text_color=COLOR_TEXT)
+        title_label.pack(pady=(15, 5))
         
         # Table Frame
         table_frame = ctk.CTkFrame(tab)
@@ -553,10 +579,11 @@ class SettingsGUI:
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status"),
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Price", "Status"),
             show="headings",
-            height=8
+            height=10
         )
+        self.stock_table.heading("Price", text="LTP (Live)")
         self.stock_table.heading("Symbol", text="Symbol")
         self.stock_table.heading("Exchange", text="Exch")
         self.stock_table.heading("Enabled", text="Enabled")
@@ -569,17 +596,24 @@ class SettingsGUI:
         self.stock_table.heading("Status", text="Status")
         
         for col in self.stock_table["columns"]:
-            self.stock_table.column(col, width=60, anchor="center")
-        self.stock_table.column("Symbol", width=100)
-        self.stock_table.column("Status", width=80)
+            self.stock_table.column(col, width=70, anchor="center")
+        self.stock_table.column("Symbol", width=120)
+        self.stock_table.column("Price", width=100)
+        self.stock_table.column("Status", width=90)
         
         self.stock_table.pack(side="left", fill="both", expand=True)
         
+        # TREEVIEW ACCESSIBILITY (Larger Font)
+        style = ttk.Style()
+        style.configure("Treeview", font=("Arial", 12), rowheight=30)
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
+
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.stock_table.yview)
         scrollbar.pack(side="right", fill="y")
         self.stock_table.configure(yscrollcommand=scrollbar.set)
 
         # Load data from CSV
+        self.load_market_cache()
         self.refresh_stock_table()
 
         # Action Buttons Frame
@@ -587,11 +621,22 @@ class SettingsGUI:
         btn_frame.pack(pady=10)
 
         ctk.CTkButton(btn_frame, text="➕ Add", width=80, fg_color="green", hover_color="darkgreen", command=self.on_add_stock).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=1, padx=5)
-        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=2, padx=5)
         
-        self.validate_btn = ctk.CTkButton(btn_frame, text="🔍 Validate", width=100, command=self.on_validate_symbols)
-        self.validate_btn.grid(row=0, column=3, padx=15)
+        # Force Refresh
+        ctk.CTkButton(btn_frame, text="🔄 Force Refresh", width=120, fg_color="#E59866", hover_color="#D35400", command=lambda: self.on_validate_symbols(force=True)).grid(row=0, column=1, padx=5)
+        
+        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=2, padx=5)
+        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=3, padx=5)
+        
+        self.validate_btn = ctk.CTkButton(
+            btn_frame, 
+            text="🔍 Validate & Get Prices", 
+            width=180, 
+            height=35, 
+            command=lambda: self.on_validate_symbols(force=False), 
+            font=("Arial", 14, "bold")
+        )
+        self.validate_btn.grid(row=0, column=4, padx=15)
 
     def build_notifications_tab(self):
         """Telegram notifications configuration"""
@@ -635,29 +680,46 @@ class SettingsGUI:
         help_btn.pack(pady=20)
 
     def refresh_stock_table(self):
-        """Load symbols from CSV into the table"""
+        """Load symbols from SettingsManager into the table"""
+        # Ensure cache is loaded if not already
+        if not self.market_cache:
+            self.load_market_cache()
+
         for item in self.stock_table.get_children():
             self.stock_table.delete(item)
             
-        csv_path = 'config_table.csv'
-        if os.path.exists(csv_path):
-            try:
-                df = pd.read_csv(csv_path)
-                for _, row in df.iterrows():
-                    self.stock_table.insert("", "end", values=(
-                        row['Symbol'], 
-                        row['Exchange'], 
-                        "Yes" if str(row['Enabled']).upper() == 'TRUE' else "No",
-                        row.get('Strategy', 'TRADE'), # Default to TRADE if missing
-                        row['Timeframe'],
-                        row['Buy RSI'],
-                        row['Sell RSI'],
-                        row['Quantity'],
-                        row['Profit Target %'],
-                        "" # Status
-                    ))
-            except Exception as e:
-                print(f"Error loading CSV: {e}")
+        stocks = self.settings_mgr.get_stock_configs()
+        for stock in stocks:
+            sym = stock.get('symbol', '')
+            ex = stock.get('exchange', 'NSE') # Default to NSE if missing
+            
+            # Default values
+            price_disp = "-"
+            status_disp = ""
+            
+            # Check Cache Persistence
+            key = f"{sym}:{ex}"
+            if hasattr(self, 'market_cache') and key in self.market_cache:
+                cached = self.market_cache[key]
+                if cached:
+                    p = cached.get("price")
+                    s = cached.get("status")
+                    if p is not None: price_disp = f"₹{p:,.2f}"
+                    if s: status_disp = s
+
+            self.stock_table.insert("", "end", values=(
+                sym,
+                ex,
+                "Yes" if stock.get('enabled', False) else "No",
+                stock.get('strategy', 'TRADE'),
+                stock.get('timeframe', '15T'),
+                stock.get('buy_rsi', 30),
+                stock.get('sell_rsi', 70),
+                stock.get('quantity', 0),
+                stock.get('profit_target_pct', 1.0),
+                price_disp, # PERSISTED PRICE
+                status_disp # PERSISTED STATUS
+            ))
 
     def validate_totp_secret(self):
         """Validate the TOTP secret by generating a code"""
@@ -687,55 +749,168 @@ class SettingsGUI:
                 f"Invalid TOTP Secret.\nEnsure you copied the Alphanumeric key, not the URL.\n\nError: {str(e)}"
             )
 
-    def on_validate_symbols(self):
-        """Validate all symbols in the table"""
-        self.validate_btn.configure(state="disabled", text="Validating...")
-        self.root.update_idletasks()
+    def on_validate_symbols(self, force=False):
+        """
+        Validate symbols in background thread to prevent UI freeze
+        force: If True, re-validates ALL symbols regardless of current status.
+        """
+        # Prevent double-clicks
+        if hasattr(self, 'is_validating') and self.is_validating:
+            return
+            
+        import threading
+        import time
+        from datetime import datetime
         
         items = self.stock_table.get_children()
-        total = len(items)
-        valid_count = 0
+        if not items:
+            messagebox.showinfo("ℹ️ Info", "No stocks to validate.")
+            return
+
+        # Disable button to prevent spamming
+        self.is_validating = True
+        try:
+            self.validate_btn.configure(state="disabled", text="⏳ Validating...")
+        except: pass
+
+        # gather data from UI thread first
+        validation_queue = []
+        skipped_count = 0
         
-        for i, item in enumerate(items):
-            # Get all values from the row
-            values = list(self.stock_table.item(item, "values"))
-            
-            # Ensure we have at least Symbol and Exchange
-            if len(values) < 2:
-                continue
+        for item_id in items:
+            vals = self.stock_table.item(item_id)['values']
+            if len(vals) >= 2:
+                symbol = vals[0]
+                exchange = vals[1]
+                current_status = vals[10] if len(vals) > 10 else ""
                 
-            symbol = values[0]
-            exchange = values[1]
-            
-            # Temporarily set Status to "..."
-            new_values = list(values)
-            # Ensure list has enough slots (10 slots for 10 columns)
-            while len(new_values) < 10:
-                new_values.append("")
+                # SMART VALIDATION: Skip if already OK and not forced
+                # User requested: "validate the Price only", so we must fetch unless it's a completely static check.
+                # Since we use fetch for price AND validation, "Smart" here means:
+                # If we have a recent cache (e.g. < 5 mins) and status is OK, maybe skip?
+                # But user said "stocks not validated should be initiated".
+                # Interpretation: If Status == "✅ OK" and NOT force, SKIP validation (retain old price).
                 
-            new_values[9] = "⏳" # Set Status column index
-            self.stock_table.item(item, values=new_values)
-            self.root.update_idletasks()
+                if not force and "OK" in current_status:
+                    skipped_count += 1
+                    continue
+                    
+                validation_queue.append((item_id, vals, symbol, exchange))
+        
+        if not validation_queue and skipped_count > 0:
+            self.is_validating = False
+            self.update_status(f"Stopped: All {skipped_count} symbols are already valid.", "green")
+            try:
+                self.validate_btn.configure(state="normal", text="🔍 Validate & Get Prices")
+            except: pass
+            messagebox.showinfo("ℹ️ Smart Check", f"All {skipped_count} symbols are already valid.\nUse 'Force Refresh' to re-check prices.")
+            return
+
+        # UI Feedback
+        self.root.configure(cursor="wait") 
+        self.update_status(f"Starting validation for {len(validation_queue)} symbols...", "blue")
+        
+        def worker():
+            success_count = 0
+            error_count = 0
             
-            # Simulate a small delay for UX so user sees "Validating..."
-            time.sleep(0.1) 
+            # Lazy import
+            try:
+                import kickstart
+                from kickstart import fetch_market_data_once
+                from symbol_validator import get_symbol_price
+            except ImportError as e:
+                print("Import Error in Validation Worker")
+                self.update_status(f"Critical Error: {e}", "red")
+                return
+
+            total = len(validation_queue)
+            for i, item_data in enumerate(validation_queue):
+                # Rate limiting to prevent "Expecting value" / HTTPS errs
+                time.sleep(0.5)
+                
+                item_id, current_vals, symbol, exchange = item_data
+                
+                self.update_status(f"Scanning {i+1}/{total}: {symbol}...", "blue")
+                
+                price = None
+                last_error = ""
+                try:
+                    # 1. Try Broker API
+                    quote, _ = fetch_market_data_once(symbol, exchange)
+                    if quote and 'lastPrice' in quote:
+                        price = float(quote['lastPrice'])
+                    
+                    # 2. Fallback to YFinance
+                    if price is None:
+                        price = get_symbol_price(symbol, exchange)
+                except Exception as e:
+                    price = None
+                    last_error = str(e)
+
+                # Prepare Result Row
+                new_vals = list(current_vals)
+                while len(new_vals) < 11: new_vals.append("") # Ensure size
+
+                status_text = ""
+                price_text = "-"
+                
+                if price is not None:
+                    price_text = f"₹{price:,.2f}"
+                    status_text = "✅ OK"
+                    new_vals[9] = price_text
+                    new_vals[10] = status_text
+                    success_count += 1
+                    
+                    # UPDATE CACHE
+                    key = f"{symbol}:{exchange}"
+                    self.market_cache[key] = {
+                        "price": price, 
+                        "status": status_text,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                else:
+                    new_vals[9] = "-"
+                    new_vals[10] = "❌ No Data"
+                    error_count += 1
+                    # Show error in status bar briefly
+                    self.update_status(f"Error {symbol}: {last_error[:40]}", "red")
+                
+                # Schedule UI Update
+                def update_ui(iid=item_id, v=new_vals):
+                    try:
+                        self.stock_table.item(iid, values=v)
+                    except: pass
+                
+                self.root.after(0, update_ui)
             
-            # Validate
-            # We assume validate_symbol is available or imported. If not, logic:
-            is_valid = False
-            if symbol and exchange:
-                is_valid = True # Placeholder for actual validation logic (yfinance check)
-                # Ideally: is_valid = validate_symbol(symbol, exchange)
+            # SAVE CACHE AFTER BATCH
+            self.save_market_cache()
             
-            status_icon = "✅ Valid" if is_valid else "❌ Error"
-            if is_valid: valid_count += 1
+            # Completion
+            def on_complete():
+                self.root.configure(cursor="")
+                self.is_validating = False
+                try:
+                    self.validate_btn.configure(state="normal", text="🔍 Validate & Get Prices")
+                except: pass
+                
+                msg = f"Checked {len(validation_queue)} symbols.\n✅ Live Prices: {success_count}\n❌ Failed/No Data: {error_count}"
+                status_msg = f"Done. Success: {success_count}, Failed: {error_count}"
+                status_color = "green" if error_count == 0 else "orange"
+                
+                if skipped_count > 0:
+                    msg += f"\n\n(Skipped {skipped_count} already valid symbols)"
+                    status_msg += f" (Skipped {skipped_count})"
+                    
+                self.update_status(status_msg, status_color)
+                messagebox.showinfo("✅ Validation Complete", msg)
             
-            new_values[9] = status_icon
-            self.stock_table.item(item, values=new_values)
-            self.root.update_idletasks()
-            
-        self.validate_btn.configure(state="normal", text="🔍 Validate")
-        messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
+            self.root.after(0, on_complete)
+
+        # Start Thread
+        threading.Thread(target=worker, daemon=True).start()
 
     def test_broker_connection(self):
         """Test API credentials and fetch balance with enhanced debugging"""
@@ -1132,18 +1307,11 @@ class SettingsGUI:
         exchange = self.stock_table.item(selected[0], "values")[1]
         
         if messagebox.askyesno("Confirm Delete", f"Are you sure you want to remove {symbol} ({exchange})?"):
-            try:
-                csv_path = 'config_table.csv'
-                df = pd.read_csv(csv_path)
-                
-                # Filter out the selected stock
-                df = df[~((df['Symbol'] == symbol) & (df['Exchange'] == exchange))]
-                
-                df.to_csv(csv_path, index=False)
+            if self.settings_mgr.delete_stock_config(symbol, exchange):
                 self.refresh_stock_table()
                 messagebox.showinfo("Success", f"Removed {symbol} from list.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete: {e}")
+            else:
+                messagebox.showerror("Error", "Failed to delete from settings.")
 
     def show_stock_dialog(self, edit_values=None):
         """Show dialog for adding/editing a stock"""
@@ -1245,38 +1413,46 @@ class SettingsGUI:
                 return
             
             try:
+                # Build match config object (snake_case)
                 new_data = {
-                    'Symbol': symbol,
-                    'Exchange': exch_var.get(),
-                    'Broker': 'mstock', 
-                    'Enabled': enabled_var.get(),
-                    'Strategy': strat_var.get(),
-                    'Timeframe': tf_var.get(),
-                    'Buy RSI': int(buy_rsi_entry.get()),
-                    'Sell RSI': int(sell_rsi_entry.get()),
-                    'Profit Target %': float(target_entry.get()),
-                    'Quantity': int(qty_entry.get())
+                    'symbol': symbol,
+                    'exchange': exch_var.get(),
+                    'enabled': enabled_var.get(),
+                    'strategy': strat_var.get(),
+                    'timeframe': tf_var.get(),
+                    'buy_rsi': int(buy_rsi_entry.get()),
+                    'sell_rsi': int(sell_rsi_entry.get()),
+                    'quantity': int(qty_entry.get()),
+                    'profit_target_pct': float(target_entry.get())
                 }
                 
-                csv_path = 'config_table.csv'
-                if os.path.exists(csv_path):
-                    df = pd.read_csv(csv_path)
-                    # If editing, remove old entry
-                    if edit_values:
-                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[1]))]
-                    
-                    # Append new entry
-                    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-                    df.to_csv(csv_path, index=False)
+                if self.settings_mgr.add_stock_config(new_data):
+                    self.refresh_stock_table()
+                    dialog.destroy()
                 else:
-                    pd.DataFrame([new_data]).to_csv(csv_path, index=False)
-                
-                self.refresh_stock_table()
-                dialog.destroy()
+                    messagebox.showerror("Error", "Failed to save to settings.json")
+                    
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid data: {e}")
 
         ctk.CTkButton(scroll_frame, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
+
+    def load_market_cache(self):
+        """Load market data cache from disk"""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r") as f:
+                    self.market_cache = json.load(f)
+            except Exception as e:
+                print(f"Failed to load cache: {e}")
+
+    def save_market_cache(self):
+        """Save market data cache to disk"""
+        try:
+            with open(self.cache_file, "w") as f:
+                json.dump(self.market_cache, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save cache: {e}")
 
 if __name__ == "__main__":
     app = SettingsGUI()

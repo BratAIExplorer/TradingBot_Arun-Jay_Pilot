@@ -2,6 +2,9 @@
 
 echo "🚀 Starting ARUN Titan System (Linux VPS Mode)..."
 
+# Create logs directory first
+mkdir -p logs
+
 # 1. Start Backend (The Brain)
 echo "🧠 Starting Backend..."
 cd backend
@@ -30,8 +33,8 @@ echo "   ✅ Bot Engine started (PID: $BOT_PID)"
 echo ""
 echo "🌟 System Online!"
 echo "---------------------------------------------------"
-echo "API:      http://$(curl -s ifconfig.me):8000"
-echo "WebApp:   http://$(curl -s ifconfig.me):3000"
+echo "API:      http://$(curl -4 -s ifconfig.me):8000"
+echo "WebApp:   http://$(curl -4 -s ifconfig.me):3000"
 echo "---------------------------------------------------"
 echo "To stop the system, run:  kill $BACKEND_PID $FRONTEND_PID $BOT_PID"
 echo "Logs are being written to logs/"

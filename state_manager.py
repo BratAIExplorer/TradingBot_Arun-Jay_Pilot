@@ -354,12 +354,9 @@ class StateManager:
 
     def is_stop_requested(self) -> bool:
         """
-        Check if stop was requested via state file
+        Check if stop was requested.
+        Uses in-memory state for performance and to avoid race conditions.
         """
-        # Reload state from file to catch external changes (e.g. from GUI)
-        fresh_state = self._load()
-        if fresh_state:
-            self.state['stop_requested'] = fresh_state.get('stop_requested', False)
         return self.state.get('stop_requested', False)
 
 

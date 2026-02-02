@@ -184,20 +184,50 @@ class TradesDatabase:
         sebi = fee_breakdown.get('sebi_charges', 0) if fee_breakdown else 0
         stamp = fee_breakdown.get('stamp_duty', 0) if fee_breakdown else 0
         
+        pnl_gross = None
+        pnl_net = None
+        pnl_pct_gross = None
+        pnl_pct_net = None
+        
         cursor = self.conn.cursor()
         try:
+            # Automatic P&L Calculation for SELL trades
+            if action.upper() == "SELL":
+                cursor.execute("""
+                    SELECT price, net_amount, quantity FROM trades 
+                    WHERE symbol = ? AND action = 'BUY' 
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (symbol,))
+                last_buy = cursor.fetchone()
+                if last_buy:
+                    buy_price = last_buy['price']
+                    buy_net_per_unit = last_buy['net_amount'] / last_buy['quantity']
+                    
+                    sell_price = price
+                    sell_net_per_unit = net_amount / quantity
+                    
+                    pnl_gross = (sell_price - buy_price) * quantity
+                    pnl_net = (sell_net_per_unit - buy_net_per_unit) * quantity
+                    
+                    if buy_price > 0:
+                        pnl_pct_gross = (pnl_gross / (buy_price * quantity)) * 100
+                    if buy_net_per_unit > 0:
+                        pnl_pct_net = (pnl_net / (buy_net_per_unit * quantity)) * 100
+
             cursor.execute("""
                 INSERT INTO trades (
                     timestamp, symbol, exchange, action, quantity, price,
                     gross_amount, brokerage_fee, stt_fee, exchange_fee,
                     gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
-                    strategy, reason, broker, source, rsi
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    strategy, reason, broker, source, rsi,
+                    pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 timestamp, symbol, exchange, action, quantity, price,
                 gross_amount, brokerage, stt, exchange_fee,
                 gst, sebi, stamp, total_fees, net_amount,
-                strategy, reason, broker, source, rsi
+                strategy, reason, broker, source, rsi,
+                pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
             ))
             
             self.conn.commit()

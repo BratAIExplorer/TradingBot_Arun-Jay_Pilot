@@ -1,0 +1,9 @@
+@echo off
+echo Staging all changes...
+git add .
+echo Committing changes...
+git commit -m "feat: Headless Architecture (FastAPI + Next.js) and Documentation Update"
+echo Pushing to main...
+git push origin main
+echo ✅ Git Sync Complete!
+pause

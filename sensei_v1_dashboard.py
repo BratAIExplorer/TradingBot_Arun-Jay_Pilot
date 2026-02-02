@@ -25,8 +25,7 @@ try:
     from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide, get_contextual_tip
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
-    from state_manager import StateManager
-    state_mgr = StateManager()
+    from state_manager import state as state_mgr
     
     # Reload config to ensure fresh access token from settings.json
     reload_config()
@@ -77,7 +76,7 @@ class DashboardV2:
     def __init__(self, root):
         # 1. Setup Window (Root passed from main)
         self.root = root
-        self.root.title("ARUN TITAN V2 - Release v2.0.1 (Light Mode)")
+        self.root.title("ARUN TITAN V2 - Release v2.0.2 (Light Mode)")
         self.root.geometry("1450x900") # Expanded slightly for larger fonts
         self.root.configure(fg_color=COLOR_BG)
         
@@ -99,9 +98,9 @@ class DashboardV2:
         self.scanner_results = []
         self.scanner_thread = None
 
-        # Log redirection
-        sys.stdout.write = self.write_log
-        sys.stderr.write = self.write_log
+        # Log redirection (DISABLED - Can cause GUI freeze)
+        # sys.stdout.write = self.write_log
+        # sys.stderr.write = self.write_log
 
         # --- LAYOUT CONSTRUCTION ---
         self.build_header()
@@ -249,7 +248,7 @@ class DashboardV2:
         logo_frame.pack(side="left", padx=20)
         ctk.CTkLabel(logo_frame, text="ARUN", font=("Roboto", 22, "bold"), text_color=COLOR_ACCENT).pack(side="left")
         ctk.CTkLabel(logo_frame, text="TITAN", font=("Roboto", 22, "bold"), text_color="#333").pack(side="left", padx=5)
-        ctk.CTkLabel(logo_frame, text="v2.0.1", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
+        ctk.CTkLabel(logo_frame, text="v2.0.2", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
 
         # Navigation (Segmented Button Style)
         self.nav_var = ctk.StringVar(value="DASHBOARD")
@@ -402,6 +401,10 @@ class DashboardV2:
         
         self.lbl_engine_status = ctk.CTkLabel(ctrl_in, text="STOPPED 🔴", font=("Roboto", 10, "bold"), text_color=COLOR_DANGER)
         self.lbl_engine_status.pack()
+        
+        # 3. Engine Heartbeat (Visual confirmation of activity)
+        self.lbl_heartbeat = ctk.CTkLabel(ctrl_in, text="Engine Idle", font=("Roboto", 11, "bold"), text_color="gray")
+        self.lbl_heartbeat.pack(pady=(5, 5))
 
         # === RIGHT COLUMN: TABS ===
         right_col = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
@@ -1637,14 +1640,21 @@ class DashboardV2:
             self.write_log("--- Trade Execution Monitor Stopped ---\n")
 
     def engine_loop(self):
-        import kickstart
+        try:
+            import kickstart
+        except Exception as import_err:
+            self.write_log(f"❌ Failed to import kickstart: {import_err}\n")
+            return
+        
         while not self.stop_update_flag.is_set():
             try:
-                if not self.running: break
+                if not self.running:
+                    break
                 kickstart.run_cycle()
             except Exception as e:
-                self.write_log(f"Engine Cycle Error: {e}\n")
-            time.sleep(0.5) # High-frequency heartbeat (Restoring base behavior)
+                import traceback
+                self.write_log(f"❌ Engine Cycle Error: {e}\n")
+            time.sleep(0.5)
 
     def rsi_worker(self):
         # ... logic similar to previous ...
@@ -2061,18 +2071,40 @@ class DashboardV2:
                     
                     self._prev_top_trade_id = current_top_id
 
-            # 8. Update Live Execution Counters
-            # CONFLICT FIX: Disabled to prevent flickering. Live updates handled by write_log.
-            # try:
-            #     counters = state_mgr.get_trade_counters()
-            #     for key, attr in [('attempts', 'lbl_attempt_count'), ('success', 'lbl_success_count'), ('failed', 'lbl_fail_count')]:
-            #         if hasattr(self, attr):
-            #             lbl = getattr(self, attr)
-            #             val = str(counters.get(key, 0))
-            #             if getattr(lbl, "_current_val", "") != val:
-            #                 lbl.configure(text=val)
-            #                 lbl._current_val = val
-            # except: pass
+            # 8. Update Live Execution Counters from StateManager (Source of Truth)
+            try:
+                from state_manager import state as state_mgr
+                counters = state_mgr.get_trade_counters()
+                
+                # Sync local trade_stats for consistency
+                self.trade_stats['attempts'] = counters.get('attempts', 0)
+                self.trade_stats['success'] = counters.get('success', 0)
+                self.trade_stats['failed'] = counters.get('failed', 0)
+
+                for key, attr in [('attempts', 'lbl_attempt_count'), ('success', 'lbl_success_count'), ('failed', 'lbl_fail_count')]:
+                    if hasattr(self, attr):
+                        lbl = getattr(self, attr)
+                        val = str(counters.get(key, 0))
+                        if getattr(lbl, "_current_val", "") != val:
+                            lbl.configure(text=val)
+                            lbl._current_val = val
+                
+                # 9. Update Engine Heartbeat
+                if hasattr(self, 'lbl_heartbeat') and self.running:
+                    # We can use state.get('last_update') which is updated every cycle
+                    last_upd = state_mgr.state.get('last_update')
+                    if last_upd:
+                        # Extract time component: 2026-02-02T13:28:26.123 -> 13:28:26
+                        t_part = last_upd.split('T')[-1].split('.')[0]
+                        self.lbl_heartbeat.configure(text=f"Last Cycle: {t_part}", text_color=COLOR_ACCENT)
+                    else:
+                        self.lbl_heartbeat.configure(text="Engine Active... 💓", text_color=COLOR_ACCENT)
+                elif hasattr(self, 'lbl_heartbeat'):
+                    self.lbl_heartbeat.configure(text="Engine Idle", text_color="gray")
+
+            except Exception as e:
+                import sys
+                print(f"DEBUG: Counter Sync Error: {e}", file=sys.__stderr__)
         except Exception as e:
             pass # Silent fail to prevent UI lockup in loop
             
@@ -2107,39 +2139,28 @@ class DashboardV2:
         # 2. Trade Activity Monitor (Tab 2) - LIVE EXECUTION TRACKING
         text_lower = text.lower()
         
-        # Check for trade-related keywords include RSI and Scanner
-        is_trade_event = any(x in text_lower for x in ["buy", "sell", "order", "triggered", "executing", "simulation", "rsi", "signal", "scan", "market", "fallback", "sequential"])
-        is_failure = any(x in text_lower for x in ["failed", "rejected", "error", "insufficient", "circuit", "cycle error"])
-        is_success = any(x in text_lower for x in ["placed", "success", "executed", "filled"])
+        # ONLY show actual trade actions: BUY, SELL, Orders placed/executed
+        # Exclude: debug messages, allocation settings, engine status, RSI readings
+        is_trade_action = any(x in text_lower for x in [
+            "attempting buy", "attempting sell",  # Trade attempts
+            "buy order", "sell order",             # Order placement
+            "executed", "filled", "placed",        # Successful trades
+            "order rejected", "order failed",      # Failed trades
+            "stop loss triggered", "profit target hit",  # Exit conditions
+            "⚡ signal",                            # Trade signals
+            "initialized", "status", "bot started", "monitoring", # System Status
+            "paper trade", "buy", "sell"           # Explicit Actions
+        ])
+        is_failure = any(x in text_lower for x in ["failed", "rejected", "insufficient"])
+        is_success = any(x in text_lower for x in ["placed", "executed", "filled"])
         
-        # Force show RSI logs
-        if "RSI" in text or "signal" in text:
-             is_trade_event = True
-
-        if is_trade_event or is_failure:
+        # Skip debug messages, engine status, allocation settings
+        is_noise = any(x in text_lower for x in ["debug", "allocation", "module", "cycle start"])
+        
+        if is_trade_action and not is_noise:
             try:
-                # Update Counters
-                if "BUY" in text or "BC" in text: 
-                    self.trade_stats['attempts'] += 1 if "Triggered" in text else 0
-                if is_success: self.trade_stats['success'] += 1
-                if is_failure: self.trade_stats['failed'] += 1
-                
-                # Update UI Counters (Safe Check with Anti-Flicker)
-                if hasattr(self, 'lbl_attempt_count'):
-                    att_val = str(self.trade_stats['attempts'])
-                    if getattr(self.lbl_attempt_count, "_current_val", "") != att_val:
-                        self.lbl_attempt_count.configure(text=att_val)
-                        self.lbl_attempt_count._current_val = att_val
-                        
-                    succ_val = str(self.trade_stats['success'])
-                    if getattr(self.lbl_success_count, "_current_val", "") != succ_val:
-                        self.lbl_success_count.configure(text=succ_val)
-                        self.lbl_success_count._current_val = succ_val
-                        
-                    fail_val = str(self.trade_stats['failed'])
-                    if getattr(self.lbl_fail_count, "_current_val", "") != fail_val:
-                        self.lbl_fail_count.configure(text=fail_val)
-                        self.lbl_fail_count._current_val = fail_val
+                # UPDATE: Counters are now synchronized directly with StateManager in _update_quick_monitor_ui
+                # to ensure data integrity across components and restarts.
                 
                 # Update Activity Log Textbox
                 if hasattr(self, 'trade_log'):
@@ -2154,7 +2175,7 @@ class DashboardV2:
         should_alert = False
         is_tech_error = any(x in text for x in ["Exception", "Expecting value", "No price data"])
         
-        if is_trade_event and not is_tech_error:
+        if is_trade_action and not is_tech_error:
              should_alert = True
         elif "⚠" in text and not is_tech_error:
              should_alert = True

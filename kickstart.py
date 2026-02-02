@@ -2,6 +2,16 @@
 
 import requests
 import hashlib
+import sys
+import io
+
+# Fix Windows console encoding for emoji/unicode support
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except: pass
+
 from strategies.nifty_sip import NiftySIPStrategy
 print("✅ LOADED SENSEI V1 KICKSTART (Engine Online)")
 
@@ -63,12 +73,8 @@ except ImportError:
     print("⚠️ risk_manager not found, automated risk controls disabled")
     RISK_MANAGER_AVAILABLE = False
 
-try:
-    from state_manager import StateManager
+    from state_manager import state as state_mgr
     STATE_MANAGER_AVAILABLE = True
-except ImportError:
-    print("⚠️ state_manager not found, state persistence disabled")
-    STATE_MANAGER_AVAILABLE = False
 
 try:
     from notifications import NotificationManager
@@ -112,25 +118,31 @@ except ImportError:
 LOG_SUPPRESS = False
 
 # Initialize Logging
-try:
-    setup_logging()
-except Exception as e:
-    print(f"Failed to setup logging: {e}")
+# Initialize Logging (MOVED TO MAIN/EXPLICIT CALLS)
+# try:
+#     setup_logging()
+# except Exception as e:
+#     print(f"Failed to setup logging: {e}")
 
-LOG_CALLBACK = None
+# Mutable container for LOG_CALLBACK - fixes Python module identity issues
+_LOG_STATE = {"callback": None}
 
 def set_log_callback(cb):
-    global LOG_CALLBACK
-    LOG_CALLBACK = cb
+    """Set the UI callback for log messages"""
+    _LOG_STATE["callback"] = cb
+    logging.info(f"✅ LOG_CALLBACK set successfully")
 
 def log_ok(msg: str = "", *args, force: bool = False, **kwargs):
     logging.info(msg)
     
     # Callback to UI if set
-    if LOG_CALLBACK:
+    callback = _LOG_STATE.get("callback")
+    if callback:
         try:
-            LOG_CALLBACK(str(msg) + "\n")
-        except: pass
+            callback(str(msg) + "\n")
+        except Exception as e:
+            logging.error(f"❌ Callback failed: {e}")
+    # Silently skip if no callback - this is normal during startup
 
     if LOG_SUPPRESS and not force:
         return
@@ -768,13 +780,8 @@ def run_cycle():
     if not config_dict:
         log_ok("⚠️ No stocks configured. Please add stocks in Settings.")
         return False
-        
-    log_ok(f"🔄 Cycle Start: {len(SYMBOLS_TO_TRACK)} symbols. Online={not is_offline()}")
 
-    # --- Check Market Hours (Added for visibility) ---
-    # Assuming NSE hours 9:15 - 15:30.
-    # We allow running if Paper Mode is ON or if we are in valid time.
-    
+    # --- Check Market Hours ---
     current_time = now_ist().time()
     # HACK: User requested 24h market for testing
     market_open = datetime.strptime("00:00", "%H:%M").time()
@@ -784,9 +791,6 @@ def run_cycle():
     is_paper = settings.get("app_settings.paper_trading_mode", False) if settings else False
 
     if not is_open and not is_paper:
-        log_ok(f"😴 Market Closed ({current_time.strftime('%H:%M')}). Waiting for 09:15...", force=False)
-        # We don't return here because we might want to process other maintenance tasks,
-        # but we skip trading.
         return
 
     # --- Main Loop ---
@@ -949,7 +953,7 @@ def perform_auto_login() -> bool:
              log_ok("❌ TOTP verification failed: No response from API (Network Error?)")
              return False
 
-        log_ok(f"📡 Response Status: {totp_resp.status_code}")
+        # log_ok(f"📡 Response Status: {totp_resp.status_code}")
         
         if totp_resp.status_code != 200:
             log_ok(f"❌ TOTP verification failed: HTTP {totp_resp.status_code} - {totp_resp.text[:200]}")
@@ -1101,13 +1105,7 @@ if RISK_MANAGER_AVAILABLE and db:
 elif RISK_MANAGER_AVAILABLE and not db:
     log_ok("⚠️ Risk Manager skipped (database not available)", force=True)
 
-if STATE_MANAGER_AVAILABLE:
-    try:
-        state_mgr = StateManager()
-        log_ok("✅ State Manager initialized", force=True)
-    except Exception as e:
-        log_ok(f"⚠️ State Manager init failed: {e}", force=True)
-        state_mgr = None
+# state_mgr is already imported from state_manager module above
 
 # Initialize Strategy Engines
 sip_engine = NiftySIPStrategy(settings)
@@ -1182,7 +1180,7 @@ def get_positions():
         log_ok("❌ API request returned None")
         return {}
     
-    log_ok(f"📡 API Response Status: {resp.status_code}")
+    # log_ok(f"📡 API Response Status: {resp.status_code}")
     
     if resp.status_code != 200:
         if not is_offline():
@@ -1648,12 +1646,19 @@ def wait_for_market_open():
                 flush=True,
                 force=True,
             )
+            
+            # Update state for heartbeat visibility
+            if state_mgr:
+                try:
+                    state_mgr.save()
+                except: pass
+                
             time.sleep(1)
         log_ok("\n🟢 Market open — resuming", flush=True, force=True)
     finally:
         LOG_SUPPRESS = False
 
-def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False):
+def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, rsi=0.0):
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
@@ -1717,6 +1722,7 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 strategy="RSI",
                 reason=f"RSI-based {side.upper()}",
                 broker="mstock",
+                rsi=rsi,
                 fee_breakdown=fee_breakdown
             )
             log_ok(f"📝 Trade logged to database (ID: {trade_id})")
@@ -2011,7 +2017,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                     # Check if we already bought today to avoid duplicates
                     if not check_existing_orders(symbol, exchange, qty, "BUY"):
                         log_ok(f"🎯 SIP TRIGGER: {reason} for {symbol}", force=True)
-                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0)
+                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0, rsi=0.0)
                         
                         # Notify user
                         if notifier:
@@ -2036,9 +2042,18 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
 
             # Check RSI Sell (Only for TRADE strategy)
             if strategy_type == "TRADE":
-                if last_rsi >= sell_rsi and can_consider_sell:
-                    should_sell = True
-                    sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
+                # Explicit "Never Sell at Loss" check
+                is_never_sell_at_loss = settings.get('risk.never_sell_at_loss', False)
+                
+                # We only sell if RSI is overbought AND (Never Sell at Loss is off OR it's a profit)
+                is_profit = current_close > pos["price"]
+                
+                if last_rsi >= sell_rsi:
+                    if not is_never_sell_at_loss or is_profit:
+                        should_sell = True
+                        sell_reason = f"RSI Sell Signal ({last_rsi:.1f} >= {sell_rsi})"
+                    else:
+                        log_ok(f"🛡️ Never Sell at Loss: Prevented {symbol} RSI sell (LTP ₹{current_close} <= Entry ₹{pos['price']})")
 
             # Accumulation Mode (INVEST): We SKIP RSI-based selling
             elif strategy_type == "INVEST":
@@ -2050,7 +2065,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
                     log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
-                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0)
+                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, rsi=last_rsi)
                 return
 
         if has_existing_position:
@@ -2077,7 +2092,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
                     log_ok(f"🛡️ Trade Skipped for {symbol}: Risk Limit Hit (Trade ₹{required_funds:,.2f} > 10% of portfolio ₹{portfolio_risk_limit:,.2f})")
                 else:
                     log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0)
+                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0, rsi=last_rsi)
     finally:
         SYMBOL_LOCKS[symbol] = False
 
@@ -2086,15 +2101,24 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token):
 ONLINE_CHECK_URL = "https://www.google.com/"  # lightweight
 
 def is_system_online() -> bool:
+    # 1. Try Google (HTTP)
     try:
-        resp = requests.head(ONLINE_CHECK_URL, timeout=5)
-        return 200 <= resp.status_code < 500
-    except RequestException:
-        try:
-            resp = requests.get(ONLINE_CHECK_URL, timeout=5)
-            return 200 <= resp.status_code < 500
-        except RequestException:
-            return False
+        resp = requests.head("https://www.google.com", timeout=3)
+        if 200 <= resp.status_code < 500: return True
+    except: pass
+
+    # 2. Try Cloudflare (HTTP)
+    try:
+        resp = requests.head("https://1.1.1.1", timeout=3)
+        if 200 <= resp.status_code < 500: return True
+    except: pass
+    
+    # 3. Try Socket Connect to Google DNS (TCP) - Most reliable
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except:
+        return False
 
 def connectivity_monitor():
     offline = False
@@ -2358,6 +2382,12 @@ def run_cycle():
             if not is_offline():
                 log_ok(f"❌ Cycle error for {symbol}:{ex}: {e}")
 
+    # Heartbeat Log (Throttled to every 10 cycles approx)
+    if not hasattr(run_cycle, "counter"): run_cycle.counter = 0
+    run_cycle.counter += 1
+    if run_cycle.counter % 1 == 0:
+        log_ok(f"👁️ Cycle Active: Monitoring {len(SYMBOLS_TO_TRACK)} strategies...", force=True)
+
     # --- PART 2: Butler Mode (Managed Holdings) ---
     if state_mgr:
         managed = state_mgr.state.get('managed_holdings', {})
@@ -2403,8 +2433,10 @@ def save_state_snapshot():
 
 def main_loop():
     # ---------------- Auto-Login (Phase 3) ----------------
-    if perform_auto_login():
-        pass
+    try:
+        if perform_auto_login():
+            pass
+    except Exception: pass
     
     # ---------------- Load State (Phase 0A) ----------------
     if state_mgr:
@@ -2422,15 +2454,49 @@ def main_loop():
         log_ok("🟢 Status: Online", force=True)
     while True:
         try:
+            if STOP_REQUESTED:
+                log_ok("🛑 Main Loop: Stop Requested. Exiting Loop.", force=True)
+                break
+                
             run_cycle()  # Run cycles back-to-back
+            
+            # Use small sleep that breaks if stop requested
+            for _ in range(5): # 0.5s total
+                if STOP_REQUESTED: break
+                time.sleep(0.1)
+                
         except Exception as e:
             log_ok(f"❌ Main Loop Error: {e}", force=True)
-        time.sleep(0.5) 
+            time.sleep(1)
 
+
+# -----------------------------------------------------------------------------
+# CRITICAL FIX: Ensure Stop Flag Reset clears persistent state
+# -----------------------------------------------------------------------------
+def reset_stop_flag():
+    global STOP_REQUESTED
+    STOP_REQUESTED = False
+    log_ok("🔄 STOP FLAG RESET - Engine Ready.")
+    
+    # Critical: Ensure persistent state is also cleared
+    if state_mgr:
+        try:
+            state_mgr.set_stop_requested(False)
+        except Exception as e:
+            log_ok(f"⚠️ Failed to reset state manager stop flag: {e}")
 
 if __name__ == "__main__":
     try:
+        setup_logging()
+        
+        # Ensure we don't start in stopped state if running manually
+        reset_stop_flag()
+        
         main_loop()
     except KeyboardInterrupt:
         log_ok("🛑 Program terminated by user")
         sys.exit(0)
+    except Exception as e:
+        log_ok(f"🔥 Fatal Error: {e}", force=True)
+        traceback.print_exc()
+        sys.exit(1)

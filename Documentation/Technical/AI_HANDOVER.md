@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2  
-**Last Updated**: January 26, 2026  
-**Status**: Phase 3 Complete (RSI & Stability)  
+**Project**: ARUN Trading Bot Titan V2.2  
+**Last Updated**: February 2, 2026  
+**Status**: v2.2.0 - Dashboard Fidelity & P&L Logic Fixes  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -194,5 +194,97 @@ strategies/          → sector_map.py, trading_tips.json
     - Added `check_existing_orders` guard to prevent duplicate risk-triggered orders.
 
 **Status:** Validation & Live Updates Fixed ✅
+
+### Session: January 30, 2026 - Google Gemini (Antigravity)
+**Objective:** Architecture Upgrade: "Headless Anywhere" Mode + Web Dashboard
+
+**Work Completed:**
+1.  **Architecture Migration (Headless)**:
+    -   **Backend**: Created `backend/` using FastAPI (Python). This wraps the original `kickstart.py` logic in a background thread.
+    -   **Frontend**: Built a new `web-frontend/` using Next.js 14, TailwindCSS, and Shadcn UI.
+    -   **Connection**: Linked Frontend to Backend via REST API.
+
+2.  **Core Integration**:
+    -   Modified `kickstart.py` to be "Control Aware" (`STOP_REQUESTED` flag).
+    -   Created `START_HEADLESS.bat` for one-click launching.
+
+3.  **Features Added**:
+    -   **Web Dashboard**: View live P&L, Active Positions, and Bot Status (localhost:3000).
+    -   **Remote Control**: "Start/Stop Engine" buttons in web UI.
+    -   **Live Logs**: Streamed logs to web interface.
+
+**Status:** Phase 4 (Headless) Complete ✅
+
+### Session: February 1, 2026 - Google Gemini (Antigravity)
+**Objective:** P0 Security Hardening for VPS Deployment
+
+**Work Completed:**
+1.  **JWT Authentication** (`backend/auth.py`):
+    -   Added `python-jose` + `passlib[bcrypt]` for secure token generation
+    -   `/api/auth/login` endpoint for obtaining tokens
+    -   All `/api/*` endpoints now require Bearer token (except `/health`)
+    -   Frontend login page at `/login` with token management
+
+2.  **Rate Limiting** (`backend/main.py`):
+    -   Added `slowapi` for DoS protection
+    -   Configurable limits via middleware
+
+3.  **HTTPS Preparation**:
+    -   `ARUN_SSL_KEYFILE` / `ARUN_SSL_CERTFILE` env vars for SSL
+    -   Configurable CORS via `ARUN_CORS_ORIGINS` env var
+
+4.  **Environment Variable Security** (`settings_manager.py`):
+    -   Encryption key now reads from `ARUN_ENCRYPTION_KEY` (priority over file)
+    -   JWT secret via `ARUN_JWT_SECRET`
+    -   Admin credentials via `ARUN_ADMIN_USER` / `ARUN_ADMIN_PASSWORD`
+
+5.  **New API Endpoints**:
+    -   `GET /api/pnl` - Today's P&L summary
+    -   `GET /api/capital` - Capital allocation summary
+
+6.  **Frontend Updates** (`web-frontend/`):
+    -   Auth-protected dashboard with redirect to `/login`
+    -   Real P&L and Capital data (no more mocked ₹0.00)
+    -   Dark theme with logout button
+
+**Files Modified (Additive - No Core Logic Changed):**
+-   `backend/auth.py` (NEW)
+-   `backend/api/routes.py` (added auth + new endpoints)
+-   `backend/main.py` (rate limiting, CORS config)
+-   `backend/requirements.txt` (security deps)
+-   `settings_manager.py` (env var priority)
+-   `web-frontend/lib/api.ts` (token management)
+-   `web-frontend/app/login/page.tsx` (NEW)
+-   `web-frontend/components/dashboard-view.tsx` (auth guard, real data)
+
+**Backward Compatibility:** ✅ Core `kickstart.py` unchanged. Desktop GUI unaffected.
+
+**Status**: v2.1.0 - Security Hardening Complete ✅
+
+### Session: February 2, 2026 - Google Gemini (Antigravity)
+**Objective:** Dashboard Data Fidelity, RSI Capture, and strict "Never Sell at Loss" Enforcement
+
+**Work Completed:**
+1.  **P&L Calculation Logic** (`database/trades_db.py`):
+    -   Implemented automatic P&L calculation (Gross/Net/%) within `insert_trade` for `SELL` actions.
+    -   SELL trades now automatically find their matching BUY to determine profitability.
+    -   **Data Backfill**: Ran `fix_missing_pnl.py` to retroactively calculate P&L for all historical trades in the database.
+
+2.  **RSI Fidelity** (`kickstart.py`):
+    -   Modified `safe_place_order_when_open` to capture and record the exact RSI value at the time of trade execution.
+    -   Updated all buy/sell triggers to pass the current RSI value to the logging database.
+
+3.  **Strict Safety Enforcement** (`kickstart.py`):
+    -   **Never Sell at Loss**: Added an explicit check in the RSI sell loop. Previously, RSI signals could trigger a loss trade if they bypassed RiskManager. Now, RSI sells are strictly blocked if `LTP < EntryPrice` when `never_sell_at_loss` is enabled.
+    -   Added shield icon `🛡️` logging for blocked loss-sells for better transparency.
+
+4.  **Desktop Dashboard v2.0.2** (`sensei_v1_dashboard.py`):
+    -   **Heartbeat Visibility**: Enhanced the "Last Cycle" indicator with better fonts and placement on the Engine card.
+    -   **Source of Truth**: Optimized counter synchronization to pull directly from `state_mgr` instead of log parsing.
+    -   **Version Bump**: Updated UI to v2.0.2 to distinguish from older, less accurate versions.
+
+5.  **Web API Sync**: Updated `/api/pnl` to return real profitability metrics based on the new database-calculated `pnl_net`.
+
+**Status:** v2.2.0 - Dashboard Fidelity Complete ✅
 
 ---

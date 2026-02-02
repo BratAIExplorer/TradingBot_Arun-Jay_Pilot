@@ -90,9 +90,24 @@ class SettingsManager:
     
     def _get_or_create_encryption_key(self) -> bytes:
         """
-        Get or create encryption key for sensitive data
-        Stores key in .encryption_key file (should be added to .gitignore)
+        Get or create encryption key for sensitive data.
+        
+        Priority:
+        1. ARUN_ENCRYPTION_KEY environment variable (recommended for production)
+        2. .encryption_key file (legacy, for local development)
         """
+        # Check environment variable first (recommended for production)
+        env_key = os.environ.get("ARUN_ENCRYPTION_KEY")
+        if env_key:
+            # Ensure it's valid Fernet key (44 base64 chars)
+            try:
+                key_bytes = env_key.encode() if isinstance(env_key, str) else env_key
+                Fernet(key_bytes)  # Validate key format
+                return key_bytes
+            except Exception:
+                print("⚠️ Invalid ARUN_ENCRYPTION_KEY format, falling back to file")
+        
+        # Fall back to file-based key
         key_file = ".encryption_key"
         if os.path.exists(key_file):
             with open(key_file, 'rb') as f:
@@ -103,6 +118,7 @@ class SettingsManager:
             with open(key_file, 'wb') as f:
                 f.write(key)
             print("🔐 New encryption key generated for sensitive data")
+            print("💡 For production, set ARUN_ENCRYPTION_KEY environment variable")
             return key
     
     def _encrypt_value(self, value: str) -> str:

@@ -126,6 +126,106 @@ The trading engine has encountered a critical error or manual stop.
 Please check the Desktop GUI for details.
         """
         self._send_telegram(message)
+
+    def send_engine_started(self, details: Dict[str, Any] = None):
+        """Send notification when trading engine starts"""
+        if not self.telegram_enabled: return
+        
+        details = details or {}
+        stocks_count = details.get('stocks_count', 0)
+        capital = details.get('capital', 0)
+        mode = details.get('mode', 'LIVE')
+        
+        mode_emoji = "🧪" if mode == "PAPER" else "🚀"
+        
+        message = f"""
+{mode_emoji} <b>ARUN ENGINE STARTED</b>
+
+Mode: {mode} Trading
+Monitoring: {stocks_count} stocks
+Capital Limit: ₹{capital:,.2f}
+Time: {datetime.now().strftime('%H:%M:%S')}
+
+Your bot is now active and watching the markets.
+        """
+        self._send_telegram(message)
+
+    def send_engine_stopped(self, details: Dict[str, Any] = None):
+        """Send notification when trading engine stops"""
+        if not self.telegram_enabled: return
+        
+        details = details or {}
+        reason = details.get('reason', 'Manual stop')
+        pnl = details.get('total_pnl', 0)
+        trades = details.get('trades_today', 0)
+        
+        pnl_emoji = "📈" if pnl >= 0 else "📉"
+        
+        message = f"""
+🛑 <b>ARUN ENGINE STOPPED</b>
+
+Reason: {reason}
+{pnl_emoji} Today's P&L: ₹{pnl:,.2f}
+Trades Today: {trades}
+Time: {datetime.now().strftime('%H:%M:%S')}
+
+Your positions remain open. Bot is no longer monitoring.
+        """
+        self._send_telegram(message)
+
+    def send_daily_summary(self, details: Dict[str, Any]):
+        """Send end-of-day trading summary (call at market close 3:30 PM IST)"""
+        if not self.telegram_enabled: return
+        
+        pnl = details.get('total_pnl', 0)
+        trades = details.get('trades_today', 0)
+        wins = details.get('wins', 0)
+        losses = details.get('losses', 0)
+        positions = details.get('open_positions', 0)
+        portfolio_value = details.get('portfolio_value', 0)
+        
+        pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+        win_rate = (wins / trades * 100) if trades > 0 else 0
+        
+        message = f"""
+📊 <b>ARUN DAILY SUMMARY</b>
+
+{pnl_emoji} <b>Today's P&L: ₹{pnl:,.2f}</b>
+
+Trades: {trades} ({wins} wins, {losses} losses)
+Win Rate: {win_rate:.0f}%
+Open Positions: {positions}
+Portfolio Value: ₹{portfolio_value:,.2f}
+
+Market is now closed. See you tomorrow!
+        """
+        self._send_telegram(message)
+        
+        # Also send email if enabled
+        if self.email_enabled:
+            self._send_email(
+                f"📊 ARUN Daily Summary - {'Profit' if pnl >= 0 else 'Loss'}: ₹{pnl:,.2f}",
+                f"""
+DAILY TRADING SUMMARY
+=====================
+
+Today's P&L: ₹{pnl:,.2f}
+
+Trades Executed: {trades}
+- Wins: {wins}
+- Losses: {losses}
+- Win Rate: {win_rate:.1f}%
+
+Open Positions: {positions}
+Portfolio Value: ₹{portfolio_value:,.2f}
+
+---
+ARUN Trading Bot
+Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                """
+            )
+
+    def _send_email_trade(self, trade: Dict[str, Any]):
         """Send email notification for trade"""
         if not self.sender_email or not self.sender_password:
             return

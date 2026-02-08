@@ -248,7 +248,7 @@ class DashboardV2:
         logo_frame.pack(side="left", padx=20)
         ctk.CTkLabel(logo_frame, text="ARUN", font=("Roboto", 22, "bold"), text_color=COLOR_ACCENT).pack(side="left")
         ctk.CTkLabel(logo_frame, text="TITAN", font=("Roboto", 22, "bold"), text_color="#333").pack(side="left", padx=5)
-        ctk.CTkLabel(logo_frame, text="v2.0.2", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
+        ctk.CTkLabel(logo_frame, text="v2.0.3", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
 
         # Navigation (Segmented Button Style)
         self.nav_var = ctk.StringVar(value="DASHBOARD")
@@ -334,9 +334,10 @@ class DashboardV2:
         self.view_dashboard.grid_columnconfigure(1, weight=7)
         self.view_dashboard.grid_rowconfigure(0, weight=1)
 
-        # === LEFT COLUMN: QUICK STATS & CONTROLS ===
-        left_col = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
+        # === LEFT COLUMN: QUICK STATS & CONTROLS (Now Scrollable) ===
+        left_col = ctk.CTkScrollableFrame(self.view_dashboard, fg_color="transparent", label_text="")
         left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=10)
+        left_col._scrollbar.configure(width=6) # Visible thin scrollbar
         
         # 1. Enhanced Quick Monitor Card
         self.card_stats = TitanCard(left_col, title="QUICK MONITOR", border_color=COLOR_ACCENT)
@@ -366,10 +367,14 @@ class DashboardV2:
         self.lbl_available_wallet = ctk.CTkLabel(stats_in, text="₹10,000 (100%) Available", font=("Roboto", 11, "bold"), text_color="#2c3e50")
         self.lbl_available_wallet.pack(anchor="w", pady=(0, 8))
         
-        # 📈 Today's P&L
-        ctk.CTkLabel(stats_in, text="📈 TODAY'S P&L", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        # 📈 Today's P&L (Consolidated & Bot-Specific)
+        ctk.CTkLabel(stats_in, text="📈 CONSOLIDATED P&L (ALL)", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
         self.lbl_pnl = ctk.CTkLabel(stats_in, text="₹0.00", font=("Roboto", 22, "bold"), text_color=COLOR_SUCCESS)
         self.lbl_pnl.pack(anchor="w", pady=(0, 3))
+        
+        self.lbl_bot_pnl = ctk.CTkLabel(stats_in, text="BOT P&L: ₹0.00", font=("Roboto", 12, "bold"), text_color="#333")
+        self.lbl_bot_pnl.pack(anchor="w", pady=(0, 3))
+
         self.lbl_trade_count = ctk.CTkLabel(stats_in, text="0 trades today", font=("Roboto", 11, "bold"), text_color="#333")
         self.lbl_trade_count.pack(anchor="w", pady=(0, 8))
         
@@ -405,6 +410,22 @@ class DashboardV2:
         # 3. Engine Heartbeat (Visual confirmation of activity)
         self.lbl_heartbeat = ctk.CTkLabel(ctrl_in, text="Engine Idle", font=("Roboto", 11, "bold"), text_color="gray")
         self.lbl_heartbeat.pack(pady=(5, 5))
+        
+        # 4. PANIC BUTTON (v2.4.0 - Family-Ready UX)
+        # Styled to be visible but requires confirmation to prevent accidental clicks
+        self.btn_panic = ctk.CTkButton(
+            ctrl_in, 
+            text="🛑 STOP EVERYTHING", 
+            command=self.panic_stop_confirm,
+            fg_color="#8B0000",  # Dark red - serious but not alarming
+            hover_color=COLOR_DANGER,
+            height=32,
+            font=("Roboto", 12, "bold"),
+            text_color="white",
+            border_width=2,
+            border_color="#FF6B6B"
+        )
+        self.btn_panic.pack(fill="x", pady=(10, 0))
 
         # === RIGHT COLUMN: TABS ===
         right_col = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
@@ -606,7 +627,7 @@ class DashboardV2:
             table_frame = ctk.CTkFrame(table_card, fg_color="transparent")
             table_frame.pack(fill="both", expand=True, padx=15, pady=15)
             
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Price", "Status")
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Skip RSI", "Qty", "Target %", "Price", "Status")
             self.settings_gui_instance.stock_table = ttk.Treeview(
                 table_frame,
                 columns=columns,
@@ -615,7 +636,9 @@ class DashboardV2:
                 style="Treeview"
             )
             for col in columns:
-                self.settings_gui_instance.stock_table.heading(col, text=col)
+                text = col
+                if col == "Skip RSI": text = "Skip rsi"
+                self.settings_gui_instance.stock_table.heading(col, text=text)
                 self.settings_gui_instance.stock_table.column(col, width=80, anchor="center")
             self.settings_gui_instance.stock_table.column("Symbol", width=120)
             self.settings_gui_instance.stock_table.pack(side="left", fill="both", expand=True)
@@ -1459,14 +1482,20 @@ class DashboardV2:
             manual_count = 0
 
             for sym, pos in self.all_positions_data.items():
-                source = pos.get("source", "BOT")
+                source = str(pos.get("source", "BOT")).upper()
+
+                # Determine if this is a Bot position (includes SETTLING)
+                is_bot = "BOT" in source
+                is_manual = not is_bot
 
                 # Apply filter
-                if filter_val != "ALL" and source != filter_val:
+                if filter_val == "BOT" and not is_bot:
+                    continue
+                if filter_val == "MANUAL" and not is_manual:
                     continue
 
                 # Count
-                if source == "BOT":
+                if is_bot:
                     bot_count += 1
                 else:
                     manual_count += 1
@@ -1483,10 +1512,8 @@ class DashboardV2:
 
                 total_pnl += pnl
                 tag = "green" if pnl >= 0 else "red"
-                source_tag = "bot" if source == "BOT" else "manual"
-
                 # Icon prefix for source
-                source_icon = "🤖" if source == "BOT" else "👤"
+                source_icon = "🤖" if is_bot else "👤"
 
                 self.pos_table.insert(
                     "", END,
@@ -1525,8 +1552,8 @@ class DashboardV2:
             # Get latest positions
             positions = self.all_positions_data or safe_get_live_positions_merged()
             
-            # Group by manual vs bot (Butler mode typically applies to MANUAL)
-            manual_stocks = {k: v for k, v in positions.items() if v.get('source') == 'MANUAL'}
+            # Group by manual vs bot (Butler mode typically applies to MANUAL or already managed BUTLER)
+            manual_stocks = {k: v for k, v in positions.items() if v.get('source') in ['MANUAL', 'BUTLER']}
             
             if not manual_stocks:
                 ctk.CTkLabel(self.hybrid_list_frame, text="No manual holdings found in mStock portfolio.", font=("Roboto", 14), text_color="#666").pack(pady=50)
@@ -1602,27 +1629,50 @@ class DashboardV2:
         else: self.stop_bot()
 
     def start_bot(self):
-        import kickstart
-        kickstart.reset_stop_flag()
-        kickstart.set_log_callback(self.write_log)  # Connect logs to UI
-        kickstart.set_log_callback(self.write_log)  # Connect logs to UI
-        kickstart.initialize_stock_configs()             # Load Symbols (Migrated from CSV)
-        
-        self.running = True
-        self.stop_update_flag.clear()
-        self.btn_start.configure(text="🛑 STOP ENGINE", fg_color=COLOR_DANGER, hover_color="#D50000")
-        self.write_log("--- Trade Execution Monitor Initialized ---\n")
-        # Force scroll to monitor tab if possible (needs specialized logic, but at least ensure log sees it)
-        try: 
-            if hasattr(self, 'trade_log'): self.trade_log.see("0.0") 
-        except: pass
+        try:
+            import kickstart
+            self.write_log("DEBUG: Calling reset_stop_flag...\n")
+            kickstart.reset_stop_flag()
+            
+            self.write_log("DEBUG: Setting log callback...\n")
+            kickstart.set_log_callback(self.write_log)  # Connect logs to UI
+            
+            self.write_log("DEBUG: Initializing stock configs...\n")
+            kickstart.initialize_stock_configs()             # Load Symbols (Migrated from CSV)
+            
+            self.running = True
+            self.stop_update_flag.clear()
+            self.btn_start.configure(text="STOP ENGINE", fg_color=COLOR_DANGER, hover_color="#D50000")
+            
+            self.write_log("--- Trade Execution Monitor Initialized ---\n")
+            
+            # REMOVED: trade_log.see("0.0") - Potential cause of silent TclError handling issues
+            # try: 
+            #     if hasattr(self, 'trade_log'): self.trade_log.see("0.0") 
+            # except: pass
 
-        if hasattr(self, 'lbl_engine_status'):
-             self.lbl_engine_status.configure(text="STATUS: RUNNING 🟢", text_color=COLOR_SUCCESS)
-        
-        self.write_log("🚀 ENGINE STARTED. Waiting for data...\n")
-        threading.Thread(target=self.engine_loop, daemon=True).start()
-        threading.Thread(target=self.rsi_worker, daemon=True).start()
+            try:
+                self.write_log("DEBUG: Updating status label...\n")
+                if hasattr(self, 'lbl_engine_status'):
+                     self.lbl_engine_status.configure(text="STATUS: RUNNING", text_color=COLOR_SUCCESS)
+            except Exception as e_lbl:
+                 print(f"Status Label Update Failed: {e_lbl}")
+
+            self.write_log("ENGINE STARTED. Waiting for data...\n")
+            
+            self.write_log("DEBUG: Starting threads...\n")
+            
+            t1 = threading.Thread(target=self.engine_loop, daemon=True)
+            t1.start()
+            
+            t2 = threading.Thread(target=self.rsi_worker, daemon=True)
+            t2.start()
+            
+        except Exception as e:
+            import traceback
+            err = traceback.format_exc()
+            self.write_log(f"CRITICAL ERROR IN START_BOT: {e}\n{err}\n")
+            print(f"CRITICAL ERROR IN START_BOT: {e}\n{err}") # Also print to console
 
     def stop_bot(self):
         if messagebox.askyesno("STOP", "Stop Trading Engine?"):
@@ -1640,10 +1690,15 @@ class DashboardV2:
             self.write_log("--- Trade Execution Monitor Stopped ---\n")
 
     def engine_loop(self):
+        msg = f"DEBUG: engine_loop thread STARTED. Parent running={self.running}, stop_event={self.stop_update_flag.is_set()}\n"
+        self.write_log(msg)
+        
         try:
             import kickstart
+            import sys
+            self.write_log(f"DEBUG: Kickstart imported from: {kickstart.__file__}\n")
         except Exception as import_err:
-            self.write_log(f"❌ Failed to import kickstart: {import_err}\n")
+            self.write_log(f"CRITICAL: Failed to import kickstart: {import_err}\n")
             return
         
         while not self.stop_update_flag.is_set():
@@ -1654,7 +1709,10 @@ class DashboardV2:
             except Exception as e:
                 import traceback
                 self.write_log(f"❌ Engine Cycle Error: {e}\n")
-            time.sleep(0.5)
+            
+            # Use dynamic beat frequency from settings
+            beat = getattr(kickstart, 'ENGINE_BEAT_SECONDS', 2.0)
+            time.sleep(beat)
 
     def rsi_worker(self):
         # ... logic similar to previous ...
@@ -1717,6 +1775,10 @@ class DashboardV2:
         finally: self.root.after(1000, self.update_ui_loop)
 
     def update_positions(self, data):
+        """Update the positions table and summary stats"""
+        # DEBUG: Print to console
+        print(f"🔄 Dashboard Update: Received {len(data)} positions. Filter: {self.holdings_filter_var.get() if hasattr(self, 'holdings_filter_var') else 'N/A'}")
+        
         # Store all positions data for filtering
         self.all_positions_data = data
 
@@ -1725,66 +1787,71 @@ class DashboardV2:
             self.pos_table.delete(item)
 
         total_pnl = 0
-        used_capital = 0
-        bot_count = 0
-        manual_count = 0
+        total_bot = 0
+        total_manual = 0
+        bot_total_pnl = 0
+        
+        # Determine current filter (Case-insensitive)
+        filter_val = self.holdings_filter_var.get().upper() if hasattr(self, 'holdings_filter_var') else "ALL"
 
-        filter_val = self.holdings_filter_var.get()
-
+        # 1. First pass: Count everything (Totals)
         for sym, pos in data.items():
-            source = pos.get("source", "BOT")
-
-            # Apply filter
-            if filter_val != "ALL" and source != filter_val:
-                continue
-
-            # Count
-            if source == "BOT":
-                bot_count += 1
+            source = str(pos.get("source", "BOT")).upper()
+            if "BOT" in source:
+                total_bot += 1
+                bot_total_pnl += pos.get("pnl", 0)
             else:
-                manual_count += 1
+                total_manual += 1
+            total_pnl += pos.get("pnl", 0)
 
+        # 2. Second pass: Populate table based on filter
+        for sym, pos in data.items():
+            source = str(pos.get("source", "BOT")).upper()
+            is_bot = "BOT" in source
+            
+            # Apply Filter
+            if filter_val == "BOT" and not is_bot: continue
+            if filter_val == "MANUAL" and is_bot: continue
+
+            # Format data for display
             s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
             pnl = pos.get("pnl", 0)
             qty = pos.get("qty", 0)
             avg = pos.get("price", 0)
             ltp = pos.get("ltp", 0)
-
-            # Calculate P&L percentage
             pnl_pct = ((ltp - avg) / avg * 100) if avg > 0 else 0
-
-            # Calculate metrics
-            invested = qty * avg
-            if source == "BOT":
-                used_capital += invested
-
-            total_pnl += pnl
+            
             tag = "green" if pnl >= 0 else "red"
-            source_tag = "bot" if source == "BOT" else "manual"
-
-            # Icon prefix for source
-            source_icon = "🤖" if source == "BOT" else "👤"
+            source_icon = "🤖" if is_bot else "👤"
 
             self.pos_table.insert(
                 "", END,
                 values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
-                tags=(tag, source_tag)
+                tags=(tag, "bot" if is_bot else "manual")
             )
 
-        # Update Summary Stats Label
+        # 3. Update Summary Stats Label
         if hasattr(self, 'lbl_position_stats'):
+            now_str = datetime.now().strftime("%H:%M")
             self.lbl_position_stats.configure(
-                text=f"Positions: {len(data)} • Bot: {bot_count} • Manual: {manual_count}"
+                text=f"🕘 Dashboard Sync {now_str} • Bot: {total_bot} • Manual: {total_manual}"
             )
 
-        # Update position stats with Live indicator
-        total_positions = bot_count + manual_count
-        now_str = datetime.now().strftime("%H:%M")
-        self.lbl_position_stats.configure(
-            text=f"🟢 Live {now_str} • {total_positions} positions (Bot: {bot_count} | Manual: {manual_count})"
-        )
-
-        self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
+        # 4. Update Main P&L
+        if hasattr(self, 'lbl_pnl'):
+            self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
+        
+        # 5. Update Bot P&L
+        if hasattr(self, 'lbl_bot_pnl'):
+            color = COLOR_SUCCESS if bot_total_pnl >= 0 else COLOR_DANGER
+            prefix = "+" if bot_total_pnl > 0 else ""
+            self.lbl_bot_pnl.configure(text=f"BOT P&L: {prefix}₹{bot_total_pnl:,.2f}", text_color=color)
+        
+        # Update Bot P&L
+        if hasattr(self, 'lbl_bot_pnl'):
+            color = COLOR_SUCCESS if bot_total_pnl >= 0 else COLOR_DANGER
+            prefix = "+" if bot_total_pnl > 0 else ""
+            self.lbl_bot_pnl.configure(text=f"BOT P&L: {prefix}₹{bot_total_pnl:,.2f}", text_color=color)
         
         # Update Safety Box Bar
         try:
@@ -1832,8 +1899,8 @@ class DashboardV2:
                     positions = safe_get_live_positions_merged()
                     deployed = 0.0
                     for sym, pos in positions.items():
-                        source = pos.get("source", "BOT")
-                        if source == "BOT":
+                        source = pos.get("source", "BOT").upper()
+                        if "BOT" in source:
                             qty = pos.get("qty", 0)
                             avg_price = pos.get("price", 0)
                             deployed += qty * avg_price
@@ -1885,28 +1952,35 @@ class DashboardV2:
         """Update Bot Wallet Breakdown Card"""
         try:
             # Update total allocated
-            self.lbl_total_allocated.configure(text=f"₹{allocated:,.0f}")
+            if hasattr(self, 'lbl_total_allocated'):
+                self.lbl_total_allocated.configure(text=f"₹{allocated:,.0f}")
 
             # Calculate percentages
             if allocated > 0:
                 pct_deployed = (deployed / allocated) * 100
-                pct_available = 100 - pct_deployed
-                available = allocated - deployed
+                
+                # Logic Fix: Available cannot be negative
+                available = max(0, allocated - deployed)
+                
+                # Pct available is based on the clamped available amount relative to allocated
+                pct_available = (available / allocated) * 100
 
                 # Update progress bar
-                self.wallet_progress.set(min(1.0, deployed / allocated))
+                if hasattr(self, 'wallet_progress'):
+                    self.wallet_progress.set(min(1.0, deployed / allocated))
+
+                    # Dynamic color
+                    color = COLOR_SUCCESS
+                    if pct_deployed > 90: color = COLOR_DANGER
+                    elif pct_deployed > 70: color = COLOR_WARN
+                    self.wallet_progress.configure(progress_color=color)
 
                 # Update labels
-                self.lbl_deployed.configure(text=f"₹{deployed:,.0f} ({pct_deployed:.0f}%)")
-                self.lbl_available_wallet.configure(text=f"₹{available:,.0f} ({pct_available:.0f}%) Available")
-
-                # Change color based on usage
-                if pct_deployed > 90:
-                    self.wallet_progress.configure(progress_color=COLOR_DANGER)
-                elif pct_deployed > 70:
-                    self.wallet_progress.configure(progress_color=COLOR_WARN)
-                else:
-                    self.wallet_progress.configure(progress_color=COLOR_SUCCESS)
+                if hasattr(self, 'lbl_deployed'):
+                    self.lbl_deployed.configure(text=f"Used: ₹{deployed:,.0f} ({pct_deployed:.0f}%)")
+                    
+                if hasattr(self, 'lbl_available_wallet'):
+                    self.lbl_available_wallet.configure(text=f"₹{available:,.0f} ({pct_available:.0f}%) Available")
 
         except Exception as e:
             self.write_log(f"❌ Wallet update error: {e}\n")
@@ -1980,44 +2054,19 @@ class DashboardV2:
                 if allocated <= 0:
                     allocated = self.settings_mgr.get("capital.total_capital", 50000.0)
                 
-                # Calculate currently deployed (BOT only)
+                # Calculate currently deployed (BOT only - Strict Summation)
                 deployed = 0.0
                 if live_pos:
                     for sym, pos in live_pos.items():
-                        if pos.get("source") == "BOT":
+                        # Only sum positions that are strictly tagged as BOT or BOT (SETTLING)
+                        # This excludes BUTLER (Managed) and MANUAL positions from capital usage.
+                        src = str(pos.get("source", "BOT")).upper()
+                        if src == "BOT" or "SETTLING" in src:
                             deployed += pos.get("qty", 0) * pos.get("price", 0)
 
-                # Update Bot Capital labels with change detection
-                if hasattr(self, 'lbl_total_allocated'):
-                    new_alloc_txt = f"₹{allocated:,.0f}"
-                    if getattr(self.lbl_total_allocated, "_current_text", "") != new_alloc_txt:
-                        self.lbl_total_allocated.configure(text=new_alloc_txt)
-                        self.lbl_total_allocated._current_text = new_alloc_txt
-
-                if hasattr(self, 'lbl_deployed'):
-                    new_dep_txt = f"Used: ₹{deployed:,.0f}"
-                    if getattr(self.lbl_deployed, "_current_text", "") != new_dep_txt:
-                        self.lbl_deployed.configure(text=new_dep_txt)
-                        self.lbl_deployed._current_text = new_dep_txt
-
-                if hasattr(self, 'wallet_progress') and allocated > 0:
-                    new_prog = min(1.0, deployed / allocated)
-                    if getattr(self, "_current_prog", -1) != new_prog:
-                        self.wallet_progress.set(new_prog)
-                        self._current_prog = new_prog
-                        
-                        # Dynamic color
-                        pct = new_prog * 100
-                        color = COLOR_SUCCESS if pct < 70 else COLOR_WARN if pct < 90 else COLOR_DANGER
-                        self.wallet_progress.configure(progress_color=color)
-
-                if hasattr(self, 'lbl_available_wallet') and allocated > 0:
-                    avail = max(0, allocated - deployed)
-                    avail_pct = max(0, 100 - (deployed/allocated*100))
-                    new_avail_txt = f"₹{avail:,.0f} ({avail_pct:.0f}%) Available"
-                    if getattr(self.lbl_available_wallet, "_current_text", "") != new_avail_txt:
-                        self.lbl_available_wallet.configure(text=new_avail_txt)
-                        self.lbl_available_wallet._current_text = new_avail_txt
+                # UNIFIED UPDATE: Use common method
+                self.update_wallet_display(allocated, deployed)
+                
             except: pass
 
             # 4. Update P&L
@@ -2032,11 +2081,17 @@ class DashboardV2:
             
             # 5. Update Trade Count
             if hasattr(self, 'lbl_trade_count'):
-                count = len(today_trades) if today_trades is not None else 0
+                count = 0
+                if today_trades is not None:
+                    if hasattr(today_trades, 'empty'):
+                        count = len(today_trades.index)
+                    else:
+                        count = len(today_trades)
+                
                 new_text = f"{count} trades today"
-                if getattr(self.lbl_trade_count, "_current_text", "") != new_text:
+                if getattr(self, "_current_trade_count_text", "") != new_text:
                     self.lbl_trade_count.configure(text=new_text, text_color="#333")
-                    self.lbl_trade_count._current_text = new_text
+                    self.lbl_trade_count._current_trade_count_text = new_text
             
             # 6. Update Win Rate
             if hasattr(self, 'lbl_win_rate'):
@@ -2074,20 +2129,36 @@ class DashboardV2:
             # 8. Update Live Execution Counters from StateManager (Source of Truth)
             try:
                 from state_manager import state as state_mgr
-                counters = state_mgr.get_trade_counters()
                 
-                # Sync local trade_stats for consistency
-                self.trade_stats['attempts'] = counters.get('attempts', 0)
-                self.trade_stats['success'] = counters.get('success', 0)
-                self.trade_stats['failed'] = counters.get('failed', 0)
+                # Use Database as source of truth for "Today" counters
+                # Filter today's trades for BOT trades only
+                bot_today = []
+                if today_trades is not None:
+                    # Convert DataFrame to list of dicts if necessary
+                    if hasattr(today_trades, 'to_dict'):
+                        entries = today_trades.to_dict('records')
+                    else:
+                        entries = today_trades
+                    
+                    bot_today = [t for t in entries if "BOT" in str(t.get('source', '')).upper()]
+                
+                attempts = len(bot_today)
+                success = sum(1 for t in bot_today if t.get('action') == 'SELL' and (t.get('pnl_net', 0) or 0) > 0)
+                failed = sum(1 for t in bot_today if t.get('action') == 'SELL' and (t.get('pnl_net', 0) or 0) < 0)
 
-                for key, attr in [('attempts', 'lbl_attempt_count'), ('success', 'lbl_success_count'), ('failed', 'lbl_fail_count')]:
+                # Sync local trade_stats for consistency
+                self.trade_stats['attempts'] = attempts
+                self.trade_stats['success'] = success
+                self.trade_stats['failed'] = failed
+
+                # Update UI labels
+                for val_to_set, attr in [(attempts, 'lbl_attempt_count'), (success, 'lbl_success_count'), (failed, 'lbl_fail_count')]:
                     if hasattr(self, attr):
                         lbl = getattr(self, attr)
-                        val = str(counters.get(key, 0))
-                        if getattr(lbl, "_current_val", "") != val:
-                            lbl.configure(text=val)
-                            lbl._current_val = val
+                        val_str = str(val_to_set)
+                        if getattr(lbl, "_current_val", "") != val_str:
+                            lbl.configure(text=val_str)
+                            lbl._current_val = val_str
                 
                 # 9. Update Engine Heartbeat
                 if hasattr(self, 'lbl_heartbeat') and self.running:
@@ -2149,7 +2220,8 @@ class DashboardV2:
             "stop loss triggered", "profit target hit",  # Exit conditions
             "⚡ signal",                            # Trade signals
             "initialized", "status", "bot started", "monitoring", # System Status
-            "paper trade", "buy", "sell"           # Explicit Actions
+            "paper trade", "buy", "sell",          # Explicit Actions
+            "market closed", "heartbeat", "engine started", "loop", "wait", "online" # ADDED: Vital Status Updates
         ])
         is_failure = any(x in text_lower for x in ["failed", "rejected", "insufficient"])
         is_success = any(x in text_lower for x in ["placed", "executed", "filled"])
@@ -2189,6 +2261,49 @@ class DashboardV2:
                     if len(content.splitlines()) > 50:
                         self.alert_box.delete("50.0", "end")
             except: pass
+    
+    def panic_stop_confirm(self):
+        """Family-friendly STOP EVERYTHING confirmation (v2.4.0)"""
+        # Clear, non-alarming message explaining what happens
+        confirm_message = (
+            "This will STOP the trading engine immediately.\n\n"
+            "What happens:\n"
+            "• Bot stops monitoring the market\n"
+            "• No new trades will be placed\n"
+            "• All pending orders will be cancelled\n\n"
+            "What stays safe:\n"
+            "• Your existing stocks remain in your account\n"
+            "• Your money is NOT withdrawn\n"
+            "• You can restart anytime\n\n"
+            "Do you want to stop the bot?"
+        )
+        
+        if messagebox.askyesno("Stop Trading Bot?", confirm_message, icon="warning"):
+            try:
+                # Import and call request_stop from kickstart
+                from kickstart import request_stop
+                request_stop()
+                
+                # Update UI to show stopped state
+                self.running = False
+                if hasattr(self, 'btn_start'):
+                    self.btn_start.configure(text="▶ START", fg_color=COLOR_SUCCESS)
+                if hasattr(self, 'lbl_engine_status'):
+                    self.lbl_engine_status.configure(text="STOPPED 🔴", text_color=COLOR_DANGER)
+                if hasattr(self, 'lbl_heartbeat'):
+                    self.lbl_heartbeat.configure(text="Engine stopped by user", text_color=COLOR_DANGER)
+                    
+                self.write_log("🛑 ENGINE STOPPED - User pressed emergency stop\n")
+                
+                messagebox.showinfo(
+                    "Bot Stopped",
+                    "The trading bot has been stopped safely.\n\n"
+                    "Your existing positions are still open.\n"
+                    "Click 'START' when you're ready to resume."
+                )
+            except Exception as e:
+                self.write_log(f"❌ Stop error: {e}\n")
+                messagebox.showerror("Error", f"Failed to stop engine: {e}")
     
     def emergency_exit(self):
         if messagebox.askyesno("CONFIRM", "Panic Sell All?"):
@@ -2349,6 +2464,20 @@ if __name__ == "__main__":
         
         def start_dashboard():
             # This runs after disclaimer accept
+            
+            # v2.4.0: Check if first-run wizard is needed
+            try:
+                from first_run_wizard import should_show_wizard, FirstRunWizard
+                if should_show_wizard():
+                    print("🧙 First-run wizard detected - launching setup...")
+                    wizard = FirstRunWizard(on_complete_callback=lambda: None)
+                    wizard.run()  # Blocks until wizard completes
+                    print("✅ Wizard complete - launching dashboard...")
+            except ImportError:
+                print("⚠️ first_run_wizard.py not found, skipping wizard")
+            except Exception as e:
+                print(f"⚠️ Wizard error: {e} - continuing to dashboard")
+            
             app = DashboardV2(root)
             # No need to call app.run() since we have root.mainloop() below
         

@@ -114,6 +114,9 @@
         "paper_trading_mode": true,
         "auto_start_on_market_open": false,
         "log_level": "INFO",
-        "show_warnings": true
-    }
+        "show_warnings": true,
+        "engine_beat_seconds": 2,
+        "first_run_completed": false
+    },
+    "stocks": []
 }

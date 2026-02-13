@@ -233,23 +233,31 @@ def fetch_market_data_once(symbol: str, exchange: str) -> Tuple[Optional[dict], 
         url = "https://api.mstock.trade/openapi/typea/instruments/quote/ohlc"
         headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
         mstock_symbol = symbol.upper()
+
+        # REITs (RR series on NSE) are not found by the OHLC API on NSE.
+        # Try BSE where they are listed as regular equity.
         if mstock_symbol in REIT_TOKEN_MAP:
-             params = {"i": f"{exchange}:{REIT_TOKEN_MAP[mstock_symbol]}"}
+            exchanges_to_try = ["BSE", "NSE"] if exchange == "NSE" else [exchange]
         else:
-             params = {"i": key}
-             
-        resp = safe_request("GET", url, headers=headers, params=params)
-        if resp is None or resp.status_code != 200:
-            if resp is not None:
+            exchanges_to_try = [exchange]
+
+        for ex in exchanges_to_try:
+            params = {"i": f"{ex}:{mstock_symbol}"}
+            resp = safe_request("GET", url, headers=headers, params=params)
+            if resp and resp.status_code == 200:
+                try:
+                    data = resp.json() or {}
+                    st.result = (data.get("data") or {}).get(params["i"])
+                    if st.result:
+                        CYCLE_QUOTES[key] = st.result
+                        return st.result, ex
+                except ValueError:
+                    pass
+            # Only log non-REIT failures (REITs silently fall through to holdings LTP)
+            elif resp and mstock_symbol not in REIT_TOKEN_MAP:
                 log_ok(f"❌ API error {resp.status_code}: {resp.text}")
-            st.result = None
-        else:
-            try:
-                data = resp.json() or {}
-                st.result = (data.get("data") or {}).get(params["i"])
-            except ValueError:
-                log_ok(f"❌ API returned invalid JSON for {key}")
-                st.result = None
+
+        st.result = None
         CYCLE_QUOTES[key] = st.result
         return st.result, exchange
     finally:
@@ -506,34 +514,30 @@ def fetch_market_data(symbol, exchange):
         try:
             url = f"https://api.mstock.trade/openapi/typea/instruments/quote/ohlc"
             headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
-            
-            # Fallback for REITs that mStock rejects by name
+
             mstock_symbol = symbol.upper()
+
+            # REITs (RR series on NSE) are not found by the OHLC API on NSE.
+            # Try BSE where they are listed as regular equity.
             if mstock_symbol in REIT_TOKEN_MAP:
-                # Use Scrip Mapping (e.g. NSE:9383)
-                mstock_symbol = REIT_TOKEN_MAP[mstock_symbol]
-                params = {"i": f"{exchange}:{mstock_symbol}"}
+                exchanges_to_try = ["BSE", "NSE"] if exchange == "NSE" else [exchange]
             else:
-                params = {"i": f"{exchange}:{mstock_symbol}"}
-            
-            response = safe_request("GET", url, headers=headers, params=params)
-            print(f"DEBUG: {symbol} Params: {params} Status: {response.status_code if response else 'None'}")
-            
-            if response and response.status_code == 200:
-                data = response.json() or {}
-                result = (data.get("data") or {}).get(params["i"])
-                if result:
-                    return result, exchange
-                else:
-                    print(f"DEBUG: {symbol} Result key missing in {data}")
-                    log_ok(f"⚠️ Symbol {symbol} not found in API response data.")
-            elif response:
-                print(f"DEBUG: {symbol} Error Response: {response.text[:200]}")
-                # Log but don't error out yet, try fallback
-                
+                exchanges_to_try = [exchange]
+
+            for ex in exchanges_to_try:
+                params = {"i": f"{ex}:{mstock_symbol}"}
+                response = safe_request("GET", url, headers=headers, params=params)
+
+                if response and response.status_code == 200:
+                    data = response.json() or {}
+                    result = (data.get("data") or {}).get(params["i"])
+                    if result:
+                        return result, ex
+                # Silently skip REIT failures (falls through to holdings LTP)
+
         except Exception as e:
             # Skip logging if simulation/fallback might hit
-            pass 
+            pass
 
     # 1.5 Fallback to Holdings LTP if API fails (as suggested by user)
     if not is_offline():
@@ -1176,7 +1180,7 @@ if RISK_MANAGER_AVAILABLE and db:
                 raw_md["lp"] = raw_md["last_price"] # Map for RiskManager compatibility
             return raw_md
             
-        risk_mgr = RiskManager(settings, db, risk_md_fetcher)
+        risk_mgr = RiskManager(settings, db, risk_md_fetcher, state_manager=state_mgr)
         log_ok("✅ Risk Manager initialized", force=True)
     except Exception as e:
         log_ok(f"⚠️ Risk Manager init failed: {e}", force=True)
@@ -1845,7 +1849,8 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
     # print(check_existing_orders(symbol, exchange, qty, side))
     
     if check_existing_orders(symbol, exchange, qty, side):
-        log_ok(f"⏸️ Skipping {side} order for {symbol}:{exchange} (Qty: {qty}) due to existing order")
+        ex_msg = f"{symbol}:{exchange}" if side.upper() == "SELL" else f"{symbol}"
+        log_ok(f"⏸️ Skipping {side} order for {ex_msg} (Qty: {qty}) due to existing order")
         return False
     log_ok(f"Placing order : Symbol : {symbol}, Exchange : {exchange}, Quantity : {qty}, Side : {side}.")
     
@@ -2047,19 +2052,27 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
     total_buy_qty = 0
     total_sell_qty = 0
     for o in orders:
-        if (
-            o.get("tradingsymbol") == symbol and
-            (o.get("exchange") or o.get("exchangeSegment") or "NSE") == exchange
-        ):
+        ord_symbol = o.get("tradingsymbol")
+        # SYMBOL-AWARE CHECK: If we are checking for a BUY, we block if ANY exchange has this symbol
+        # If we are checking for a SELL, it remains exchange-specific (as you can only sell where you hold)
+        is_same_symbol = (ord_symbol == symbol)
+        is_same_exchange = (o.get("exchange") or o.get("exchangeSegment") or "NSE") == exchange
+
+        # Important: For BUY, we care about the symbol anywhere. For SELL, we care about the specific exchange.
+        if is_same_symbol:
             transaction_type = (o.get("transaction_type") or "").upper()
             status = (o.get("status") or "").upper()
             order_qty = o.get("quantity", 0) if isinstance(o.get("quantity"), (int, float)) else 0
-            if transaction_type == "BUY" and status in blocking:
-                has_buy = True
-                total_buy_qty += order_qty
-            elif transaction_type == "SELL" and status in blocking:
-                has_sell = True
-                total_sell_qty += order_qty
+            
+            # If it's a SELL, we only block if it's the SAME exchange (standard behavior)
+            # If it's a BUY, we block if ANY exchange has a matching order for this symbol
+            if side.upper() == "BUY" or is_same_exchange:
+                if transaction_type == "BUY" and status in blocking:
+                    has_buy = True
+                    total_buy_qty += order_qty
+                elif transaction_type == "SELL" and status in blocking:
+                    has_sell = True
+                    total_sell_qty += order_qty
     
     # If both buy and sell orders exist, allow buy orders only if total quantities match
     if side.upper() == "BUY" and has_buy and has_sell:
@@ -2067,13 +2080,14 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
     
     # Check for blocking orders of the same side
     for o in orders:
-        if (
-            o.get("tradingsymbol") == symbol and
-            (o.get("exchange") or o.get("exchangeSegment") or "NSE") == exchange and
-            (o.get("transaction_type") or "").upper() == side.upper() and
-            (o.get("status") or "").upper() in blocking
-        ):
-            return True
+        if o.get("tradingsymbol") == symbol:
+            is_same_exchange = (o.get("exchange") or o.get("exchangeSegment") or "NSE") == exchange
+            # For BUY, block if ANY exchange has a BUY for this symbol
+            # For SELL, block only if THAT exchange has a SELL
+            if (side.upper() == "BUY") or (side.upper() == "SELL" and is_same_exchange):
+                if (o.get("transaction_type") or "").upper() == side.upper() and \
+                   (o.get("status") or "").upper() in blocking:
+                    return True
     return False
     
 def process_market_data(symbol, exchange, market_data, tf, instrument_token, live_positions_cache=None):
@@ -2188,11 +2202,16 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
         else:
             live_positions_merged = safe_get_live_positions_merged()
 
-        # Check for existing position for the specific symbol and exchange
-        key_ex = (symbol, exchange)
-        pos_rec = live_positions_merged.get(key_ex, {})
-        available_qty = int(pos_rec.get("qty", 0)) - int(pos_rec.get("used_quantity", 0))
-        has_existing_position = available_qty > 0
+        # Check for existing position for the symbol across ALL exchanges
+        has_existing_position = False
+        pos_rec = {}
+        found_ex = None
+        for (s, e), p in live_positions_merged.items():
+            if s == symbol and (int(p.get("qty", 0)) - int(p.get("used_quantity", 0))) > 0:
+                has_existing_position = True
+                pos_rec = p
+                found_ex = e
+                break
 
         # Update position for the specific symbol and exchange
         key_ex = (symbol, exchange)
@@ -2266,7 +2285,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
                 return
 
         if has_existing_position:
-            log_ok(f"⚠️ Skipped {symbol}: Existing position detected (Qty: {pos_rec.get('qty', 0)})", force=True) 
+            log_ok(f"⚠️ Skipped {symbol}: Existing position detected on {found_ex} (Qty: {pos_rec.get('qty', 0)})", force=True) 
             return
 
         ignore_rsi = sym_config.get("Ignore_RSI", False)

@@ -305,6 +305,9 @@ class MACDScanner:
                      if not df.empty:
                          frames[f"{ticker}.NS"] = df # Store with suffix
                          successful += 1
+            
+            # Small delay between direct requests to be extra safe
+            time.sleep(0.2)
         
         if not frames:
             return pd.DataFrame()

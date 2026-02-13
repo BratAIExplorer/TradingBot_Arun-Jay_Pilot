@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2.2  
-**Last Updated**: February 2, 2026  
-**Status**: v2.2.0 - Dashboard Fidelity & P&L Logic Fixes  
+**Project**: ARUN Trading Bot Titan V2.4.2
+**Last Updated**: February 13, 2026  
+**Status**: v2.4.2 - Risk UI & Stability Fixes  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -288,3 +288,123 @@ strategies/          → sector_map.py, trading_tips.json
 **Status:** v2.2.0 - Dashboard Fidelity Complete ✅
 
 ---
+
+### Session: February 2, 2026 (Evening) - Stability Redux (v2.2.1)
+**Objective**: Fix dashboard regressions and refine engine connectivity.
+
+**Key Changes**:
+- **Engine UI Fix**: Sidebar converted to `ScrollableFrame` to prevent "Start/Stop" buttons from being hidden on smaller screens or card overflows.
+- **Connectivity Hardening**: Updated `is_system_online` in `kickstart.py` to prioritize the **Broker API** endpoint. This prevents false "Offline" status if Google/Cloudflare are temporarily unreachable.
+- **Unified Logic**:
+    - "Monitoring X strategies" log now correctly sums both **Stocks list (7)** and **Hybrid holdings (4)**.
+    - Dashboard counters for "Today's Attempts/Success" now sync with the database daily trades for absolute fidelity.
+- **Bug Fix**: Patch for `The truth value of a DataFrame is ambiguous` error in the dashboard's background update loop.
+
+**Status**: v2.2.1 - Stability & Connectivity Hardening ✅
+
+### Session: February 3, 2026 - Google Gemini (Antigravity)
+**Objective**: Fix REIT Symbols (400 Errors) and Balance Reporting Inflation
+
+**Issue**:
+- **REIT Symbols**: mStock OHLC API rejected symbols like `EMBASSY` and `BIRET` by name, causing 400 errors and missing prices.
+- **Balance Discrepancy**: "Used" capital was inflated because manual holdings in "Butler" mode were tagged as `BOT` and added to the capital summation.
+
+**Work Completed**:
+1.  **REIT Price Fallback** (`kickstart.py`):
+    - Added `REIT_TOKEN_MAP` to map symbols to their numeric Scrip Master tokens (e.g., EMBASSY: 9383).
+    - Implemented a robust price fallback: if the OHLC API fails for a symbol, the bot now pulls the LTP directly from your live holdings.
+2.  **Strict Capital Summation** (`kickstart.py` & `sensei_v1_dashboard.py`):
+    - Updated `merge_positions_and_orders` to tag managed holdings as `BUTLER` instead of `BOT`.
+    - Patched the dashboard logic to strictly sum only `BOT` and `BOT (SETTLING)` tags for the "Used Capital" display.
+3.  **Connectivity Hardening**:
+    - Standardized browser-like headers in `safe_request` to avoid WAF blocks.
+    - Refined offline detection to prevent the bot from pausing indefinitely during transient API hiccups.
+
+**Status**: v2.3.0 - REIT & Balance Fix Complete ✅
+
+### Session: February 13, 2026 - Claude Opus 4.6 (Anthropic)
+**Objective**: Fix REIT OHLC API 400 Errors & Scanner Key Case Bug
+
+**Issue**:
+- **REIT OHLC 400 Errors**: The `REIT_TOKEN_MAP` mapped EMBASSY→`9383`, BIRET→`2203` (numeric Scrip Master tokens) for the OHLC API, but this API expects **scrip names**, not numeric tokens. The API interpreted `9383` as a scrip name and returned "Invalid symbol. Scrip Name '9383' not found in exchange file." These errors spammed the log every ~1.5 minutes during the engine heartbeat cycle.
+- **Scanner Key Case Bug**: `scanner_complete()` in `sensei_v1_dashboard.py` used `r['signal']` (lowercase) but `scanner_engine.py` returns `r['SIGNAL']` (uppercase), causing a silent KeyError that prevented the STRONG BUY/BUY summary counts from displaying.
+
+**Root Cause Analysis**:
+- REITs (EMBASSY, BIRET) are listed as **RR series** (REIT Receipts) on NSE, not EQ (Equity). The mStock OHLC API does not recognize RR series instruments by scrip name on NSE.
+- On **BSE**, these same symbols are listed as regular **Equity (EQ)** series (EMBASSY: token 542602, BIRET: token 543261), which the OHLC API can resolve.
+- The numeric token approach (`NSE:9383`) was wrong because the OHLC API parameter `i=EXCHANGE:SCRIP_NAME` treats the second part as a scrip name, not a numeric token.
+
+**Work Completed**:
+1. **`fetch_market_data_once()` (kickstart.py:~231)**: Removed REIT_TOKEN_MAP usage for OHLC API. Now tries BSE first for REIT symbols (where they're listed as equity), then falls back to NSE. Silences log spam for known REIT failures.
+2. **`fetch_market_data()` (kickstart.py:~504)**: Same fix - tries BSE for REITs, silently falls through to holdings LTP fallback on failure.
+3. **`scanner_complete()` (sensei_v1_dashboard.py:~1335)**: Fixed `r['signal']` → `r.get('SIGNAL')` to match scanner engine's uppercase keys.
+
+**Important Notes for Next Agent**:
+- The `REIT_TOKEN_MAP` is still used correctly in `resolve_instrument_token()` (line ~829) and historical data API (line ~1974) where numeric tokens ARE needed. Do NOT remove it entirely.
+- The scanner (scanner_engine.py) uses **Yahoo Finance** exclusively for data - it does NOT call mStock. Scanner errors are unrelated to mStock API errors.
+- If more REIT/InvIT symbols are added in the future, they should be added to `REIT_TOKEN_MAP` in `constants.py` AND verified that their BSE listing exists as EQ series.
+
+**Status**: v2.3.1 - REIT OHLC & Scanner Fix ✅
+
+### Session: February 13, 2026 (Continued) - Claude Opus 4.6 (Anthropic)
+**Objective**: Modernize Scanner UI + Add Track-to-Stocks Feature
+
+**Work Completed**:
+1. **Scanner UI Modernization** (`sensei_v1_dashboard.py:build_scanner_view()`):
+   - Replaced verbose "HOW IT WORKS" info card with compact inline hint badge
+   - Streamlined control bar with mode selector, separator, and pill-shaped buttons
+   - Compact inline progress bar (replaces separate TitanCard)
+   - Modern results section with colored pill badges for STRONG BUY / BUY counts
+   - Improved table styling with selection highlighting and flat headings
+   - Added empty state message when no results
+   - Added "tracked" tag (blue tint) for stocks already in portfolio
+
+2. **Track-to-Stocks Feature** (new `on_scanner_track_click()` method):
+   - Added "Action" column (7th column, labeled "TRACK") to scanner results table
+   - Shows "+ Track" for untracked stocks, "Tracked" for already-configured ones
+   - Single-click on Action column adds stock to `settings.json` via `settings_mgr.add_stock_config()`
+   - Row updates to "Tracked" (blue tint) immediately after adding
+   - Toast notification shows confirmation message for 3 seconds
+   - Refreshes STOCKS tab table automatically
+   - Default config: RSI 35/65, 15T timeframe, dynamic quantity, 10% profit target
+
+3. **Dead Code Cleanup**:
+   - Removed ~50 lines of orphaned code inside `filter_scanner_results()` that referenced undefined `parent` variable (positions table duplicate that was never reachable)
+   - Fixed `filter_scanner_results()` to be clean 3-line method
+
+4. **First Run Wizard Fix** (`first_run_wizard.py`):
+   - Fixed mousewheel `TclError: invalid command name` by checking `winfo_exists()` before scrolling
+
+**Widget Names Preserved** (for handler compatibility):
+`self.scanner_running`, `self.scan_mode_var`, `self.btn_start_scan`, `self.btn_stop_scan`,
+`self.progress_card`, `self.scanner_table`, `self.scan_progress_bar`, `self.lbl_scan_status`,
+`self.scanner_results`, `self.lbl_last_scan`, `self.scanner_filter_var`
+
+**New Widgets Added**:
+`self.lbl_strong_buy_badge`, `self.lbl_buy_badge`, `self.lbl_scanner_empty`, `self.lbl_scanner_toast`
+
+### Session: February 13, 2026 - Google Gemini (Antigravity)
+**Objective**: Fix Duplicate Buys, Config Corruption, and Modernize Risk UI
+
+**Issue**:
+- **Duplicate Buys**: The bot was placing buy orders for the same symbol on both NSE and BSE because the check was exchange-specific.
+- **Config Corruption**: `settings.json` contained `NaN` values for the "Strategy" field, causing UI display errors.
+- **Outdated UI**: The "Risk Controls" tab was basic and lacked visual feedback.
+
+**Work Completed**:
+1.  **Duplicate Buy Prevention** (`kickstart.py`):
+    -   Modified `check_existing_orders` to be **symbol-aware** for BUY orders. If a symbol exists on ANY exchange (holdings or pending orders), a new BUY is blocked.
+    -   SELL orders remain exchange-specific (you can only sell what you hold on that specific exchange).
+
+2.  **Config Repair** (`settings.json`):
+    -   Identified and replaced `NaN` values in the `strategy` field with `"TRADE"`.
+    -   Ensured the file is valid JSON to prevent "nan" display in the UI.
+
+3.  **UI Modernization** (`settings_gui.py`):
+    -   **Risk Controls Redesign**: Completely overhauled the tab with grouped cards ("Primary Protection", "Safety Nets", "Advanced Overrides").
+    -   **Visual Sliders**: Added color-coded sliders for Stop-Loss (Red), Profit Target (Green), etc.
+    -   **Safety Toggles**: improved the "Never Sell at Loss" switch with a clear warning and `COLOR_DANGER` styling.
+    -   **Fix**: Added missing `COLOR_DANGER` and `COLOR_SUCCESS` constants.
+
+**Status**: v2.4.2 - Risk UI & Stability Fixes ✅
+

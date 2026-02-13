@@ -8,7 +8,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(dir /s /b \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\")",
-      "Bash(dir \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\\\\BOT Scrapper\")"
+      "Bash(dir \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\\\\BOT Scrapper\")",
+      "Bash(ls:*)",
+      "Bash(find:*)"
     ]
   }
 }

@@ -58,16 +58,48 @@ class SettingsManager:
     
     def save(self) -> bool:
         """
-        Save current settings to JSON file
+        Save current settings to JSON file and create a backup
         """
         try:
+            # Create backup before saving (or after, but let's do it on successful save)
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
+            
+            self._create_backup()
             print(f"✅ Settings saved to {self.settings_file}")
             return True
         except Exception as e:
             print(f"❌ Error saving settings: {e}")
             return False
+
+    def _create_backup(self):
+        """
+        Create a timestamped backup of settings.json in the logs directory.
+        Maintains only the last 5 backups.
+        """
+        try:
+            import shutil
+            from datetime import datetime
+            import glob
+
+            # Ensure logs directory exists
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+
+            # Create new backup
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = os.path.join(log_dir, f"settings_backup_{timestamp}.json")
+            shutil.copy2(self.settings_file, backup_name)
+            
+            # Clean up old backups (keep last 5)
+            backups = sorted(glob.glob(os.path.join(log_dir, "settings_backup_*.json")))
+            if len(backups) > 5:
+                for old_backup in backups[:-5]:
+                    os.remove(old_backup)
+                    
+        except Exception as e:
+            print(f"⚠️ Settings backup failed: {e}")
     
     def get(self, key_path: str, default=None):
         """
@@ -246,6 +278,7 @@ class SettingsManager:
                     "timeframe": row.get('Timeframe', '15T'),
                     "buy_rsi": int(row.get('Buy RSI', 30)),
                     "sell_rsi": int(row.get('Sell RSI', 70)),
+                    "Ignore_RSI": str(row.get('Skip RSI', 'False')).lower() in ('true', 'yes', '1'),
                     "quantity": int(row.get('Quantity', 0)),
                     "profit_target_pct": float(row.get('Profit Target %', 1.0))
                 }

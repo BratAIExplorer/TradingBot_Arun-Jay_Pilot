@@ -47,8 +47,7 @@ You need **Python** installed to run this bot.
 ## 5. Troubleshooting
 *   **"403 Forbidden"**: Your API Key might be invalid, or your TOTP Secret is wrong. Check Settings.
 *   **"System Offline"**: Check your internet connection.
-
----
-
-**Questions?**
-Check the "Knowledge Center" tab inside the application for detailed logic explanations.
+## 6. Ecosystem Integration (Optional)
+While the **ARUN Bot** is a fully standalone execution engine, it is compatible with the **FinFlow Wealth Hub**. 
+- You can connect your Bot's database to FinFlow to see your trading performance alongside your other assets (Insurance, Loans, Banks).
+- This is a **read-only** integration; FinFlow cannot control your bot or modify trades.

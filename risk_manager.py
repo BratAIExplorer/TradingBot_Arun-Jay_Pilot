@@ -13,10 +13,11 @@ class RiskManager:
     Manages risk controls: stop-loss, profit targets, daily loss limits
     """
     
-    def __init__(self, settings, database, market_data_fetcher):
+    def __init__(self, settings, database, market_data_fetcher, state_manager=None):
         self.settings = settings
         self.db = database
         self.fetch_market_data = market_data_fetcher
+        self.state_mgr = state_manager
         
         # Risk settings
         self.stop_loss_pct = settings.get('risk_controls.default_stop_loss_pct', 5)
@@ -39,14 +40,58 @@ class RiskManager:
         actions = []
         
         # Get open positions from database
-        positions = self.db.get_open_positions()
+        db_positions = self.db.get_open_positions()
         
-        if not positions:
+        # Get managed holdings from state manager (Butler Mode)
+        managed_positions = []
+        if self.state_mgr:
+            managed_holdings = self.state_mgr.state.get('managed_holdings', {})
+            cached_holdings = self.state_mgr.get_cached_holdings().get('data', {})
+            
+            for key_str, is_enabled in managed_holdings.items():
+                if not is_enabled:
+                    continue
+                
+                # key_str is likely "(symbol, exchange)" or "symbol:exchange" 
+                # depending on how StateManager serializes it.
+                # Let's try to parse it.
+                try:
+                    # state_manager.py line 271 uses "BAJFINANCE:NSE" format for serialization
+                    if ':' in key_str:
+                        symbol, exchange = key_str.split(':')
+                    else:
+                        # Fallback for old format or tuple string Repr
+                        import ast
+                        result = ast.literal_eval(key_str)
+                        if isinstance(result, (list, tuple)):
+                            symbol, exchange = result[0], result[1]
+                        else:
+                            symbol, exchange = str(result), 'NSE'
+                    
+                    symbol = symbol.upper()
+                    exchange = exchange.upper()
+                    
+                    # Fetch quantity and avg price from cached holdings
+                    pos_data = cached_holdings.get((symbol, exchange))
+                    if pos_data:
+                        managed_positions.append({
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'avg_entry_price': float(pos_data.get('price', 0)),
+                            'net_quantity': int(pos_data.get('qty', 0)),
+                            'source': 'BUTLER'
+                        })
+                except Exception as e:
+                    logging.warning(f"⚠️ Failed to parse managed holding key {key_str}: {e}")
+
+        all_positions = db_positions + managed_positions
+        
+        if not all_positions:
             return actions
         
-        logging.info(f"📊 Checking {len(positions)} open positions for risk triggers...")
+        logging.info(f"📊 Checking {len(all_positions)} positions (DB: {len(db_positions)}, Managed: {len(managed_positions)}) for risk triggers...")
         
-        for position in positions:
+        for position in all_positions:
             symbol = position['symbol']
             exchange = position['exchange']
             entry_price = position['avg_entry_price']

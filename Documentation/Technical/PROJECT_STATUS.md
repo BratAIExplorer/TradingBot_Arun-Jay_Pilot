@@ -1,7 +1,7 @@
 # 🏗️ ARUN Project Status & Architecture (Titan V2)
 
-**Last Updated:** January 18, 2026
-**Version:** Titan V2 (Phase 2 Complete)
+**Last Updated:** February 13, 2026
+**Version:** Titan V2.4.2 (Risk UI Mode & Cross-Exchange Fix)
 
 ---
 
@@ -44,9 +44,15 @@ Here is the updated breakdown of the Titan V2 codebase.
 ---
 
 ## 🛠 Recent Engineering Improvements
-*   **Crash Resilience**: Fixed race conditions in background threads and GUI initialization.
+*   **Risk UI Modernization (v2.4.2)**: Redesigned Settings > Risk Controls with grouped cards, visual sliders, and improved safety toggles. Added `COLOR_DANGER` constants.
+*   **Duplicate Buy Fix (v2.4.2)**: Made `check_existing_orders` symbol-aware across all exchanges. Prevents buying `ABC` on NSE if `ABC` is already held/ordered on BSE.
+*   **Config Self-Healing (v2.4.2)**: Fixed corrupted `settings.json` where strategies were stuck as `NaN`, defaulting them to `TRADE`.
+*   **REIT OHLC Fix (v2.3.1)**: Fixed REIT OHLC API 400 errors. Numeric token mapping (`NSE:9383`) was wrong - OHLC API expects scrip names. Now tries BSE exchange first for REITs (where they're listed as regular equity), eliminating log spam.
+*   **Scanner Key Case Fix (v2.3.1)**: Fixed `scanner_complete()` using lowercase `r['signal']` vs scanner engine's uppercase `r['SIGNAL']`, which prevented STRONG BUY/BUY summary counts from displaying.
+*   **REIT Mapping & Fallback**: Resolved mStock OHLC API errors for `EMBASSY` and `BIRET` by implementing scrip token mapping and a holdings-based price fallback.
+*   **Balance Accuracy**: Fixed "Used" capital inflation by strictly summing only `BOT` tagged positions and correctly tagging manual holdings as `BUTLER`.
+*   **Connectivity Hardening**: Standardized browser-like headers and refined offline detection to prevent engine pauses during transient API issues.
 *   **Hot-Reloading**: Settings can now be saved and applied without restarting the entire bot.
-*   **Source Tagging**: Every trade in the database is now marked as `BOT` or `MANUAL` for cleaner audits.
 *   **Professional Installer**: Surfshark-style EXE installer for one-click setup on new machines.
 
 ---

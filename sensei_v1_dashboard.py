@@ -346,6 +346,11 @@ class DashboardV2:
         stats_in = ctk.CTkFrame(self.card_stats, fg_color="transparent")
         stats_in.pack(fill="x", padx=15, pady=10)
         
+        # ⚠️ WARNING BANNER (For unmanaged holdings)
+        self.lbl_warning_banner = ctk.CTkLabel(stats_in, text="", font=("Roboto", 11, "bold"), text_color=COLOR_DANGER, wraplength=250)
+        self.lbl_warning_banner.pack(fill="x", pady=(0, 10))
+        self.lbl_warning_banner.pack_forget() # Hide by default
+        
         # 💰 Live Wallet Balance (from mStock API)
         ctk.CTkLabel(stats_in, text="💰 WALLET BALANCE", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
         self.lbl_total_balance = ctk.CTkLabel(stats_in, text="₹--,---", font=("Roboto", 24, "bold"), text_color="#1a1a1a")
@@ -982,7 +987,7 @@ class DashboardV2:
 
     def build_scanner_view(self):
         """
-        🔍 MACD SCANNER TAB - One-click market scanning (v2.0.1 Light Theme)
+        MACD SCANNER TAB - Modern UI v3.0 with Track-to-Stocks feature
         """
         # Import scanner engine
         try:
@@ -992,253 +997,195 @@ class DashboardV2:
             self.scanner_available = False
             error_msg = str(e)
 
-        # Header
+        # ── HEADER ──────────────────────────────────────────────────
         header = ctk.CTkFrame(self.view_scanner, fg_color="transparent")
-        header.pack(fill="x", pady=(0, 10), padx=20)
+        header.pack(fill="x", pady=(0, 8), padx=20)
 
-        # Title
-        title_frame = ctk.CTkFrame(header, fg_color="transparent")
-        title_frame.pack(side="left")
-        ctk.CTkFrame(title_frame, width=4, height=24, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
-        ctk.CTkLabel(
-            title_frame,
-            text=" MARKET SCANNER (MACD + Confluence)",
-            font=("Roboto", 20, "bold"),
-            text_color="#1a1a1a"  # High contrast
-        ).pack(side="left", padx=10)
+        title_left = ctk.CTkFrame(header, fg_color="transparent")
+        title_left.pack(side="left")
+        ctk.CTkFrame(title_left, width=4, height=28, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
+        ctk.CTkLabel(title_left, text=" Market Scanner", font=("Roboto", 22, "bold"), text_color="#1a1a1a").pack(side="left", padx=8)
+        ctk.CTkLabel(title_left, text="MACD + Confluence", font=("Roboto", 13), text_color="#6B7280").pack(side="left", padx=(0, 10), pady=(4, 0))
 
-        # Info Card
-        info_card = TitanCard(self.view_scanner, title="HOW IT WORKS", border_color="#D1D5DB")
-        info_card.pack(fill="x", padx=20, pady=(0, 10))
+        # Compact hint (replaces verbose info card)
+        hint_frame = ctk.CTkFrame(header, fg_color="#EFF6FF", corner_radius=8, border_width=1, border_color="#BFDBFE")
+        hint_frame.pack(side="right", padx=5)
+        ctk.CTkLabel(hint_frame, text="  Scans 1200+ stocks for MACD bullish crossovers + MA confluence  ", font=("Roboto", 11), text_color="#1E40AF").pack(padx=10, pady=6)
 
-        info_text = """
-        🔍 Scans 1200+ PRE-FILTERED high-liquidity NSE/BSE stocks
-        📊 MACD bullish crossovers + Confluence scoring (MA + RSI filters)
-        ⚡ Runs in background - FULL scan takes 30-40 minutes
-        🎯 Shows only actionable opportunities (STRONG BUY / BUY)
-
-        Confluence Score Explained:
-        • 75-100: STRONG BUY (MACD + Above 20MA + Above 50MA + Healthy RSI + Fresh signal)
-        • 60-74:  BUY (MACD + Some trend confirmation)
-        • Below 60: Filtered out (not shown)
-
-        💡 Start with FULL scan to see baseline results, then adjust filters if needed
-        """
-
-        ctk.CTkLabel(
-            info_card,
-            text=info_text,
-            font=("Roboto", 13),  # +2pt accessibility
-            text_color="#2c3e50",  # High contrast
-            justify="left"
-        ).pack(anchor="w", padx=20, pady=10)
-
-        # Control Panel
-        control_card = TitanCard(self.view_scanner, title="SCAN CONTROLS", border_color=COLOR_ACCENT)
-        control_card.pack(fill="x", padx=20, pady=(0, 10))
+        # ── CONTROL BAR ────────────────────────────────────────────
+        control_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=10, border_width=1, border_color="#E5E7EB")
+        control_card.pack(fill="x", padx=20, pady=(0, 8))
 
         control_inner = ctk.CTkFrame(control_card, fg_color="transparent")
-        control_inner.pack(fill="x", padx=20, pady=15)
+        control_inner.pack(fill="x", padx=16, pady=12)
 
-        # Scan Mode Selector
-        scan_mode_frame = ctk.CTkFrame(control_inner, fg_color="transparent")
-        scan_mode_frame.pack(side="left", padx=(0, 20))
-
-        ctk.CTkLabel(
-            scan_mode_frame,
-            text="Scan Mode:",
-            font=("Roboto", 14, "bold"),  # +2pt
-            text_color="#1a1a1a"
-        ).pack(side="left", padx=(0, 10))
-
+        # Mode selector
         self.scan_mode_var = ctk.StringVar(value="FULL")
-        scan_mode_selector = ctk.CTkSegmentedButton(
-            scan_mode_frame,
+        ctk.CTkLabel(control_inner, text="Mode", font=("Roboto", 12, "bold"), text_color="#6B7280").pack(side="left", padx=(0, 8))
+        ctk.CTkSegmentedButton(
+            control_inner,
             values=["QUICK (300)", "FULL (1200+)"],
             variable=self.scan_mode_var,
-            font=("Roboto", 13),  # +2pt
-            height=36,
-            fg_color="#F3F4F6",
-            selected_color=COLOR_ACCENT,
-            text_color="#1a1a1a"
-        )
-        scan_mode_selector.pack(side="left")
+            font=("Roboto", 13), height=36,
+            fg_color="#F3F4F6", selected_color=COLOR_ACCENT, text_color="#1a1a1a"
+        ).pack(side="left")
 
-        # Start/Stop Buttons
+        # Separator
+        ctk.CTkFrame(control_inner, width=1, height=30, fg_color="#D1D5DB").pack(side="left", padx=16)
+
+        # Start button
         self.btn_start_scan = ctk.CTkButton(
-            control_inner,
-            text="🔍 START SCAN",
-            command=self.start_scanner,
-            fg_color=COLOR_SUCCESS,
-            hover_color="#059669",
-            height=42,  # Larger for accessibility
-            width=180,
-            font=("Roboto", 16, "bold"),  # +2pt
-            text_color="white"
+            control_inner, text="START SCAN", command=self.start_scanner,
+            fg_color=COLOR_SUCCESS, hover_color="#059669",
+            height=38, width=160, font=("Roboto", 14, "bold"), text_color="white", corner_radius=8
         )
-        self.btn_start_scan.pack(side="left", padx=10)
+        self.btn_start_scan.pack(side="left", padx=(0, 8))
 
+        # Stop button (hidden initially)
         self.btn_stop_scan = ctk.CTkButton(
-            control_inner,
-            text="⏹ STOP",
-            command=self.stop_scanner,
-            fg_color=COLOR_DANGER,
-            hover_color="#DC2626",
-            height=42,
-            width=120,
-            font=("Roboto", 16, "bold")
+            control_inner, text="STOP", command=self.stop_scanner,
+            fg_color=COLOR_DANGER, hover_color="#DC2626",
+            height=38, width=100, font=("Roboto", 14, "bold"), text_color="white", corner_radius=8
         )
-        # Don't pack yet - will show when scanning
 
-        # Last Scan Info
-        self.lbl_last_scan = ctk.CTkLabel(
-            control_inner,
-            text="No scans run yet",
-            font=("Roboto", 12),  # +2pt
-            text_color="#6B7280"
-        )
-        self.lbl_last_scan.pack(side="right")
+        # Last scan info
+        self.lbl_last_scan = ctk.CTkLabel(control_inner, text="No scans run yet", font=("Roboto", 12), text_color="#9CA3AF")
+        self.lbl_last_scan.pack(side="right", padx=5)
 
-        # Progress Card (Hidden initially)
-        self.progress_card = TitanCard(self.view_scanner, title="SCAN PROGRESS", border_color="#D1D5DB")
-        self.progress_card.pack(fill="x", padx=20, pady=(0, 10))
+        # ── PROGRESS BAR (hidden initially) ─────────────────────────
+        self.progress_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=8, border_width=1, border_color="#BFDBFE")
+        self.progress_card.pack(fill="x", padx=20, pady=(0, 6))
         self.progress_card.pack_forget()
 
         progress_inner = ctk.CTkFrame(self.progress_card, fg_color="transparent")
-        progress_inner.pack(fill="x", padx=20, pady=15)
+        progress_inner.pack(fill="x", padx=16, pady=10)
 
-        self.scan_progress_bar = ctk.CTkProgressBar(
-            progress_inner,
-            height=14,  # Slightly larger
-            progress_color=COLOR_ACCENT,
-            fg_color="#E5E7EB"
-        )
-        self.scan_progress_bar.pack(fill="x", pady=(0, 8))
+        self.scan_progress_bar = ctk.CTkProgressBar(progress_inner, height=10, progress_color=COLOR_ACCENT, fg_color="#E5E7EB", corner_radius=5)
+        self.scan_progress_bar.pack(fill="x", side="left", expand=True, padx=(0, 12))
         self.scan_progress_bar.set(0)
 
-        self.lbl_scan_status = ctk.CTkLabel(
-            progress_inner,
-            text="Preparing scan...",
-            font=("Roboto", 13),  # +2pt
-            text_color="#1a1a1a"
-        )
-        self.lbl_scan_status.pack(anchor="w")
+        self.lbl_scan_status = ctk.CTkLabel(progress_inner, text="Preparing...", font=("Roboto", 12), text_color="#1a1a1a", width=200)
+        self.lbl_scan_status.pack(side="right")
 
-        # Results Table
-        results_card = TitanCard(self.view_scanner, title="SCAN RESULTS", border_color=COLOR_SUCCESS)
+        # ── RESULTS SECTION ─────────────────────────────────────────
+        results_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=10, border_width=1, border_color="#E5E7EB")
         results_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
-        # Filter Row
-        filter_frame = ctk.CTkFrame(results_card, fg_color="transparent")
-        filter_frame.pack(fill="x", padx=15, pady=(10, 5))
+        # Top bar: title + filter + stats
+        top_bar = ctk.CTkFrame(results_card, fg_color="transparent")
+        top_bar.pack(fill="x", padx=16, pady=(12, 6))
 
-        ctk.CTkLabel(
-            filter_frame,
-            text="Show:",
-            font=("Roboto", 12),  # +2pt
-            text_color="#6B7280"
-        ).pack(side="left", padx=5)
+        # Results title
+        ctk.CTkLabel(top_bar, text="Scan Results", font=("Roboto", 15, "bold"), text_color="#1a1a1a").pack(side="left")
+
+        # Stats badges (right side)
+        stats_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        stats_frame.pack(side="right")
+
+        self.lbl_strong_buy_badge = ctk.CTkLabel(
+            stats_frame, text=" 0 STRONG BUY ", font=("Roboto", 11, "bold"),
+            fg_color="#D1FAE5", text_color="#065F46", corner_radius=12
+        )
+        self.lbl_strong_buy_badge.pack(side="left", padx=4)
+
+        self.lbl_buy_badge = ctk.CTkLabel(
+            stats_frame, text=" 0 BUY ", font=("Roboto", 11, "bold"),
+            fg_color="#FEF3C7", text_color="#92400E", corner_radius=12
+        )
+        self.lbl_buy_badge.pack(side="left", padx=4)
+
+        # Filter row
+        filter_frame = ctk.CTkFrame(results_card, fg_color="transparent")
+        filter_frame.pack(fill="x", padx=16, pady=(0, 6))
+
+        ctk.CTkLabel(filter_frame, text="Filter:", font=("Roboto", 12), text_color="#9CA3AF").pack(side="left", padx=(0, 8))
 
         self.scanner_filter_var = ctk.StringVar(value="ALL")
-        filter_selector = ctk.CTkSegmentedButton(
-            filter_frame,
-            values=["ALL", "STRONG BUY", "BUY"],
-            variable=self.scanner_filter_var,
-            command=self.filter_scanner_results,
-            font=("Roboto", 12),  # +2pt
-            height=32,
-            fg_color="#F3F4F6",
-            selected_color=COLOR_ACCENT,
-            text_color="#1a1a1a"
-        )
-        filter_selector.pack(side="left")
+        ctk.CTkSegmentedButton(
+            filter_frame, values=["ALL", "STRONG BUY", "BUY"],
+            variable=self.scanner_filter_var, command=self.filter_scanner_results,
+            font=("Roboto", 12), height=30,
+            fg_color="#F3F4F6", selected_color=COLOR_ACCENT, text_color="#1a1a1a"
+        ).pack(side="left")
 
-        self.lbl_scanner_stats = ctk.CTkLabel(
-            filter_frame,
-            text="Results: 0",
-            font=("Roboto", 11),  # +2pt
-            text_color="#6B7280"
-        )
-        self.lbl_scanner_stats.pack(side="right", padx=10)
+        # Legacy stats label (kept for handler compatibility)
+        self.lbl_scanner_stats = ctk.CTkLabel(filter_frame, text="", font=("Roboto", 1))
+        self.lbl_scanner_stats.pack_forget()
 
-        # Treeview Table
-        table_frame = ctk.CTkFrame(results_card, fg_color="#F9FAFB")
-        table_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        # ── TABLE ───────────────────────────────────────────────────
+        table_frame = ctk.CTkFrame(results_card, fg_color="#FAFBFC", corner_radius=6)
+        table_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
 
-        cols = ("Symbol", "Price", "Signal", "Cross Date", "20 DMA", "50 DMA")
+        cols = ("Symbol", "Price", "Signal", "Cross Date", "20 DMA", "50 DMA", "Action")
 
         style = ttk.Style()
         style.theme_use("clam")
         style.configure(
             "Scanner.Treeview",
-            background="#FFFFFF",
-            foreground="#1a1a1a",  # High contrast
-            fieldbackground="#FFFFFF",
-            rowheight=36,  # Larger for readability
-            font=("Roboto", 13)  # +2pt
+            background="#FFFFFF", foreground="#1a1a1a", fieldbackground="#FFFFFF",
+            rowheight=38, font=("Roboto", 13)
         )
         style.configure(
             "Scanner.Treeview.Heading",
-            background="#F3F4F6",
-            foreground="#1a1a1a",
-            font=("Roboto", 14, "bold")  # +2pt
+            background="#F8FAFC", foreground="#374151",
+            font=("Roboto", 13, "bold"), relief="flat"
         )
+        style.map("Scanner.Treeview", background=[("selected", "#DBEAFE")], foreground=[("selected", "#1E40AF")])
 
-        # Scrollbars
         v_scroll = ttk.Scrollbar(table_frame, orient="vertical")
-        h_scroll = ttk.Scrollbar(table_frame, orient="horizontal")
 
         self.scanner_table = ttk.Treeview(
-            table_frame,
-            columns=cols,
-            show="headings",
-            style="Scanner.Treeview",
-            yscrollcommand=v_scroll.set,
-            xscrollcommand=h_scroll.set
+            table_frame, columns=cols, show="headings",
+            style="Scanner.Treeview", yscrollcommand=v_scroll.set
         )
-
         v_scroll.config(command=self.scanner_table.yview)
-        h_scroll.config(command=self.scanner_table.xview)
 
-        # Configure columns
-        col_widths = {
-            "Symbol": 120,
-            "Price": 100,
-            "Signal": 150,
-            "Cross Date": 120,
-            "20 DMA": 80,
-            "50 DMA": 80
+        col_config = {
+            "Symbol": (130, "w"), "Price": (100, "center"), "Signal": (130, "center"),
+            "Cross Date": (110, "center"), "20 DMA": (70, "center"), "50 DMA": (70, "center"),
+            "Action": (70, "center")
         }
-
         for col in cols:
-            self.scanner_table.heading(col, text=col.upper())
-            self.scanner_table.column(col, anchor="center", width=col_widths.get(col, 80))
+            w, anchor = col_config.get(col, (80, "center"))
+            heading_text = "TRACK" if col == "Action" else col.upper()
+            self.scanner_table.heading(col, text=heading_text)
+            self.scanner_table.column(col, anchor=anchor, width=w, minwidth=50)
 
-
-
-        # Grid layout
         self.scanner_table.grid(row=0, column=0, sticky="nsew")
         v_scroll.grid(row=0, column=1, sticky="ns")
-        h_scroll.grid(row=1, column=0, sticky="ew")
-
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
 
-        # Configure tags for coloring (Light theme appropriate)
-        self.scanner_table.tag_configure("strong_buy", background="#D1FAE5", foreground="#065F46")  # Green tint
-        self.scanner_table.tag_configure("buy", background="#FEF3C7", foreground="#92400E")  # Yellow tint
+        # Row colors
+        self.scanner_table.tag_configure("strong_buy", background="#ECFDF5", foreground="#065F46")
+        self.scanner_table.tag_configure("buy", background="#FFFBEB", foreground="#92400E")
+        self.scanner_table.tag_configure("tracked", background="#EFF6FF", foreground="#1E40AF")
+
+        # Bind click for Track action
+        self.scanner_table.bind("<ButtonRelease-1>", self.on_scanner_track_click)
+
+        # Empty state label (shown when no results)
+        self.lbl_scanner_empty = ctk.CTkLabel(
+            results_card, text="Run a scan to discover opportunities",
+            font=("Roboto", 14), text_color="#9CA3AF"
+        )
+        self.lbl_scanner_empty.pack(pady=20)
+
+        # Toast notification label (hidden, shown on track)
+        self.lbl_scanner_toast = ctk.CTkLabel(
+            results_card, text="", font=("Roboto", 12, "bold"),
+            fg_color="#D1FAE5", text_color="#065F46", corner_radius=8
+        )
 
         # Check if scanner available
         if not self.scanner_available:
-            self.btn_start_scan.configure(state="disabled", text="❌ Scanner Not Available")
-            error_card = TitanCard(self.view_scanner, border_color=COLOR_DANGER)
-            error_card.pack(fill="x", padx=20, pady=10)
+            self.btn_start_scan.configure(state="disabled", text="Scanner Not Available")
+            error_frame = ctk.CTkFrame(self.view_scanner, fg_color="#FEF2F2", corner_radius=8, border_width=1, border_color="#FECACA")
+            error_frame.pack(fill="x", padx=20, pady=10)
             ctk.CTkLabel(
-                error_card,
-                text=f"⚠️ Scanner engine not found.\nMake sure scanner_engine.py is in the project folder.",
-                font=("Roboto", 13),
-                text_color=COLOR_DANGER
-            ).pack(padx=20, pady=15)
+                error_frame, text="Scanner engine not found. Ensure scanner_engine.py is in the project folder.",
+                font=("Roboto", 13), text_color="#991B1B"
+            ).pack(padx=16, pady=12)
 
     def start_scanner(self):
         """Start background scanner (Non-blocking)"""
@@ -1299,14 +1246,22 @@ class DashboardV2:
 
     def scanner_progress_update(self, current, total, message):
         """Progress callback from scanner (Thread-safe)"""
-        try:
-            progress = current / total
-            self.scan_progress_bar.set(progress)
+        def update_ui():
+            try:
+                # Ensure total is not zero to avoid division error
+                if total > 0:
+                    progress = current / total
+                    self.scan_progress_bar.set(progress)
+                    pct = int(progress * 100)
+                    self.lbl_scan_status.configure(text=f"[{pct}%] {message}")
+                else:
+                    self.lbl_scan_status.configure(text=message)
+            except Exception as e:
+                # Log UI update errors rather than passing silently
+                print(f"DEBUG: Scanner UI update error: {e}")
 
-            pct = int(progress * 100)
-            self.lbl_scan_status.configure(text=f"[{pct}%] {message}")
-        except:
-            pass
+        # Schedule the update on the main thread
+        self.root.after(0, update_ui)
 
     def scanner_complete(self, results):
         """Scanner finished successfully"""
@@ -1332,8 +1287,8 @@ class DashboardV2:
         self.write_log(f"✅ Scan complete! Found {len(results)} actionable stocks.\n")
 
         # Show summary
-        strong_buy = len([r for r in results if r['signal'] == 'STRONG BUY'])
-        buy = len([r for r in results if r['signal'] == 'BUY'])
+        strong_buy = len([r for r in results if r.get('SIGNAL') == 'STRONG BUY'])
+        buy = len([r for r in results if r.get('SIGNAL') == 'BUY'])
         self.write_log(f"   🟢 STRONG BUY: {strong_buy} | 🟡 BUY: {buy}\n")
 
     def scanner_error(self, error_msg):
@@ -1345,15 +1300,31 @@ class DashboardV2:
 
         self.write_log(f"❌ Scanner error: {error_msg}\n")
 
+    def _get_tracked_symbols(self):
+        """Get set of symbols already in stock config for quick lookup"""
+        try:
+            stocks = self.settings_mgr.get_stock_configs()
+            return {s.get('symbol', '').upper() for s in stocks}
+        except:
+            return set()
+
     def populate_scanner_results(self, results):
-        """Populate scanner table with results"""
+        """Populate scanner table with results + Track action column"""
         # Clear table
         for item in self.scanner_table.get_children():
             self.scanner_table.delete(item)
 
-        # No sorting needed or simple sort by Signal
+        # Hide empty state if we have results
+        if results:
+            self.lbl_scanner_empty.pack_forget()
+        else:
+            self.lbl_scanner_empty.pack(pady=20)
+
+        # Get tracked symbols for action column
+        tracked = self._get_tracked_symbols()
+
         # Sort so STRONG BUY is first
-        sorted_results = sorted(results, key=lambda x: 0 if x['SIGNAL'] == "STRONG BUY" else 1)
+        sorted_results = sorted(results, key=lambda x: 0 if x.get('SIGNAL') == "STRONG BUY" else 1)
 
         # Apply filter
         filter_val = self.scanner_filter_var.get() if hasattr(self, 'scanner_filter_var') else "ALL"
@@ -1363,7 +1334,8 @@ class DashboardV2:
 
         for r in sorted_results:
             signal = r.get('SIGNAL', 'WATCH')
-            
+            symbol = r.get('SYMBOL', 'N/A')
+
             # Filter
             if filter_val != "ALL" and signal != filter_val:
                 continue
@@ -1375,97 +1347,103 @@ class DashboardV2:
                 buy_count += 1
 
             # Tag for coloring
-            tag = "strong_buy" if signal == "STRONG BUY" else "buy"
-            
-            # Values from New Batch Scanner (Keys: SYMBOL, LTP, SIGNAL, CROSS DATE, 20 DMA, 50 DMA)
+            is_tracked = symbol.upper() in tracked
+            tag = "tracked" if is_tracked else ("strong_buy" if signal == "STRONG BUY" else "buy")
+            action_text = "Tracked" if is_tracked else "+ Track"
+
             self.scanner_table.insert(
                 "", END,
                 values=(
-                    r.get('SYMBOL', 'N/A'),
-                    f"₹{r.get('LTP', 0)}",
+                    symbol,
+                    f"{r.get('LTP', 0):,.2f}",
                     signal,
                     r.get('CROSS DATE', '-'),
                     r.get('20 DMA', '-'),
-                    r.get('50 DMA', '-')
+                    r.get('50 DMA', '-'),
+                    action_text
                 ),
                 tags=(tag,)
             )
 
-        # Update stats
+        # Update badge counts
         total = strong_buy_count + buy_count
-        self.lbl_scanner_stats.configure(
-            text=f"Results: {total} • STRONG BUY: {strong_buy_count} • BUY: {buy_count}"
-        )
+        self.lbl_strong_buy_badge.configure(text=f" {strong_buy_count} STRONG BUY ")
+        self.lbl_buy_badge.configure(text=f" {buy_count} BUY ")
 
     def filter_scanner_results(self, value=None):
         """Re-populate table with current filter"""
         if hasattr(self, 'scanner_results'):
             self.populate_scanner_results(self.scanner_results)
-        # Filter/View Toggle
-        filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
-        filter_frame.pack(fill="x", padx=10, pady=(5, 0))
 
-        ctk.CTkLabel(filter_frame, text="Show:", font=("Roboto", 10), text_color="#AAA").pack(side="left", padx=(5, 10))
+    def on_scanner_track_click(self, event):
+        """Handle click on Track column to add stock to config"""
+        # Identify which column was clicked
+        region = self.scanner_table.identify_region(event.x, event.y)
+        if region != "cell":
+            return
 
-        self.holdings_filter_var = ctk.StringVar(value="ALL")
-        filter_segment = ctk.CTkSegmentedButton(
-            filter_frame,
-            values=["ALL", "BOT", "MANUAL"],
-            variable=self.holdings_filter_var,
-            command=self.filter_positions_display,
-            font=("Roboto", 15, "bold"), # Increased
-            height=36,
-            fg_color="#F3F4F6", # Light background
-            selected_color=COLOR_ACCENT,
-            selected_hover_color=COLOR_ACCENT,
-            unselected_color="#D1D5DB",
-            unselected_hover_color="#BCBBBB",
-            text_color="black",
-            corner_radius=6
-        )
-        filter_segment.pack(side="left")
+        col = self.scanner_table.identify_column(event.x)
+        # col returns "#1", "#2", ... "#7" — Action is column #7
+        if col != "#7":
+            return
 
-        # Summary Stats
-        self.lbl_position_stats = ctk.CTkLabel(
-            filter_frame,
-            text="Positions: 0 • Bot: 0 • Manual: 0",
-            font=("Roboto", 11, "bold"), # Increased & Bold
-            text_color="#1a1a1a"         # Fixed Visibility
-        )
-        self.lbl_position_stats.pack(side="right", padx=10)
+        item = self.scanner_table.identify_row(event.y)
+        if not item:
+            return
 
-        # Table Frame - Light & Glassy
-        table_frame = ctk.CTkFrame(parent, fg_color="#FFFFFF", corner_radius=0, border_width=1, border_color="#D1D5DB")
-        table_frame.pack(fill="both", expand=True, padx=2, pady=5)
+        values = self.scanner_table.item(item, "values")
+        if not values or len(values) < 7:
+            return
 
-        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "P&L", "P&L %")
+        symbol = values[0]
+        action = values[6]
 
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Treeview", background="#FFF", foreground="#1a1a1a", fieldbackground="#FFF", rowheight=38, borderwidth=0, font=("Arial", 12))
-        style.configure("Treeview.Heading", background="#F3F4F6", foreground="#374151", font=("Arial", 12, "bold"), borderwidth=0)
+        # Already tracked
+        if action == "Tracked":
+            self._show_scanner_toast(f"{symbol} is already in your Stocks list")
+            return
 
-        self.pos_table = ttk.Treeview(table_frame, columns=cols, show="headings", height=8)
-        for col in cols:
-            self.pos_table.heading(col, text=col.upper())
-            self.pos_table.column(col, anchor="center")
+        # Add to stock config
+        new_stock = {
+            "symbol": symbol.upper(),
+            "exchange": "NSE",
+            "enabled": True,
+            "strategy": "TRADE",
+            "timeframe": "15T",
+            "buy_rsi": 35,
+            "sell_rsi": 65,
+            "Ignore_RSI": False,
+            "quantity": 0,
+            "profit_target_pct": 10.0
+        }
 
-        self.pos_table.column("Source", width=70)
-        self.pos_table.column("Symbol", width=100)
-        self.pos_table.column("Qty", width=60)
-        self.pos_table.column("Entry", width=80)
-        self.pos_table.column("LTP", width=80)
-        self.pos_table.column("P&L", width=90)
-        self.pos_table.column("P&L %", width=70)
+        success = self.settings_mgr.add_stock_config(new_stock)
+        if success:
+            # Update this row to show "Tracked"
+            current_values = list(values)
+            current_values[6] = "Tracked"
+            self.scanner_table.item(item, values=current_values, tags=("tracked",))
 
-        self.pos_table.pack(fill="both", expand=True)
-        self.pos_table.tag_configure("green", foreground=COLOR_SUCCESS)
-        self.pos_table.tag_configure("red", foreground=COLOR_DANGER)
-        self.pos_table.tag_configure("bot", background="#0A2A0A")  # Dark green tint for BOT
-        self.pos_table.tag_configure("manual", background="#2A2A0A")  # Dark yellow tint for MANUAL
+            # Refresh STOCKS table if available
+            if hasattr(self, 'settings_gui_instance'):
+                try:
+                    self.settings_gui_instance.refresh_stock_table()
+                except:
+                    pass
 
-        # Store all positions for filtering
-        self.all_positions_data = {}
+            self._show_scanner_toast(f"{symbol} added to Stocks — engine will monitor RSI")
+            self.write_log(f"➕ {symbol} added to Stocks from Scanner\n")
+        else:
+            self._show_scanner_toast(f"Failed to add {symbol}")
+
+    def _show_scanner_toast(self, message):
+        """Show brief toast notification in scanner results"""
+        self.lbl_scanner_toast.configure(text=f"  {message}  ")
+        self.lbl_scanner_toast.pack(pady=(0, 8))
+        # Auto-hide after 3 seconds
+        self.root.after(3000, lambda: self.lbl_scanner_toast.pack_forget())
+
+    # Note: Holdings filter & positions table are built in build_dashboard_view() (line ~490)
 
     def filter_positions_display(self, filter_value=None):
         """Filter positions table by source (ALL/BOT/MANUAL)"""
@@ -1514,6 +1492,7 @@ class DashboardV2:
                 tag = "green" if pnl >= 0 else "red"
                 # Icon prefix for source
                 source_icon = "🤖" if is_bot else "👤"
+                source_tag = "bot" if is_bot else "manual"
 
                 self.pos_table.insert(
                     "", END,
@@ -1535,7 +1514,23 @@ class DashboardV2:
         scroll = ctk.CTkScrollableFrame(self.view_hybrid, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=20, pady=20)
         
-        ctk.CTkLabel(scroll, text="🤝 HYBRID PORTFOLIO TAKE-OVER", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(anchor="w", pady=(0, 10))
+        header_row = ctk.CTkFrame(scroll, fg_color="transparent")
+        header_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(header_row, text="🤝 HYBRID PORTFOLIO TAKE-OVER", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        
+        self.btn_select_all = ctk.CTkButton(
+            header_row, 
+            text="✅ SELECT ALL", 
+            command=self.toggle_all_butler,
+            fg_color="#333", 
+            hover_color=COLOR_ACCENT,
+            width=120,
+            height=32,
+            font=("Roboto", 12, "bold")
+        )
+        self.btn_select_all.pack(side="right")
+        
         ctk.CTkLabel(scroll, text="Let the bot manage your manual holdings. Enable 'Butler Mode' to apply RSI/Profit rules to existing stocks.", font=("Roboto", 13), text_color="#AAA").pack(anchor="w", pady=(0, 20))
         
         self.hybrid_list_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -1549,8 +1544,12 @@ class DashboardV2:
             widget.destroy()
             
         try:
-            # Get latest positions
-            positions = self.all_positions_data or safe_get_live_positions_merged()
+            # Get latest positions (Non-blocking: use cached data only)
+            positions = self.all_positions_data
+            if not positions:
+                # If no data yet, don't block. The positions_worker will update all_positions_data soon.
+                ctk.CTkLabel(self.hybrid_list_frame, text="Loading portfolio data...", font=("Roboto", 14), text_color="#666").pack(pady=50)
+                return
             
             # Group by manual vs bot (Butler mode typically applies to MANUAL or already managed BUTLER)
             manual_stocks = {k: v for k, v in positions.items() if v.get('source') in ['MANUAL', 'BUTLER']}
@@ -1615,6 +1614,46 @@ class DashboardV2:
             
         except Exception as e:
             self.write_log(f"❌ butler toggle error: {e}\n")
+
+    def toggle_all_butler(self):
+        """Enable or Disable all manual holdings for Butler Mode"""
+        try:
+            # Get latest positions
+            positions = self.all_positions_data or safe_get_live_positions_merged()
+            manual_stocks = {k: v for k, v in positions.items() if v.get('source') in ['MANUAL', 'BUTLER']}
+            
+            if not manual_stocks:
+                return
+
+            current_managed = state_mgr.state.get('managed_holdings', {})
+            
+            # Determine if we should Enable all or Disable all
+            # If any are disabled, enable all. If all are enabled, disable all.
+            any_disabled = False
+            for key in manual_stocks.keys():
+                if not current_managed.get(str(key), False):
+                    any_disabled = True
+                    break
+            
+            target_state = any_disabled # True if we want to enable all
+            
+            for key in manual_stocks.keys():
+                current_managed[str(key)] = target_state
+            
+            state_mgr.state['managed_holdings'] = current_managed
+            state_mgr.save()
+            
+            action = "ENABLED" if target_state else "DISABLED"
+            self.write_log(f"🤝 Bulk Butler Mode: {action} all manual holdings\n")
+            
+            # Update button text
+            self.btn_select_all.configure(text="❌ DESELECT ALL" if target_state else "✅ SELECT ALL")
+            
+            # Redraw
+            self.refresh_hybrid_holdings()
+            
+        except Exception as e:
+            self.write_log(f"❌ bulk butler error: {e}\n")
 
     # --- DRAWING UTILS (Stubbed for v2) ---
     def draw_mock_graph(self, canvas, color):
@@ -1795,11 +1834,16 @@ class DashboardV2:
         filter_val = self.holdings_filter_var.get().upper() if hasattr(self, 'holdings_filter_var') else "ALL"
 
         # 1. First pass: Count everything (Totals)
+        used_capital = 0.0
         for sym, pos in data.items():
             source = str(pos.get("source", "BOT")).upper()
             if "BOT" in source:
                 total_bot += 1
                 bot_total_pnl += pos.get("pnl", 0)
+                # Calculate capital used by bot
+                qty = pos.get("qty", 0)
+                avg_price = pos.get("price", 0)
+                used_capital += qty * avg_price
             else:
                 total_manual += 1
             total_pnl += pos.get("pnl", 0)
@@ -1859,8 +1903,10 @@ class DashboardV2:
             limit = ALLOCATED_CAPITAL
             if limit > 0:
                 pct = min(1.0, used_capital / limit)
-                self.cap_bar.set(pct)
-                self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
+                if hasattr(self, 'wallet_progress'):
+                    self.wallet_progress.set(pct)
+                if hasattr(self, 'lbl_deployed'):
+                    self.lbl_deployed.configure(text=f"Used: ₹{used_capital:,.0f} ({pct*100:.0f}%)")
         except: pass
 
     def update_sentiment(self, data):
@@ -2019,6 +2065,13 @@ class DashboardV2:
                 self.root.after(0, lambda: self._update_quick_monitor_ui(
                     wallet_balance, perf_data, recent_trades_list, today_trades_list, live_pos_data
                 ))
+                
+                # 5. Check for unmanaged holdings
+                self.root.after(0, lambda: self.check_unmanaged_holdings(live_pos_data))
+
+                # 6. Check Setup Status (New)
+                self.root.after(0, self.check_setup_status)
+
             except Exception as e:
                 # self.write_log(f"Quick Monitor Fetch Error: {e}\n")
                 pass
@@ -2035,8 +2088,9 @@ class DashboardV2:
             if live_pos:
                 self.update_positions(live_pos)
             
-            # 1b. Update Trades History Table (Live Sync)
-            self.refresh_trades_history()
+            # 1b. Update Trades History Table (Live Sync - only if not empty)
+            if recent_trades:
+                self.refresh_trades_history()
 
                 
             # 2. Update Wallet Balance with change detection
@@ -2182,6 +2236,78 @@ class DashboardV2:
         except Exception as e:
             print(f"UI Update Error: {e}")
 
+    def check_setup_status(self):
+        """Check if essential settings are missing and show a dashboard notice"""
+        try:
+            # Hot-reload settings 
+            # (Note: we use self.settings_mgr which is initialized in __init__)
+            self.settings_mgr.load()
+            
+            api_key = self.settings_mgr.get("broker.api_key")
+            client_code = self.settings_mgr.get("broker.client_code")
+            
+            # If settings are missing, show alert
+            if not api_key or not client_code:
+                if hasattr(self, 'lbl_warning_banner'):
+                    self.lbl_warning_banner.configure(
+                        text="⚠️ SETUP INCOMPLETE: API Key or Client Code is missing.\nTrading is disabled. Go to Settings to configure.",
+                        text_color="#EF4444" # Red
+                    )
+                    self.lbl_warning_banner.pack(fill="x", pady=(0, 10), before=self.lbl_total_balance)
+                    
+            # If settings ARE present, we check for unmanaged (which overrides this slot if present)
+            # The 'check_unmanaged_holdings' method runs after this and manages the SAME banner widget.
+            # So if unmanaged holdings exist, they will take precedence or overwrite this message.
+            # To fix this conflict:
+            # 1. We let check_unmanaged_holdings run only if setup is complete.
+            # 2. Or we make check_unmanaged_holdings smarter.
+            
+            # Since check_unmanaged_holdings is called SEPARATELY in the thread loop,
+            # we need to coordinate.
+            # See check_unmanaged_holdings modification below.
+            
+        except Exception: 
+            pass
+
+    def check_unmanaged_holdings(self, positions):
+        """Alert user if there are holdings not being managed for risk"""
+        # PRIORITY CHECK: If Setup is incomplete, don't overwrite the Setup Warning
+        api_key = self.settings_mgr.get("broker.api_key")
+        if not api_key:
+            # check_setup_status handles the warning
+            return
+
+        if not positions:
+            if hasattr(self, 'lbl_warning_banner'):
+                 self.lbl_warning_banner.pack_forget()
+            return
+
+        unmanaged = []
+        managed_keys = state_mgr.state.get('managed_holdings', {})
+        
+        for key, pos in positions.items():
+            source = str(pos.get("source", "BOT")).upper()
+            is_bot = "BOT" in source
+            is_settling = "SETTLING" in source
+            
+            # If not BOT, not SETTLING, and not enabled in Butler Mode, it's unmanaged
+            if not is_bot and not is_settling:
+                is_butler = managed_keys.get(str(key), False)
+                if not is_butler:
+                    sym = key[0] if isinstance(key, tuple) else str(key)
+                    unmanaged.append(sym)
+                    
+        if unmanaged and hasattr(self, 'lbl_warning_banner'):
+            count = len(unmanaged)
+            stocks_str = ", ".join(unmanaged[:3]) + ("..." if count > 3 else "")
+            self.lbl_warning_banner.configure(
+                text=f"⚠️ {count} UNMANAGED HOLDINGS\n({stocks_str})\nRisk triggers are OFF for these.",
+                text_color=COLOR_WARN # Orange/Amber
+            )
+            self.lbl_warning_banner.pack(fill="x", pady=(0, 10), before=self.lbl_total_balance)
+        elif hasattr(self, 'lbl_warning_banner'):
+            self.lbl_warning_banner.pack_forget()
+
     def write_log(self, text):
         """Redirect print/logs to UI Console and Alert Box (Thread-Safe)"""
         # Schedule the update on the main thread
@@ -2322,26 +2448,52 @@ def check_single_instance():
         except: pass
 
 def show_disclaimer(root, on_accept):
-    """Shows disclaimer on the provided root window"""
+    """Shows disclaimer on the provided root window using stable Tkinter"""
+    import tkinter as tk
+    from tkinter import ttk
+    
     # Clear root
     for widget in root.winfo_children():
         widget.destroy()
         
     root.title("⚠️ Important Disclaimer")
-    root.geometry("650x550")
+    root.geometry("800x700")
     
-    # Center logic (roughly)
+    # Center logic
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    x = (screen_width // 2) - (600 // 2)
-    y = (screen_height // 2) - (500 // 2)
+    x = (screen_width // 2) - 400
+    y = (screen_height // 2) - 350
     root.geometry(f"+{int(x)}+{int(y)}")
 
-    ctk.CTkLabel(root, text="⚠️ ARUN TRADING BOT", font=("Arial", 24, "bold"), text_color="#E74C3C").pack(pady=(30, 10))
-    ctk.CTkLabel(root, text="User Responsibility Agreement", font=("Arial", 16)).pack(pady=(0, 20))
+    # Style
+    style = ttk.Style()
+    try:
+        style.theme_use('clam')
+    except:
+        pass
+        
+    style.configure("Disclaimer.TFrame", background="#F8F9FA")
+    style.configure("DTitle.TLabel", font=("Segoe UI", 28, "bold"), foreground="#DC3545", background="#F8F9FA")
+    style.configure("DSub.TLabel", font=("Segoe UI", 16), background="#F8F9FA")
+    
+    main_frame = ttk.Frame(root, style="Disclaimer.TFrame", padding=30)
+    main_frame.pack(fill="both", expand=True)
+    
+    ttk.Label(main_frame, text="⚠️ ARUN TRADING BOT", style="DTitle.TLabel").pack()
+    ttk.Label(main_frame, text="User Responsibility Agreement", style="DSub.TLabel").pack(pady=(5, 20))
 
-    text_frame = ctk.CTkFrame(root, fg_color="#2B2B2B")
-    text_frame.pack(fill="both", expand=True, padx=30, pady=10)
+    text_container = ttk.Frame(main_frame)
+    text_container.pack(fill="both", expand=True)
+
+    textbox = tk.Text(text_container, wrap="word", font=("Segoe UI", 14), 
+                      padx=20, pady=20, bg="white", fg="#212529", 
+                      relief="flat", highlightthickness=1, highlightbackground="#DEE2E6")
+    scrollbar = ttk.Scrollbar(text_container, orient="vertical", command=textbox.yview)
+    textbox.configure(yscrollcommand=scrollbar.set)
+    
+    scrollbar.pack(side="right", fill="y")
+    textbox.pack(side="left", fill="both", expand=True)
 
     disclaimer_text = """
     ⚠️ CRITICAL WARNING - READ BEFORE PROCEEDING ⚠️
@@ -2360,16 +2512,13 @@ def show_disclaimer(root, on_accept):
     4. PAPER TRADING FIRST
     You MUST test your strategies in "Paper Trading" mode before risking real money.
     
-    By clicking "I ACCEPT", you confirm you understand these risks.
+    By clicking "I ACCEPT", you confirm you understand these risks and accept full responsibility for your trading activities.
     """
     
-    textbox = ctk.CTkTextbox(text_frame, wrap="word", font=("Arial", 12))
-    textbox.insert("0.0", disclaimer_text)
+    textbox.insert("1.0", disclaimer_text)
     textbox.configure(state="disabled")
-    textbox.pack(fill="both", expand=True, padx=10, pady=10)
 
     def accept():
-        # Clear disclaimer widgets
         for widget in root.winfo_children():
             widget.destroy()
         on_accept()
@@ -2377,11 +2526,18 @@ def show_disclaimer(root, on_accept):
     def decline():
         sys.exit(0)
 
-    btn_frame = ctk.CTkFrame(root, fg_color="transparent")
-    btn_frame.pack(pady=20)
+    btn_frame = ttk.Frame(main_frame, style="Disclaimer.TFrame")
+    btn_frame.pack(fill="x", pady=(20, 0))
     
-    ctk.CTkButton(btn_frame, text="I ACCEPT", command=accept, fg_color="#27AE60", font=("Arial", 14, "bold"), width=200).grid(row=0, column=0, padx=10)
-    ctk.CTkButton(btn_frame, text="DECLINE", command=decline, fg_color="#C0392B", font=("Arial", 14, "bold"), width=150).grid(row=0, column=1, padx=10)
+    # Custom styles for buttons
+    style.configure("Accept.TButton", font=("Segoe UI", 16, "bold"), padding=15, foreground="white", background="#28A745")
+    style.map("Accept.TButton", background=[('active', '#218838'), ('!disabled', '#28A745')])
+    
+    style.configure("Decline.TButton", font=("Segoe UI", 16, "bold"), padding=15, foreground="white", background="#DC3545")
+    style.map("Decline.TButton", background=[('active', '#C82333'), ('!disabled', '#DC3545')])
+
+    ttk.Button(btn_frame, text="I ACCEPT & UNDERSTAND RISKS", command=accept, style="Accept.TButton").pack(side="left", fill="x", expand=True, padx=(0, 10))
+    ttk.Button(btn_frame, text="DECLINE (EXIT)", command=decline, style="Decline.TButton").pack(side="right", fill="x", expand=True)
 
 
 def check_single_instance():
@@ -2466,17 +2622,19 @@ if __name__ == "__main__":
             # This runs after disclaimer accept
             
             # v2.4.0: Check if first-run wizard is needed
-            try:
-                from first_run_wizard import should_show_wizard, FirstRunWizard
-                if should_show_wizard():
-                    print("🧙 First-run wizard detected - launching setup...")
-                    wizard = FirstRunWizard(on_complete_callback=lambda: None)
-                    wizard.run()  # Blocks until wizard completes
-                    print("✅ Wizard complete - launching dashboard...")
-            except ImportError:
-                print("⚠️ first_run_wizard.py not found, skipping wizard")
-            except Exception as e:
-                print(f"⚠️ Wizard error: {e} - continuing to dashboard")
+            # v2.4.0: Check if first-run wizard is needed
+            # DISABLED per user request (relying on Dashboard Notice instead)
+            # try:
+            #     from first_run_wizard import should_show_wizard, FirstRunWizard
+            #     if should_show_wizard():
+            #         print("🧙 First-run wizard detected - launching setup...")
+            #         wizard = FirstRunWizard(on_complete_callback=lambda: None)
+            #         wizard.run()  # Blocks until wizard completes
+            #         print("✅ Wizard complete - launching dashboard...")
+            # except ImportError:
+            #     print("⚠️ first_run_wizard.py not found, skipping wizard")
+            # except Exception as e:
+            #     print(f"⚠️ Wizard error: {e} - continuing to dashboard")
             
             app = DashboardV2(root)
             # No need to call app.run() since we have root.mainloop() below

@@ -5,6 +5,10 @@ import numpy as np
 import requests
 
 from utils import get_yfinance_session, yf_rate_limit
+try:
+    from constants import REIT_TOKEN_MAP
+except ImportError:
+    REIT_TOKEN_MAP = {}
 
 def validate_symbol(symbol: str, exchange: str) -> bool:
     """
@@ -12,6 +16,10 @@ def validate_symbol(symbol: str, exchange: str) -> bool:
     NSE symbols should end with .NS
     BSE symbols should end with .BO
     """
+    # If it's a known REIT/InvIT, return True immediately (handled by token map)
+    if symbol in REIT_TOKEN_MAP:
+        return True
+
     # If it's an index (starts with ^), don't add suffix
     if symbol.startswith("^"):
         yf_symbol = symbol
@@ -46,6 +54,10 @@ def validate_symbol(symbol: str, exchange: str) -> bool:
     except Exception as e:
         logging.error(f"Direct validation fallback failed: {e}")
         
+    # Final Check: If in REIT Map, trust it (since mStock supports it via ID)
+    if symbol in REIT_TOKEN_MAP:
+        return True
+
     return False
 
 def get_symbol_price(symbol: str, exchange: str) -> float:

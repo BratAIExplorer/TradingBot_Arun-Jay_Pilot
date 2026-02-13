@@ -22,21 +22,34 @@ class StateManager:
     
     def _load(self) -> Dict[str, Any]:
         """
-        Load state from file or initialize empty
+        Load state from file or initialize empty, merging with defaults
         """
+        defaults = self._empty_state()
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, 'r') as f:
-                    state = json.load(f)
+                    loaded = json.load(f)
                     logging.info(f"✅ State restored from {self.state_file}")
-                    logging.info(f"   Last update: {state.get('last_update', 'Unknown')}")
-                    return state
+                    
+                    # Merge defaults with loaded data to ensure new keys exist
+                    merged = {**defaults, **loaded}
+                    
+                    # BACKWARD COMPATIBILITY: If managed_holdings is a list, convert to dict
+                    if isinstance(merged.get('managed_holdings'), list):
+                        print(f"🔄 StateManager: Converting managed_holdings from list to dict")
+                        merged['managed_holdings'] = {sym: True for sym in merged['managed_holdings']}
+                    
+                    # Log the restoration summary
+                    print(f"✅ StateManagerProxy: Restored {len(merged)} keys from {self.state_file}")
+                    return merged
+                    logging.info(f"   Last update: {merged.get('last_update', 'Unknown')}")
+                    return merged
             except Exception as e:
                 logging.error(f"❌ Error loading state: {e}")
-                return self._empty_state()
+                return defaults
         else:
             logging.info(f"📝 No existing state found, starting fresh")
-            return self._empty_state()
+            return defaults
     
     def _empty_state(self) -> Dict[str, Any]:
         """
@@ -51,6 +64,7 @@ class StateManager:
             'bot_started_at': datetime.now().isoformat(),
             'total_trades_today': 0,
             'stop_requested': False,
+            'managed_holdings': {},
             'trade_counters': {
                 'attempts': 0,
                 'success': 0,

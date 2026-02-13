@@ -2,7 +2,7 @@
     "broker": {
         "name": "mstock",
         "api_key": "",
-        "secret": "",
+        "api_secret": "",
         "client_code": "",
         "password": "",
         "connection_status": "not_connected",

@@ -1,21 +1,23 @@
-import sys
-import logging
-from symbol_validator import get_symbol_price
+import yfinance as yf
+import pandas as pd
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+symbols = ["EMBASSY.NS", "BIRET.NS", "MINDSPACE.NS", "GOLDBEES.NS"]
 
-def test_fallback():
-    symbol = "TATASTEEL"
-    exchange = "NSE"
-    print(f"Testing Fallback Price Fetch for {symbol}:{exchange}...")
-    
-    price = get_symbol_price(symbol, exchange)
-    
-    if price:
-        print(f"✅ Success! Price: {price}")
-    else:
-        print("❌ Failed to fetch price.")
+print(f"🧪 Testing yfinance for {len(symbols)} symbols...")
 
-if __name__ == "__main__":
-    test_fallback()
+for sym in symbols:
+    print(f"\n--- Testing {sym} ---")
+    try:
+        ticker = yf.Ticker(sym)
+        # Try fast_info
+        info = ticker.fast_info
+        print(f"Fast Info LTP: {info.get('last_price')}")
+        
+        # Try history
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            print(f"History LTP: {hist['Close'].iloc[-1]}")
+        else:
+            print("History empty")
+    except Exception as e:
+        print(f"Error: {e}")

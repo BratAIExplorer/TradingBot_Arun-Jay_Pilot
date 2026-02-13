@@ -20,6 +20,8 @@ from symbol_validator import validate_symbol
 COLOR_ACCENT = "#479FB6"  # Soft Cyan (Mockup Matching)
 COLOR_BG = "#EFEBE3"     # Soft Cream
 COLOR_TEXT = "#1a1a1a"   # High Contrast Dark Gray
+COLOR_DANGER = "#EF4444"  # Red-500
+COLOR_SUCCESS = "#10B981" # Emerald-500
 
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
@@ -441,128 +443,120 @@ class SettingsGUI:
         info_text.pack(anchor="w", padx=10, pady=5)
     
     def build_risk_tab(self):
-        """Risk controls configuration"""
+        """Risk controls configuration - Modern Redesign"""
         tab = self.tabview.tab("Risk Controls")
         
+        # Data
         risk = self.settings_mgr.get("risk", {})
+
+        # --- Layout Helpers ---
+        def create_section_header(parent, title, icon="🛡️"):
+            frame = ctk.CTkFrame(parent, fg_color="transparent")
+            frame.pack(fill="x", pady=(15, 5), padx=10)
+            ctk.CTkLabel(frame, text=f"{icon} {title}", font=("Roboto", 16, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+            ctk.CTkFrame(frame, height=2, fg_color="#DDD").pack(side="left", fill="x", expand=True, padx=10)
+
+        # Container
+        container = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- SECTION 1: PRIMARY PROTECTION ---
+        create_section_header(container, "PRIMARY PROTECTION", "🛡️")
         
-        # Stop-loss %
-        sl_label = ctk.CTkLabel(tab, text="Stop-Loss (%):", font=("Arial", 14, "bold"))
-        sl_label.grid(row=0, column=0, sticky="w", padx=20, pady=15)
+        card_primary = ctk.CTkFrame(container, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0E0E0")
+        card_primary.pack(fill="x", padx=10, pady=5)
+        
+        # Grid for Sliders
+        card_primary.grid_columnconfigure(1, weight=1)
+        
+        # Row 1: Stop-Loss
+        ctk.CTkLabel(card_primary, text="Stop-Loss (%):", font=("Roboto", 13, "bold"), text_color="#333").grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
         
         self.stop_loss_var = ctk.DoubleVar(value=risk.get("stop_loss_pct", 5.0))
-        sl_slider = ctk.CTkSlider(
-            tab,
-            from_=1,
-            to=20,
-            number_of_steps=38,
-            variable=self.stop_loss_var,
-            width=300,
-            command=lambda val: sl_value_label.configure(text=f"{val:.1f}%")
-        )
-        sl_slider.grid(row=0, column=1, sticky="w", padx=10, pady=15)
+        sl_slider = ctk.CTkSlider(card_primary, from_=0.5, to=20, number_of_steps=39, variable=self.stop_loss_var, 
+                                  width=250, progress_color=COLOR_ACCENT, button_color=COLOR_ACCENT, hover_color="#357A8D",
+                                  command=lambda val: sl_val.configure(text=f"{val:.1f}%"))
+        sl_slider.grid(row=0, column=1, sticky="ew", padx=10)
         
-        sl_value_label = ctk.CTkLabel(tab, text=f"{self.stop_loss_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="red")
-        sl_value_label.grid(row=0, column=2, sticky="w", padx=5)
+        sl_val = ctk.CTkLabel(card_primary, text=f"{self.stop_loss_var.get():.1f}%", font=("Roboto", 14, "bold"), text_color=COLOR_DANGER, width=60)
+        sl_val.grid(row=0, column=2, padx=20)
         
-        # Profit target %
-        tp_label = ctk.CTkLabel(tab, text="Profit Target (%):", font=("Arial", 14, "bold"))
-        tp_label.grid(row=1, column=0, sticky="w", padx=20, pady=15)
+        ctk.CTkLabel(card_primary, text="Limits loss per trade. Triggers market sell when hit.", font=("Roboto", 10), text_color="gray").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 15))
+
+        # Row 2: Profit Target
+        ctk.CTkLabel(card_primary, text="Profit Target (%):", font=("Roboto", 13, "bold"), text_color="#333").grid(row=2, column=0, sticky="w", padx=20, pady=(5, 5))
         
         self.profit_target_var = ctk.DoubleVar(value=risk.get("profit_target_pct", 10.0))
-        tp_slider = ctk.CTkSlider(
-            tab,
-            from_=2,
-            to=50,
-            number_of_steps=48,
-            variable=self.profit_target_var,
-            width=300,
-            command=lambda val: tp_value_label.configure(text=f"{val:.1f}%")
-        )
-        tp_slider.grid(row=1, column=1, sticky="w", padx=10, pady=15)
+        tp_slider = ctk.CTkSlider(card_primary, from_=1, to=50, number_of_steps=98, variable=self.profit_target_var, 
+                                  width=250, progress_color=COLOR_SUCCESS, button_color=COLOR_SUCCESS, hover_color="#0E9F6E",
+                                  command=lambda val: tp_val.configure(text=f"{val:.1f}%"))
+        tp_slider.grid(row=2, column=1, sticky="ew", padx=10)
         
-        tp_value_label = ctk.CTkLabel(tab, text=f"{self.profit_target_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="green")
-        tp_value_label.grid(row=1, column=2, sticky="w", padx=5)
+        tp_val = ctk.CTkLabel(card_primary, text=f"{self.profit_target_var.get():.1f}%", font=("Roboto", 14, "bold"), text_color=COLOR_SUCCESS, width=60)
+        tp_val.grid(row=2, column=2, padx=20)
+
+        ctk.CTkLabel(card_primary, text="Secures profit when price reaches this target.", font=("Roboto", 10), text_color="gray").grid(row=3, column=1, sticky="w", padx=10, pady=(0, 20))
+
+        # --- SECTION 2: SAFETY NETS ---
+        create_section_header(container, "SAFETY NETS (CIRCUIT BREAKERS)", "⛓️")
         
-        # Catastrophic stop %
-        cat_label = ctk.CTkLabel(tab, text="Catastrophic Stop (%):", font=("Arial", 12))
-        cat_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
+        card_safety = ctk.CTkFrame(container, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0E0E0")
+        card_safety.pack(fill="x", padx=10, pady=5)
+        card_safety.grid_columnconfigure(1, weight=1)
+
+        # Catastrophic Stop
+        ctk.CTkLabel(card_safety, text="Emergency Stop (%):", font=("Roboto", 13)).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
         
         self.cat_stop_var = ctk.DoubleVar(value=risk.get("catastrophic_stop_loss_pct", 15.0))
-        cat_slider = ctk.CTkSlider(
-            tab,
-            from_=10,
-            to=50,
-            number_of_steps=40,
-            variable=self.cat_stop_var,
-            width=300,
-            command=lambda val: cat_value_label.configure(text=f"{val:.1f}%")
-        )
-        cat_slider.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+        cat_slider = ctk.CTkSlider(card_safety, from_=5, to=50, number_of_steps=45, variable=self.cat_stop_var, width=250,
+                                   progress_color="orange", button_color="orange",
+                                   command=lambda val: cat_val.configure(text=f"{val:.1f}%"))
+        cat_slider.grid(row=0, column=1, sticky="ew", padx=10)
         
-        cat_value_label = ctk.CTkLabel(tab, text=f"{self.cat_stop_var.get():.1f}%", font=("Arial", 12, "bold"))
-        cat_value_label.grid(row=2, column=2, sticky="w", padx=5)
+        cat_val = ctk.CTkLabel(card_safety, text=f"{self.cat_stop_var.get():.1f}%", font=("Roboto", 13, "bold"), text_color="orange", width=60)
+        cat_val.grid(row=0, column=2, padx=20)
         
-        # Daily loss limit %
-        daily_label = ctk.CTkLabel(tab, text="Daily Loss Limit (%):", font=("Arial", 12))
-        daily_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
+        ctk.CTkLabel(card_safety, text="Absolute exit if Stop-Loss fails (e.g. gap down).", font=("Roboto", 10), text_color="gray").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 15))
+
+        # Daily Loss Limit
+        ctk.CTkLabel(card_safety, text="Daily Loss Limit (%):", font=("Roboto", 13)).grid(row=2, column=0, sticky="w", padx=20, pady=(5, 5))
         
         self.daily_loss_var = ctk.DoubleVar(value=risk.get("daily_loss_limit_pct", 10.0))
-        daily_slider = ctk.CTkSlider(
-            tab,
-            from_=5,
-            to=30,
-            number_of_steps=25,
-            variable=self.daily_loss_var,
-            width=300,
-            command=lambda val: daily_value_label.configure(text=f"{val:.1f}%")
-        )
-        daily_slider.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        daily_slider = ctk.CTkSlider(card_safety, from_=1, to=20, number_of_steps=38, variable=self.daily_loss_var, width=250,
+                                     progress_color="red", button_color="red",
+                                     command=lambda val: daily_val.configure(text=f"{val:.1f}%"))
+        daily_slider.grid(row=2, column=1, sticky="ew", padx=10)
         
-        daily_value_label = ctk.CTkLabel(tab, text=f"{self.daily_loss_var.get():.1f}%", font=("Arial", 12, "bold"))
-        daily_value_label.grid(row=3, column=2, sticky="w", padx=5)
+        daily_val = ctk.CTkLabel(card_safety, text=f"{self.daily_loss_var.get():.1f}%", font=("Roboto", 13, "bold"), text_color="red", width=60)
+        daily_val.grid(row=2, column=2, padx=20)
         
-        # Never sell at loss option
-        never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        never_sell_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        ctk.CTkLabel(card_safety, text="Stops all trading if portfolio drops by this % in a single day.", font=("Roboto", 10), text_color="gray").grid(row=3, column=1, sticky="w", padx=10, pady=(0, 20))
+
+        # --- SECTION 3: ADVANCED OVERRIDES ---
+        create_section_header(container, "ADVANCED OVERRIDES", "⚙️")
+        
+        card_advanced = ctk.CTkFrame(container, fg_color="#2B2B2B", corner_radius=10, border_width=1, border_color="#444")
+        card_advanced.pack(fill="x", padx=10, pady=5)
         
         self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
-        never_sell_check = ctk.CTkCheckBox(
-            never_sell_frame,
-            text="⛔ Never Sell at Loss (Override Stop-Loss)",
-            variable=self.never_sell_at_loss_var,
-            font=("Arial", 13, "bold"),
-            command=self.on_never_sell_at_loss_toggled
-        )
-        never_sell_check.pack(anchor="w", padx=15, pady=(15, 5))
         
-        never_sell_warning = ctk.CTkLabel(
-            never_sell_frame,
-            text="⚠️ WARNING: When enabled, stop-loss will NOT trigger if position is in loss.\n"
-                 "This could lead to unlimited losses if market keeps dropping.\n"
-                 "Catastrophic stop will still work as final safety measure.",
-            font=("Arial", 10),
-            text_color="#FFB84D",
-            justify="left"
-        )
-        never_sell_warning.pack(anchor="w", padx=15, pady=(0, 15))
+        switch_frame = ctk.CTkFrame(card_advanced, fg_color="transparent")
+        switch_frame.pack(fill="x", padx=20, pady=15)
         
-        # Risk summary section
-        warning_frame = ctk.CTkFrame(tab, fg_color="darkred")
-        warning_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
+        lbl_switch = ctk.CTkLabel(switch_frame, text="⛔ NEVER SELL AT LOSS", font=("Roboto", 14, "bold"), text_color="#FFF")
+        lbl_switch.pack(side="left")
         
-        warning_label = ctk.CTkLabel(
-            warning_frame,
-            text="⚠️ RISK PROTECTION ACTIVE\n"
-                 "Bot will automatically sell if:\n"
-                 f"• Position loss exceeds {self.stop_loss_var.get():.1f}% (Stop-Loss)\n"
-                 f"• Position profit reaches {self.profit_target_var.get():.1f}% (Take Profit)\n"
-                 f"• Position loss exceeds {self.cat_stop_var.get():.1f}% (Emergency Stop)\n"
-                 f"• Daily portfolio loss exceeds {self.daily_loss_var.get():.1f}% (Circuit Breaker)",
-            font=("Arial", 11),
-            justify="left"
+        switch = ctk.CTkSwitch(switch_frame, text="", variable=self.never_sell_at_loss_var, onvalue=True, offvalue=False,
+                               progress_color=COLOR_DANGER, button_hover_color="#555",
+                               command=self.on_never_sell_at_loss_toggled)
+        switch.pack(side="right")
+        
+        warn_msg = (
+            "⚠️ DANGER ZONE: When enabled, the bot will IGNORE the Stop-Loss setting if the position is in loss.\n"
+            "This converts trades into long-term holdings. Use only if you are investing in high-quality stocks.\n"
+            "Note: The 'Emergency Stop' will still trigger as a catastrophic failsafe."
         )
-        warning_label.pack(padx=15, pady=15)
+        ctk.CTkLabel(card_advanced, text=warn_msg, font=("Roboto", 11), text_color="#FFB84D", justify="left").pack(anchor="w", padx=20, pady=(0, 20))
     
     def build_stocks_tab(self):
         """Stock configuration - View and validate interface"""
@@ -579,11 +573,10 @@ class SettingsGUI:
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Price", "Status"),
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Skip RSI", "Qty", "Target %", "Price", "Status"),
             show="headings",
             height=10
         )
-        self.stock_table.heading("Price", text="LTP (Live)")
         self.stock_table.heading("Symbol", text="Symbol")
         self.stock_table.heading("Exchange", text="Exch")
         self.stock_table.heading("Enabled", text="Enabled")
@@ -591,8 +584,10 @@ class SettingsGUI:
         self.stock_table.heading("Timeframe", text="TF")
         self.stock_table.heading("Buy RSI", text="Buy")
         self.stock_table.heading("Sell RSI", text="Sell")
+        self.stock_table.heading("Skip RSI", text="Skip RSI")
         self.stock_table.heading("Qty", text="Qty")
         self.stock_table.heading("Target %", text="Profit %")
+        self.stock_table.heading("Price", text="LTP (Live)")
         self.stock_table.heading("Status", text="Status")
         
         for col in self.stock_table["columns"]:
@@ -715,6 +710,7 @@ class SettingsGUI:
                 stock.get('timeframe', '15T'),
                 stock.get('buy_rsi', 30),
                 stock.get('sell_rsi', 70),
+                "Yes" if stock.get('Ignore_RSI', False) else "No",
                 stock.get('quantity', 0),
                 stock.get('profit_target_pct', 1.0),
                 price_disp, # PERSISTED PRICE
@@ -1357,7 +1353,7 @@ class SettingsGUI:
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
-        # Table indices: 0:Sym, 1:Ex, 2:En, 3:Strat, 4:TF, 5:BuyRSI, 6:SellRSI, 7:Qty, 8:Profit
+        # Table indices (edit_values): 0:Sym, 1:Ex, 2:En, 3:Strat, 4:TF, 5:BuyRSI, 6:SellRSI, 7:SkipRSI, 8:Qty, 9:Profit
         buy_rsi_entry.insert(0, edit_values[5] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
@@ -1396,12 +1392,15 @@ class SettingsGUI:
         ctk.CTkLabel(scroll_frame, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
         qty_entry = ctk.CTkEntry(scroll_frame, width=200)
         qty_entry.pack(pady=5)
-        qty_entry.insert(0, edit_values[7] if edit_values else "0")
+        qty_entry.insert(0, edit_values[8] if edit_values else "0")
         
         ctk.CTkLabel(scroll_frame, text="Profit Target %:").pack(pady=(10, 0))
         target_entry = ctk.CTkEntry(scroll_frame, width=200)
         target_entry.pack(pady=5)
-        target_entry.insert(0, edit_values[8] if edit_values else "10.0")
+        target_entry.insert(0, edit_values[9] if edit_values else "10.0")
+
+        ignore_rsi_var = ctk.BooleanVar(value=True if edit_values and edit_values[7] == "Yes" else False)
+        ctk.CTkCheckBox(scroll_frame, text="Ignore RSI for BUY (Aggressive)", variable=ignore_rsi_var, text_color="#E67E22").pack(pady=5)
 
         enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
         ctk.CTkCheckBox(scroll_frame, text="Enabled", variable=enabled_var).pack(pady=15)
@@ -1422,6 +1421,7 @@ class SettingsGUI:
                     'timeframe': tf_var.get(),
                     'buy_rsi': int(buy_rsi_entry.get()),
                     'sell_rsi': int(sell_rsi_entry.get()),
+                    'Ignore_RSI': ignore_rsi_var.get(),
                     'quantity': int(qty_entry.get()),
                     'profit_target_pct': float(target_entry.get())
                 }

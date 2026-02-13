@@ -85,24 +85,47 @@ class FirstRunWizard:
     def _create_window(self):
         self.root = tk.Toplevel() if hasattr(tk, '_default_root') and tk._default_root else tk.Tk()
         self.root.title("ARUN Setup Wizard")
-        self.root.geometry("600x500")
-        self.root.resizable(False, False)
+        self.root.geometry("800x650")
+        self.root.resizable(True, True)
         
         # Center the window
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - 300
-        y = (self.root.winfo_screenheight() // 2) - 250
+        x = (self.root.winfo_screenwidth() // 2) - 400
+        y = (self.root.winfo_screenheight() // 2) - 325
         self.root.geometry(f"+{x}+{y}")
         
         # Style
         self.style = ttk.Style()
-        self.style.configure("Title.TLabel", font=("Segoe UI", 16, "bold"))
-        self.style.configure("Subtitle.TLabel", font=("Segoe UI", 10))
-        self.style.configure("Warning.TLabel", font=("Segoe UI", 9), foreground="#DC3545")
-        self.style.configure("Success.TLabel", font=("Segoe UI", 10), foreground="#28A745")
+        try:
+            self.style.theme_use('clam')
+        except:
+            pass # Fallback to default if clam not available
+            
+        self.style.configure("Title.TLabel", font=("Segoe UI", 28, "bold"))
+        self.style.configure("Subtitle.TLabel", font=("Segoe UI", 16))
+        self.style.configure("Warning.TLabel", font=("Segoe UI", 14), foreground="#DC3545")
+        self.style.configure("Success.TLabel", font=("Segoe UI", 16), foreground="#28A745")
+        
+        # Consistent Button styles
+        self.style.configure("Big.TButton", font=("Segoe UI", 16, "bold"), padding=15)
+        
+        # Action Button (High Contrast)
+        self.style.configure("Action.TButton", font=("Segoe UI", 16, "bold"), padding=15, 
+                             foreground="white", background="#01579B") # Dark Blue
+        self.style.map("Action.TButton",
+            foreground=[('active', 'white'), ('disabled', 'gray')],
+            background=[('active', '#0288D1'), ('!disabled', '#01579B')]
+        )
+        
+        # Style for radio and check buttons to ensure they have large text
+        self.style.configure("TRadiobutton", font=("Segoe UI", 16))
+        self.style.configure("TCheckbutton", font=("Segoe UI", 16))
+        
+        # Set default font for entries
+        self.root.option_add("*Font", "{Segoe UI} 16")
         
         # Main container
-        self.main_frame = ttk.Frame(self.root, padding=20)
+        self.main_frame = ttk.Frame(self.root, padding=30)
         self.main_frame.pack(fill="both", expand=True)
         
         # Header with step indicator
@@ -115,22 +138,55 @@ class FirstRunWizard:
         self.title_label = ttk.Label(self.header_frame, text="Welcome to ARUN", style="Title.TLabel")
         self.title_label.pack(side="left")
         
-        # Content area (changes per step)
-        self.content_frame = ttk.Frame(self.main_frame)
-        self.content_frame.pack(fill="both", expand=True)
+        # --- Scrollable Content Area ---
+        self.canvas_container = ttk.Frame(self.main_frame)
+        self.canvas_container.pack(fill="both", expand=True)
         
-        # Navigation buttons
+        self.canvas = tk.Canvas(self.canvas_container, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.canvas_container, orient="vertical", command=self.canvas.yview)
+        
+        self.content_frame = ttk.Frame(self.canvas)
+        self.content_window = self.canvas.create_window((0, 0), window=self.content_frame, anchor="nw")
+        
+        self.content_frame.bind("<Configure>", self._on_frame_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        # Mousewheel support
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        
+        # Navigation buttons (Fixed at bottom)
         self.nav_frame = ttk.Frame(self.main_frame)
         self.nav_frame.pack(fill="x", pady=(20, 0))
         
-        self.back_btn = ttk.Button(self.nav_frame, text="← Back", command=self._go_back)
+        self.back_btn = ttk.Button(self.nav_frame, text="← Back", command=self._go_back, style="Big.TButton")
         self.back_btn.pack(side="left")
         
-        self.next_btn = ttk.Button(self.nav_frame, text="Next →", command=self._go_next)
+        self.next_btn = ttk.Button(self.nav_frame, text="Next →", command=self._go_next, style="Action.TButton")
         self.next_btn.pack(side="right")
         
         # Show first step
         self._show_step_1()
+
+    def _on_frame_configure(self, event):
+        """Reset the scroll region to encompass the inner frame"""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event):
+        """When canvas is resized, resize the inner frame to match"""
+        canvas_width = event.width
+        self.canvas.itemconfig(self.content_window, width=canvas_width)
+
+    def _on_mousewheel(self, event):
+        """Handle mousewheel scrolling"""
+        try:
+            if self.canvas.winfo_exists():
+                self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        except Exception:
+            pass
         
     def _clear_content(self):
         for widget in self.content_frame.winfo_children():
@@ -149,29 +205,29 @@ class FirstRunWizard:
         self.current_step = 1
         
         ttk.Label(self.content_frame, text="Enter your mStock API credentials:", 
-                  style="Subtitle.TLabel").pack(anchor="w", pady=(0, 15))
+                  style="Subtitle.TLabel").pack(anchor="w", pady=(0, 20))
         
         # API Key
-        ttk.Label(self.content_frame, text="API Key:").pack(anchor="w")
-        self.api_key_entry = ttk.Entry(self.content_frame, width=50)
-        self.api_key_entry.pack(anchor="w", pady=(0, 10))
+        ttk.Label(self.content_frame, text="API Key:", style="Subtitle.TLabel").pack(anchor="w")
+        self.api_key_entry = ttk.Entry(self.content_frame, width=65, font=("Segoe UI", 16))
+        self.api_key_entry.pack(anchor="w", pady=(5, 25))
         self.api_key_entry.insert(0, self.api_key)
         
         # API Secret  
-        ttk.Label(self.content_frame, text="API Secret:").pack(anchor="w")
-        self.api_secret_entry = ttk.Entry(self.content_frame, width=50, show="*")
-        self.api_secret_entry.pack(anchor="w", pady=(0, 10))
+        ttk.Label(self.content_frame, text="API Secret:", style="Subtitle.TLabel").pack(anchor="w")
+        self.api_secret_entry = ttk.Entry(self.content_frame, width=65, show="*", font=("Segoe UI", 16))
+        self.api_secret_entry.pack(anchor="w", pady=(5, 25))
         self.api_secret_entry.insert(0, self.api_secret)
         
         # Client Code
-        ttk.Label(self.content_frame, text="Client Code (e.g., MA1234567):").pack(anchor="w")
-        self.client_code_entry = ttk.Entry(self.content_frame, width=50)
-        self.client_code_entry.pack(anchor="w", pady=(0, 15))
+        ttk.Label(self.content_frame, text="Client Code (e.g., MA1234567):", style="Subtitle.TLabel").pack(anchor="w")
+        self.client_code_entry = ttk.Entry(self.content_frame, width=65, font=("Segoe UI", 16))
+        self.client_code_entry.pack(anchor="w", pady=(5, 25))
         self.client_code_entry.insert(0, self.client_code)
         
         # Test connection button
         self.test_btn = ttk.Button(self.content_frame, text="🔌 Test Connection", 
-                                   command=self._test_connection)
+                                   command=self._test_connection, style="Big.TButton")
         self.test_btn.pack(anchor="w", pady=(0, 10))
         
         self.connection_status = ttk.Label(self.content_frame, text="", style="Subtitle.TLabel")
@@ -236,15 +292,15 @@ class FirstRunWizard:
             desc.pack(side="left")
         
         # Show what each setting means
-        info_frame = ttk.LabelFrame(self.content_frame, text="What This Means", padding=10)
-        info_frame.pack(fill="x", pady=(20, 0))
+        info_frame = ttk.LabelFrame(self.content_frame, text="What This Means", padding=15)
+        info_frame.pack(fill="x", pady=(25, 0))
         
         ttk.Label(info_frame, text="🛑 Stop Loss: Automatically sell if price drops to limit losses",
-                  style="Subtitle.TLabel", wraplength=500).pack(anchor="w")
+                  style="Subtitle.TLabel", wraplength=700).pack(anchor="w")
         ttk.Label(info_frame, text="🎯 Profit Target: Automatically sell when profit goal is reached",
-                  style="Subtitle.TLabel", wraplength=500).pack(anchor="w", pady=(5, 0))
+                  style="Subtitle.TLabel", wraplength=700).pack(anchor="w", pady=(10, 0))
         ttk.Label(info_frame, text="🛡️ Never Sell at Loss: Hold until profitable (conservative only)",
-                  style="Subtitle.TLabel", wraplength=500).pack(anchor="w", pady=(5, 0))
+                  style="Subtitle.TLabel", wraplength=700).pack(anchor="w", pady=(10, 0))
     
     # ==================== STEP 3: Stock Selection ====================
     def _show_step_3(self):
@@ -266,30 +322,30 @@ class FirstRunWizard:
             "Past performance does not guarantee future results. You may lose money."
         )
         disclaimer_label = ttk.Label(disclaimer_frame, text=disclaimer_text,
-                                     style="Warning.TLabel", wraplength=550)
-        disclaimer_label.pack(fill="x")
+                                     style="Warning.TLabel", wraplength=700)
+        disclaimer_label.pack(fill="x", padx=10, pady=10)
         
         # Stock pack options
         self.pack_vars = {}
         
         for key, pack in self.STOCK_PACKS.items():
-            pack_frame = ttk.LabelFrame(self.content_frame, text=pack["name"], padding=10)
-            pack_frame.pack(fill="x", pady=5)
+            pack_frame = ttk.LabelFrame(self.content_frame, text=pack["name"], padding=15)
+            pack_frame.pack(fill="x", pady=10)
             
             ttk.Label(pack_frame, text=pack["description"], 
                      style="Subtitle.TLabel").pack(anchor="w")
             
             stock_names = ", ".join([s["symbol"] for s in pack["stocks"]])
             ttk.Label(pack_frame, text=f"Stocks: {stock_names}",
-                     style="Subtitle.TLabel").pack(anchor="w", pady=(5, 0))
+                     style="Subtitle.TLabel").pack(anchor="w", pady=(10, 0))
             
             self.pack_vars[key] = tk.BooleanVar(value=False)
             ttk.Checkbutton(pack_frame, text="Add this pack to my watchlist",
-                           variable=self.pack_vars[key]).pack(anchor="w", pady=(5, 0))
+                           variable=self.pack_vars[key], style="TCheckbutton").pack(anchor="w", pady=(10, 0))
         
         # Custom option
-        custom_frame = ttk.LabelFrame(self.content_frame, text="✏️ I'll Add My Own", padding=10)
-        custom_frame.pack(fill="x", pady=5)
+        custom_frame = ttk.LabelFrame(self.content_frame, text="✏️ I'll Add My Own", padding=15)
+        custom_frame.pack(fill="x", pady=10)
         
         ttk.Label(custom_frame, 
                   text="You can add custom stocks later in the Settings panel.",
@@ -337,9 +393,9 @@ class FirstRunWizard:
             if self.settings:
                 # Save broker credentials
                 if self.api_key:
-                    self.settings.set_encrypted("broker.api_key", self.api_key)
+                    self.settings.set("broker.api_key", self.api_key)
                 if self.api_secret:
-                    self.settings.set_encrypted("broker.api_secret", self.api_secret)
+                    self.settings.set("broker.api_secret", self.api_secret)
                 if self.client_code:
                     self.settings.set("broker.client_code", self.client_code)
                 
@@ -405,17 +461,20 @@ def should_show_wizard() -> bool:
     try:
         settings = SettingsManager()
         
-        # Check if first run flag is explicitly False
+        # 1. Check for manual configuration (Bypass if credentials exist)
+        api_key = settings.get("broker.api_key")
+        client_code = settings.get("broker.client_code")
+        
+        if api_key and client_code:
+            # User has configured manually or restored settings
+            return False
+        
+        # 2. Check strict first run flag
         first_run_completed = settings.get("app_settings.first_run_completed", False)
         if first_run_completed:
             return False
-        
-        # Also check if stocks are empty (another indicator of first run)
-        stocks = settings.get("stocks", [])
-        if not stocks or len(stocks) == 0:
-            return True
             
-        return not first_run_completed
+        return True
         
     except Exception:
         return False

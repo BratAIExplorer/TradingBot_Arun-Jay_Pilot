@@ -449,6 +449,32 @@ class TradesDatabase:
         except Exception as e:
             print(f"❌ Failed to export trades: {e}")
             raise
+            
+    def close_position_external(self, symbol: str, exchange: str, quantity: int, price: float, reason: str = "External/Manual Exit") -> int:
+        """
+        Close a position that was closed externally (outside the bot).
+        Logs a SELL trade with 0 fees to balance the books.
+        """
+        # Calculate P&L for records, but fees are likely 0 since we didn't execute it
+        # (Or we could estimate fees if we knew it was a real trade, but for reconciliation safest is 0)
+        
+        # We assume price is the price at which it was closed, or current LTP if unknown.
+        gross = quantity * price
+        
+        return self.insert_trade(
+            symbol=symbol,
+            exchange=exchange,
+            action="SELL",
+            quantity=quantity,
+            price=price,
+            gross_amount=gross,
+            total_fees=0,
+            net_amount=gross,
+            strategy="Reconciliation",
+            reason=reason,
+            broker="mstock",
+            source="MANUAL_SYNC"
+        )
 
 
 # Global database instance

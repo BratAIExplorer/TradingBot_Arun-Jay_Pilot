@@ -20,10 +20,15 @@ class RiskManager:
         self.state_mgr = state_manager
         
         # Risk settings
-        self.stop_loss_pct = settings.get('risk_controls.default_stop_loss_pct', 5)
-        self.profit_target_pct = settings.get('risk_controls.default_profit_target_pct', 10)
-        self.catastrophic_stop_pct = settings.get('risk_controls.catastrophic_stop_pct', 20)
-        self.daily_loss_limit_pct = settings.get('capital.daily_loss_limit_pct', 10)
+        self.stop_loss_pct = settings.get('risk.stop_loss_pct', 5)
+        self.profit_target_pct = settings.get('risk.profit_target_pct', 10)
+        self.catastrophic_stop_pct = settings.get('risk.catastrophic_stop_loss_pct', 20)
+        self.daily_loss_limit_pct = settings.get('risk.daily_loss_limit_pct', 5)
+        
+        # Additional settings from risk config
+        risk_config = settings.get('risk', {})
+        self.hold_quality_stocks = risk_config.get('hold_quality_stocks', True)
+        self.quality_hold_days = risk_config.get('quality_stock_hold_days', 60)
         
         # Tracking
         self.daily_start_capital = settings.get('capital.total_capital', 0)
@@ -115,8 +120,12 @@ class RiskManager:
             
             logging.info(f"  {symbol}: Entry ₹{entry_price:.2f} → Current ₹{current_price:.2f} = {pnl_pct:+.2f}%")
             
-            # Check catastrophic stop (ALWAYS takes priority)
-            if pnl_pct <=-self.catastrophic_stop_pct:
+            # Check catastrophic stop
+            if pnl_pct <= -self.catastrophic_stop_pct:
+                never_sell_at_loss = self.settings.get('risk.never_sell_at_loss', False)
+                if never_sell_at_loss:
+                    logging.warning(f"  🛡️ CATASTROPHIC STOP suppressed for {symbol} ({pnl_pct:.1f}%) — Never Sell at Loss is ON. HOLDING.")
+                    continue
                 actions.append({
                     'symbol': symbol,
                     'exchange': exchange,

@@ -1,7 +1,33 @@
 # Error Log & Fixes — ARUN Trading Bot
 
 **Last Updated**: February 16, 2026
-**Version**: v2.5.1 (Security Audit Fixes)
+**Version**: v2.5.2 (Never Sell at Loss Hardening)
+
+---
+
+## v2.5.2 — Never Sell at Loss: Hardcoded Safety Gate (Feb 16, 2026)
+
+### BUG: Sells at Loss Despite "Never Sell at Loss" Being Enabled
+**Issue**: User had `risk.never_sell_at_loss: true` in settings, but the bot still executed sell orders at a loss. Investigation revealed **3 bypass paths** where sells could escape the protection.
+
+**Root Cause — 3 Bypass Paths Identified:**
+
+1. **Catastrophic Stop bypassed the check** (`risk_manager.py:124`): The 20% catastrophic stop fired *before* the never-sell-at-loss check and had no override — it always sold regardless of the setting.
+
+2. **Risk Manager actions executed blindly** (`kickstart.py:2588`): When `risk_mgr.check_all_positions()` returned SELL actions, `kickstart.py` executed them without any secondary never-sell-at-loss verification.
+
+3. **No final safety gate**: There was no last-resort check at the order execution level (`safe_place_order_when_open`), so any code path that called this function could trigger a loss sell.
+
+**Fixes Applied (Defense-in-Depth, 3 layers):**
+
+| Layer | File | What Changed |
+|-------|------|-------------|
+| **Layer 1: Hardcoded Gate** | `kickstart.py` — `safe_place_order_when_open()` | Added a **final safety checkpoint** that blocks ALL sell orders when `LTP < Entry Price` and never-sell-at-loss is ON. This is the last line of defense — no sell-at-loss can bypass it regardless of which code path triggers the sell. Sends Telegram alert when a sell is blocked. |
+| **Layer 2: Catastrophic Stop** | `risk_manager.py` — `check_all_positions()` | Catastrophic stop now respects `never_sell_at_loss`. When enabled, catastrophic stop is suppressed (logged as warning) instead of forcing a sell. |
+| **Layer 3: Risk Execution** | `kickstart.py` — risk action loop | Added early rejection: if a risk-triggered SELL action has negative P&L and never-sell-at-loss is ON, the action is blocked *before* even fetching the instrument token. |
+
+**Files Changed**: `kickstart.py`, `risk_manager.py`
+**User Action Required**: None — fix is automatic. Verify in logs that `🛡️🛡️ HARD BLOCK` messages appear instead of loss sells.
 
 ---
 

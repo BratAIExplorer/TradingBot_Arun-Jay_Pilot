@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2.5.0
-**Last Updated**: February 16, 2026  
-**Status**: v2.5.0 - Stability & Execution Accuracy  
+**Project**: ARUN Trading Bot Titan V2.5.2
+**Last Updated**: February 16, 2026
+**Status**: v2.5.2 - Never Sell at Loss Hardening
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -561,6 +561,24 @@ strategies/          → sector_map.py, trading_tips.json
 **Files Created**: `Documentation/Product/BACKLOG.md` (fully rewritten with prioritized roadmap)
 
 **Status:** Expert Review Complete, Backlog Updated ✅
+
+---
+
+### Session: February 16, 2026 (Evening) - Claude Opus 4.6 (Anthropic)
+**Objective**: Fix critical bug — sells executing at loss despite `never_sell_at_loss: true`
+
+**Bug Found**: 3 bypass paths allowed loss-sells to escape the `never_sell_at_loss` protection:
+1. Catastrophic stop (20% drop) had **no never-sell-at-loss override** — always sold
+2. Risk manager SELL actions executed in `kickstart.py` with **no secondary P&L check**
+3. **No final safety gate** existed at the order execution level
+
+**Fixes Applied (Defense-in-Depth, 3 layers):**
+1. **Hardcoded Gate** in `safe_place_order_when_open()` — the last line of defense. ALL sell orders are checked: if `LTP < entry_price` and never-sell-at-loss is ON, the sell is blocked + Telegram alert sent. No code path can bypass this.
+2. **Catastrophic stop** in `risk_manager.py` now respects `never_sell_at_loss` — suppresses sell, logs warning instead.
+3. **Risk execution loop** in `kickstart.py` — early rejection for negative P&L actions when never-sell-at-loss is ON, before even fetching instrument tokens.
+
+**Files Changed**: `kickstart.py`, `risk_manager.py`
+**Status:** v2.5.2 - Never Sell at Loss Hardening Complete ✅
 
 ---
 

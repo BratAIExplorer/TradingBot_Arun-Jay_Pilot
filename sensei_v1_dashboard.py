@@ -274,6 +274,12 @@ class DashboardV2:
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
         user_frame.pack(side="right", padx=10)
         
+        # Connection Status Indicator
+        self.status_indicator = ctk.CTkLabel(user_frame, text="●", font=("Arial", 24), text_color="gray")
+        self.status_indicator.pack(side="left", padx=5)
+        self.status_tooltip = ctk.CTkLabel(user_frame, text="Backend: Connecting...", font=("Roboto", 10), text_color="gray")
+        self.status_tooltip.pack(side="left", padx=(0, 10))
+        
         ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
 

@@ -450,7 +450,8 @@ if settings:
         # Load Engine Beat Setting
         ENGINE_BEAT_SECONDS = float(settings.get("app_settings.engine_beat_seconds", 2.0))
         log_ok(f"💓 Engine Beat Frequency: {ENGINE_BEAT_SECONDS}s")
-    except: pass
+    except Exception as e:
+        log_ok(f"⚠️ Failed to load engine settings: {e}")
 
 def check_capital_safety(required_amount):
     """
@@ -544,7 +545,7 @@ def fetch_market_data(symbol, exchange):
 
         except Exception as e:
             # Skip logging if simulation/fallback might hit
-            pass
+            log_ok(f"⚠️ Market data fetch failed for {symbol}: {e}")
 
     # 1.5 Fallback to Holdings LTP if API fails (as suggested by user)
     if not is_offline():
@@ -567,7 +568,8 @@ def fetch_market_data(symbol, exchange):
                          "change_percent": 0.0,
                          "instrument_token": "HOLDING_FALLBACK"
                      }, exchange
-        except: pass
+        except Exception as e:
+            log_ok(f"ℹ️ Holdings fallback failed for {symbol}: {e}")
 
     # 2. Generate Fabricated Data if Allowed
     if should_simulate:
@@ -1732,10 +1734,32 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
-        
-    # print(f"{symbol}, {exchange}, {qty}, {side}")
-    # print(check_existing_orders(symbol, exchange, qty, side))
-    
+
+    # ═══════════════════════════════════════════════════════════════════
+    # HARDCODED SAFETY GATE: Never Sell at Loss
+    # This is the FINAL checkpoint — no sell-at-loss can bypass this.
+    # ═══════════════════════════════════════════════════════════════════
+    if side.upper() == "SELL" and settings:
+        never_sell_at_loss = settings.get('risk.never_sell_at_loss', False)
+        if never_sell_at_loss:
+            entry_price = portfolio_state.get(symbol, {}).get("price", 0.0)
+            if entry_price > 0:
+                # Get current market price
+                md, _ = fetch_market_data_once(symbol, exchange)
+                current_ltp = float(md.get("last_price", 0)) if md else 0
+                if current_ltp > 0 and current_ltp < entry_price:
+                    log_ok(f"🛡️🛡️ HARD BLOCK: Sell REJECTED for {symbol} — LTP ₹{current_ltp:.2f} < Entry ₹{entry_price:.2f}. Never Sell at Loss is ON.", force=True)
+                    if notifier:
+                        try:
+                            notifier.send_circuit_breaker_alert({
+                                'symbol': symbol, 'exchange': exchange, 'action': 'BLOCKED',
+                                'quantity': qty, 'reason': f'Never Sell at Loss: LTP ₹{current_ltp:.2f} < Entry ₹{entry_price:.2f}',
+                                'current_price': current_ltp, 'profit_pct': ((current_ltp - entry_price) / entry_price) * 100
+                            })
+                        except Exception:
+                            pass
+                    return False
+
     if check_existing_orders(symbol, exchange, qty, side):
         # Determine if it was blocked by RMS Cooldown or a real order
         if (symbol, exchange) in RMS_FAILURES:
@@ -2384,6 +2408,13 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 if "INSUFFICIENT" in message or "AVAILABLE QTY IS - 0" in message or "SCRIP LIMIT INSUFFICIENT" in message:
                     log_ok(f"🛡️ RMS Quantity Restriction: {symbol} added to cooldown list.")
                     RMS_FAILURES[(symbol, exchange)] = datetime.now()
+                    
+                    # REACTIVE RECONCILIATION
+                    # Check if we should auto-correct
+                    try:
+                        reconcile_with_broker(specific_symbol=symbol)
+                    except Exception as e:
+                        log_ok(f"⚠️ Reactive Reconciliation Failed: {e}")
 
                 if state_mgr:
                     state_mgr.increment_trade_counter('failed')
@@ -2410,6 +2441,117 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 return False
         else:
             raise
+
+def reconcile_with_broker(specific_symbol=None):
+    """
+    Smart Reconciliation: Synchronize Bot DB with Broker Holdings.
+    - If specific_symbol provided (Reactive), checks only that symbol.
+    - Otherwise (Proactive), checks all active DB positions.
+    """
+    if is_offline() or not db:
+        return
+
+    log_ok(f"🔄 Starting Smart Reconciliation ({'Single: ' + specific_symbol if specific_symbol else 'Full Scan'})...")
+    
+    try:
+        # 1. Fetch Source of Truth (Broker Holdings)
+        # We need fresh data here, so bypass cache if possible or just call API
+        broker_holdings = get_positions() # This calls API
+        
+        # 2. Fetch Bot State (DB positions)
+        db_positions = db.get_open_positions()
+        
+        # Map for easy lookup: (symbol, exchange) -> quantity
+        broker_map = {}
+        for sym, data in broker_holdings.items():
+            # broker_holdings keys are usually just symbol strings if from get_positions
+            # But get_positions return dict keyed by symbol. 
+            # We need to be careful about exchange matching.
+            # get_positions returns simple dict {symbol: ...}
+            # We'll normalize to (symbol, exchange)
+            ex = data.get('exchange', 'NSE')
+            broker_map[(sym, ex)] = int(data.get('qty', 0))
+
+        # 3. Compare
+        to_check = db_positions
+        if specific_symbol:
+            to_check = [p for p in db_positions if p['symbol'] == specific_symbol]
+            
+        for db_pos in to_check:
+            sym = db_pos['symbol']
+            ex = db_pos['exchange']
+            db_qty = int(db_pos['net_quantity'])
+            
+            # Check against broker
+            broker_qty = broker_map.get((sym, ex), 0)
+            
+            # CASE A: CLOSED (Ghost Position)
+            # DB says we have it, Broker says 0
+            if db_qty > 0 and broker_qty == 0:
+                log_ok(f"👻 RECONCILIATION: Found Ghost Position {sym} (DB: {db_qty}, Broker: 0). Closing in DB...")
+                
+                # Auto-Correct DB
+                try:
+                    # Log a manual/external sell to zero it out
+                    # Use last known LTP from market data or DB stats
+                    close_price = float(db_pos.get('avg_entry_price', 0)) # Fallback
+                    
+                    # Try to get real price
+                    md, _ = fetch_market_data_once(sym, ex)
+                    if md and 'last_price' in md:
+                        close_price = float(md['last_price'])
+                        
+                    db.close_position_external(
+                        symbol=sym, 
+                        exchange=ex, 
+                        quantity=db_qty, 
+                        price=close_price,
+                        reason="Smart Reconciliation: Manual Exit Detected"
+                    )
+                    
+                    # Notification
+                    if notifier:
+                        notifier.send_message(f"🧹 *Smart Clean*: {sym} removed from dashboard.\nReason: Sold manually/externally.")
+                        
+                except Exception as e:
+                    log_ok(f"❌ Failed to reconcile {sym}: {e}")
+
+            # CASE B: QUANTITY MISMATCH (Partial Sell)
+            elif db_qty != broker_qty:
+                # If broker has LESS than DB -> we sold some manually
+                if broker_qty < db_qty:
+                    diff = db_qty - broker_qty
+                    log_ok(f"📉 RECONCILIATION: Quantity Mismatch {sym} (DB: {db_qty}, Broker: {broker_qty}). Adjusting down by {diff}...")
+                    try:
+                        md, _ = fetch_market_data_once(sym, ex)
+                        price = float(md.get('last_price', 0)) if md else 0
+                        db.close_position_external(
+                            symbol=sym,
+                            exchange=ex,
+                            quantity=diff,
+                            price=price, 
+                            reason=f"Smart Reconciliation: Quantity Sync (Adjusted {db_qty}->{broker_qty})"
+                        )
+                    except Exception as e:
+                        log_ok(f"❌ Failed to sync qty for {sym}: {e}")
+                
+                # If broker has MORE than DB -> we bought some manually (Orphan Selection)
+                # We typically don't auto-add these to DB to avoid messing up strategy logic, 
+                # but we show them in dashboard via the 'merge' logic we already have.
+                else:
+                    log_ok(f"ℹ️ RECONCILIATION: Found extra shares for {sym} (DB: {db_qty}, Broker: {broker_qty}). Showing as Manual/Hybrid.")
+
+        # 4. Remove from RMS Failures if reconciled
+        if specific_symbol:
+             # If we just fixed it, clear the cooldown
+             # We blindly clear it so the bot checks again (and finds 0 qty -> skips logic cleanly)
+             RMS_FAILURES.pop((specific_symbol, 'NSE'), None)
+             RMS_FAILURES.pop((specific_symbol, 'BSE'), None)
+             
+    except Exception as e:
+        log_ok(f"⚠️ Reconciliation Logic Failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ---------------- Runner ----------------
 
@@ -2453,20 +2595,27 @@ def run_cycle():
                 reason = action['reason']
                 
                 log_ok(f"🚨 RISK TRIGGER: {reason}", force=True)
-                
+
+                # Defense-in-depth: Block loss sells before even fetching instrument token
+                if action['action'] == "SELL" and action.get('pnl_pct', 0) < 0:
+                    never_sell = settings.get('risk.never_sell_at_loss', False) if settings else False
+                    if never_sell:
+                        log_ok(f"🛡️ RISK SELL BLOCKED for {symbol}: P&L {action.get('pnl_pct', 0):.1f}% — Never Sell at Loss is ON.", force=True)
+                        continue
+
                 # Get instrument token for sell order
                 market_data, _ = fetch_market_data_once(symbol, exchange)
                 instrument_token = market_data.get("instrument_token") if market_data else None
-                
+
                 if instrument_token:
                     # Prevent redundant sells if an order is already open
                     if action['action'] == "SELL" and check_existing_orders(symbol, exchange, qty, "SELL"):
                         log_ok(f"⏭️ Risk SELL already in progress for {symbol}, skipping duplicate trigger.")
                         continue
 
-                    # Trigger sell order
+                    # Trigger sell order (also protected by hardcoded gate in safe_place_order_when_open)
                     safe_place_order_when_open(
-                        symbol, exchange, qty, action['action'], 
+                        symbol, exchange, qty, action['action'],
                         instrument_token, price=0, use_amo=False
                     )
 
@@ -2662,7 +2811,8 @@ def main_loop():
     try:
         if perform_auto_login():
             pass
-    except Exception: pass
+    except Exception as e: 
+        log_ok(f"⚠️ Auto-login periodic refresh failed: {e}")
     
     # ---------------- Load State (Phase 0A) ----------------
     if state_mgr:
@@ -2676,6 +2826,27 @@ def main_loop():
                 return
         except Exception as e:
             log_ok(f"⚠️ State load failed: {e}", force=True)
+
+    # ---------------- Smart Reconciliation (Proactive) ----------------
+    # Schedule: Market Open (09:15), Lunch (12:00), Pre-Close (15:15)
+    now = now_ist()
+    current_time_str = now.strftime("%H:%M")
+    
+    # Simple check to run 3x a day (approx)
+    # We use a global variable to track last run time/date to avoid spamming every cycle within the minute
+    global LAST_RECONCILIATION_TIME
+    if 'LAST_RECONCILIATION_TIME' not in globals():
+        LAST_RECONCILIATION_TIME = None
+        
+    schedule_times = ["09:16", "12:00", "15:15"]
+    
+    if current_time_str in schedule_times:
+        # Check if we already ran for this specific time slot to prevent multiple triggers in the same minute
+        last_run_str = LAST_RECONCILIATION_TIME.strftime("%H:%M") if LAST_RECONCILIATION_TIME else ""
+        if last_run_str != current_time_str:
+             log_ok(f"⏰ Triggering Scheduled Reconciliation ({current_time_str})...")
+             reconcile_with_broker()
+             LAST_RECONCILIATION_TIME = now
     
     log_ok("🕒 Scheduler started (continuous)", force=True)
     if is_system_online():

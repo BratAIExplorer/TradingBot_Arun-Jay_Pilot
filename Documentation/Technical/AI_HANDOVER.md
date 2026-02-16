@@ -530,9 +530,41 @@ strategies/          → sector_map.py, trading_tips.json
 
 **Status:** v2.5.1 - Security Audit Fixes Applied ✅
 
+### Session: February 16, 2026 (Final Review) - Claude Opus 4.6 (Anthropic)
+**Objective**: Expert GUI/Architecture/Product Review + Documentation Wrap-up
+
+**Expert Review Findings** (Senior GUI Lead + Architecture + Product Owner perspective):
+
+**GUI Assessment Summary:**
+| Area | Rating | Notes |
+|------|--------|-------|
+| Tab Structure (9 tabs) | Excellent | Clean horizontal nav, no sidebar clutter |
+| Number/Currency Formatting | Excellent | Consistent ₹ format across all views |
+| Navigation | Excellent | Three-zone header (logo/nav/profile) |
+| Error Feedback | Good | Messagebox-based with confirmation for destructive actions |
+| Loading Pattern | Good | Progress bar + callbacks for scanner |
+| Accessibility | Good | Font ≥13pt, good contrast on light theme |
+| Button Styling | Mixed | Main app consistent, settings_gui uses separate color scheme |
+| Settings Validation | Weak | Accepts negative capital, garbage API keys, no format checks |
+| Strategies Tab | Weak | Mostly placeholder cards, no real functionality |
+
+**Key Recommendations for Next Sprint (v2.6.0):**
+1. **Smart Reconciliation System** — Broker-as-source-of-truth, reactive + 3x/day proactive sync
+2. **Settings Input Validation** — #1 reliability gap; users can enter garbage data
+3. **Remove Zerodha dropdown** — Does nothing, confuses users
+4. **Unify button colors** — settings_gui.py hardcodes different colors from main app
+5. **Connection status dot** in header (green/yellow/red for broker health)
+6. **Replace 20+ bare `except: pass`** — Silent failures mask bugs
+7. **Extract `broker_api.py`** from kickstart.py (~30% size reduction)
+8. **Parallel scanner** — ThreadPoolExecutor(5) for 5x scan speed
+
+**Files Created**: `Documentation/Product/BACKLOG.md` (fully rewritten with prioritized roadmap)
+
+**Status:** Expert Review Complete, Backlog Updated ✅
+
 ---
 
-## 🔧 DETAILED FIX INSTRUCTIONS (REFERENCE — All Implemented)
+## 🔧 DETAILED FIX INSTRUCTIONS (REFERENCE — All Implemented in v2.5.1)
 
 ### Fix 1: Remove settings.json from Git (P0)
 ```bash

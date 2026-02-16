@@ -5,6 +5,8 @@
         "api_secret": "",
         "client_code": "",
         "password": "",
+        "access_token": "",
+        "totp_secret": "",
         "connection_status": "not_connected",
         "last_login": null
     },

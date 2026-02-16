@@ -1,7 +1,7 @@
 # 🏗️ ARUN Project Status & Architecture (Titan V2)
 
-**Last Updated:** February 13, 2026
-**Version:** Titan V2.4.2 (Risk UI Mode & Cross-Exchange Fix)
+**Last Updated:** February 16, 2026
+**Version:** Titan V2.5.0 (Stability & Execution Accuracy)
 
 ---
 
@@ -13,7 +13,7 @@ Here is the updated breakdown of the Titan V2 codebase.
 | File | Purpose | Status |
 |------|---------|--------|
 | `kickstart.py` | **The Brain.** Headless trading engine. Handles API calls, RSI logic, and trade execution. | ✅ Active |
-| `dashboard_v2.py` | **The Face.** Titan V2 UI (Bento Grid). Dark mode, real-time metrics, and sector-based control. | ✅ Active |
+| `sensei_v1_dashboard.py` | **The Face.** Titan V2 UI (Bento Grid). Dark mode, real-time metrics, and sector-based control. | ✅ Active |
 | `market_sentiment.py`| **The Mood.** Fear/Greed index calculation with live reasoning engine. | ✅ Active |
 | `settings_gui.py` | **The Control Room.** Embedded 5-tab settings panel for broker, risk, and stock config. | ✅ Active |
 | `settings_manager.py`| Handles encrypted config storage and TOTP-based auto-login. | ✅ Active |
@@ -44,6 +44,11 @@ Here is the updated breakdown of the Titan V2 codebase.
 ---
 
 ## 🛠 Recent Engineering Improvements
+*   **Stability & Accuracy Update (v2.5.0)**:
+    *   **RMS Cooldown**: Automated 1-hour cooldown for "Insufficient Quantity" rejections to prevent infinite SELl loops.
+    *   **Immediate Panic Stop**: Refactored `run_cycle` with mid-loop checks for `STOP_REQUESTED`, ensuring immediate response to user stop commands.
+    *   **Real-time Trade Counters**: Unified "SUCCESS" and "FAILED" counters on the dashboard using `StateManager` data for broker-level execution accuracy.
+    *   **P&L Logging Robustness**: Added fallback entry price support in `trades_db.py` to ensure P&L is calculated even if the initial BUY record is missing.
 *   **Risk UI Modernization (v2.4.2)**: Redesigned Settings > Risk Controls with grouped cards, visual sliders, and improved safety toggles. Added `COLOR_DANGER` constants.
 *   **Duplicate Buy Fix (v2.4.2)**: Made `check_existing_orders` symbol-aware across all exchanges. Prevents buying `ABC` on NSE if `ABC` is already held/ordered on BSE.
 *   **Config Self-Healing (v2.4.2)**: Fixed corrupted `settings.json` where strategies were stuck as `NaN`, defaulting them to `TRADE`.

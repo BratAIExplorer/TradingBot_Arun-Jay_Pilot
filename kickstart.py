@@ -45,6 +45,7 @@ import traceback
 import pytz
 import time
 import socket
+import threading
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
@@ -183,9 +184,13 @@ FETCH_STATE: Dict[str, InflightState] = {}
 MISSING_TOKEN_LOGGED: Dict[str, bool] = {}
 CANDLE_CACHE: Dict[Tuple[str, str, str], pd.DataFrame] = {} # (symbol, exchange, timeframe) -> DataFrame
 
+# Thread safety lock for shared mutable state accessed by GUI + background threads
+_STATE_LOCK = threading.Lock()
+
 def reset_cycle_state():
-    MISSING_TOKEN_LOGGED.clear()
-    CYCLE_QUOTES.clear()
+    with _STATE_LOCK:
+        MISSING_TOKEN_LOGGED.clear()
+        CYCLE_QUOTES.clear()
 
 def log_missing_token_once(exchange: str, symbol: str, err: Exception):
     key = f"{exchange}:{symbol.upper()}"
@@ -276,7 +281,8 @@ def get_symbol_lock(symbol: str) -> bool:
     return SYMBOL_LOCKS.setdefault(symbol, False)
 
 def reset_cycle_quotes():
-    CYCLE_QUOTES.clear()
+    with _STATE_LOCK:
+        CYCLE_QUOTES.clear()
 
 def is_offline() -> bool:
     return bool(OFFLINE.get("active"))
@@ -293,7 +299,7 @@ def mark_online_if_needed():
         OFFLINE["since"] = None
 
 def safe_request(method, url, **kwargs):
-    print(f"DEBUG REQ: {method} {url}")
+    # Debug request logging removed for security (was leaking API URLs with tokens)
     try:
         if "timeout" not in kwargs:
             kwargs["timeout"] = (5, 15)
@@ -433,6 +439,7 @@ portfolio_state = {}
 RSI_PERIOD = 14
 ALLOCATED_CAPITAL = 50000.0 # Default Safety Limit (₹50k)
 ENGINE_BEAT_SECONDS = 2.0   # Default Beat Frequency
+RMS_FAILURES = {}           # Track (symbol, exchange) -> timestamp of quantity failures
 
 if settings:
     try:
@@ -699,8 +706,6 @@ def fetch_orders():
     
     return []
 
-    return []
-
 def cancel_all_orders() -> int:
     """
     Cancel all open/pending orders
@@ -848,137 +853,9 @@ def resolve_instrument_token(symbol, exchange):
         log_ok(f"❌ Token resolve failed: {e}")
     return None
 
-def _legacy_UNUSED_run_cycle():
-    """
-    Main Trading Cycle
-    """
-    global STOP_REQUESTED
-    
-    if is_offline() and (not OFFLINE["since"] or (now_ist() - OFFLINE["since"]).total_seconds() < 15):
-        return
 
-    if STOP_REQUESTED:
-        return
-
-    if not config_dict:
-        log_ok("⚠️ No stocks configured. Please add stocks in Settings.")
-        return False
-
-    # --- Check Market Hours ---
-    current_time = now_ist().time()
-    # HACK: User requested 24h market for testing
-    market_open = datetime.strptime("00:00", "%H:%M").time()
-    market_close = datetime.strptime("23:59", "%H:%M").time()
-    
-    is_open = market_open <= current_time <= market_close
-    is_paper = settings.get("app_settings.paper_trading_mode", False) if settings else False
-
-    if not is_open and not is_paper:
-        return
-
-    # --- Main Loop ---
-    for symbol, exchange in SYMBOLS_TO_TRACK:
-        # 1. External Control Check (Database)
-        # Allows the Web API to stop the bot remotely
-        if DATABASE_AVAILABLE and db:
-            try:
-                status = db.get_control_flag("bot_status")
-                if status == "STOPPED":
-                     if not STOP_REQUESTED:
-                         log_ok("🛑 REMOTE STOP SIGNAL RECEIVED via Dashboard")
-                         request_stop()
-            except: pass
-
-        if STOP_REQUESTED: break
-        
-        # Rate Limiting: Prevent API Hammering (yfinance/mStock)
-        time.sleep(0.5)
-        
-        # log_ok(f"➡️ checking {symbol}...")
-        
-        try:
-            # 1. Fetch Config
-            conf = config_dict.get((symbol, exchange), {})
-            instrument_token = conf.get("instrument_token")
-            timeframe = conf.get("Timeframe", "15T")
-            
-            # Skip if critical info missing
-            if not instrument_token:
-               # Try to auto-resolve token if missing (Added for robustness)
-               log_ok(f"🔍 Attempting to resolve token for {symbol}...")
-               token = resolve_instrument_token(symbol, exchange)
-               if token:
-                   log_ok(f"✅ Resolved {symbol} -> {token}")
-                   conf['instrument_token'] = token
-                   instrument_token = token
-                   # Update global/cached config if possible
-                   if (symbol, exchange) in config_dict:
-                       config_dict[(symbol, exchange)]['instrument_token'] = token
-               else:
-                   log_ok(f"⚠️ Skipping {symbol}: Missing instrument_token and auto-resolve failed.")
-                   continue
-
-            # 2. Get Live Price & RSI
-            # Use 'fetch_market_data' to get latest LTP
-            md, _ = fetch_market_data(symbol, exchange)
-            if not md: continue
-            
-            ltp = md.get("last_price", 0)
-            
-            # Calculate RSI
-            ts, rsi_val = get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=ltp)
-            
-            if rsi_val is None:
-                # Suppress log spam if it's just a transient data issue
-                # log_ok(f"⚠️ {symbol}: RSI skipped (No Data)") 
-                continue
-
-            log_ok(f"📊 {symbol} RSI: {rsi_val:.2f} | Buy<{conf.get('RSI_Buy_Threshold', 30)} Sell>{conf.get('RSI_Sell_Threshold', 70)}")
-
-            # 3. Decision Logic (Simple RSI Mean Reversion)
-            # Buy < 30 (or user setting), Sell > 70
-            buy_threshold = conf.get("RSI_Buy_Threshold", 30)
-            sell_threshold = conf.get("RSI_Sell_Threshold", 70)
-            
-            # Check for existing position
-            pos = live_positions.get(symbol) # Optimization: Uses cached global
-            qty_held = pos['qty'] if pos else 0
-            
-            # BUY LOGIC
-            if rsi_val < buy_threshold and qty_held == 0:
-                log_ok(f"⚡ signal: {symbol} RSI {rsi_val:.1f} < {buy_threshold}. Attempting BUY...")
-                # Calculate quantity based on capital allocation
-                alloc = ALLOCATED_CAPITAL
-                if alloc > 0 and ltp > 0:
-                     # Simple logic: 10% of capital per trade or user setting
-                     per_trade = float(alloc) * 0.10 
-                     qty_to_buy = int(per_trade / ltp)
-                     if qty_to_buy > 0:
-                         execute_order(symbol, exchange, "BUY", qty_to_buy, ltp)
-
-            # SELL LOGIC
-            elif rsi_val > sell_threshold and qty_held > 0:
-                 log_ok(f"⚡ signal: {symbol} RSI {rsi_val:.1f} > {sell_threshold}. Attempting SELL...")
-                 execute_order(symbol, exchange, "SELL", qty_held, ltp)
-                 
-        except Exception as e:
-            log_ok(f"❌ Cycle Error for {symbol}: {e}")
-            continue
-
-    # Risk Management Cycle
-    if risk_mgr:
-        try:
-            actions = risk_mgr.check_all_positions()
-            for action in actions:
-                log_ok(f"🛡️ Risk Trigger: {action['reason']}")
-                execute_order(
-                    action['symbol'], action['exchange'], 
-                    "SELL", action['quantity'], action['current_price']
-                )
-        except Exception as re:
-            log_ok(f"⚠️ Risk Manager cycle failed: {re}")
-            
-    return True
+# --- Legacy _legacy_UNUSED_run_cycle() removed (~130 lines of dead code) ---
+# See backups/v2.4.0_pre_audit_20260216/kickstart.py for original if needed
 
 def perform_auto_login() -> bool:
     """
@@ -994,21 +871,22 @@ def perform_auto_login() -> bool:
         return False
         
     try:
-        # Get credentials from settings
-        config_path = "settings.json"
-        if not os.path.exists(config_path):
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(script_dir, "settings.json")
+        # Get credentials from settings (Use SettingsManager for decryption!)
+        # We try to use the global 'settings' object first
+        if 'settings' in globals() and settings:
+            mgr = settings
+        else:
+            try:
+                from settings_manager import SettingsManager
+                mgr = SettingsManager()
+                mgr.load()
+            except ImportError:
+                log_ok("⚠️ Auto-login skipped: SettingsManager not found.")
+                return False
             
-        if not os.path.exists(config_path):
-            log_ok("⚠️ Auto-login skipped: settings.json not found.")
-            return False
-            
-        with open(config_path, "r") as f:
-            settings_data = json.load(f)
-            
-        totp_secret = safe_get(settings_data, "broker.totp_secret")
-        api_key = safe_get(settings_data, "broker.api_key")
+        # Get Decrypted Credentials
+        totp_secret = mgr.get_decrypted("broker.totp_secret")
+        api_key = mgr.get_decrypted("broker.api_key")
         
         if not totp_secret or not api_key:
             log_ok("⚠️ Auto-login skipped: TOTP secret or API Key missing.")
@@ -1018,7 +896,7 @@ def perform_auto_login() -> bool:
         try:
             totp = pyotp.TOTP(totp_secret)
             otp_code = totp.now()
-            log_ok(f"🔐 Generated TOTP: {otp_code[:2]}****")
+            log_ok(f"🔐 Generated TOTP: ***{otp_code[-2:]}")
         except Exception as e:
             log_ok(f"❌ TOTP Generation failed: {e}")
             return False
@@ -1043,10 +921,19 @@ def perform_auto_login() -> bool:
             return False
             
         totp_data = totp_resp.json()
-        log_ok(f"📡 Response Data: {totp_data}")  # DEBUG
+        # Response data logging removed for security (contained access tokens)
         
+        if totp_data.get("status") == "error":
+            err_type = totp_data.get("error_type")
+            msg = totp_data.get("message", "Unknown error")
+            if err_type == "APIKeyException":
+                log_ok("❌ TOTP verification failed: API Key or Secret is invalid. Please check your credentials in Settings.")
+            else:
+                log_ok(f"❌ TOTP verification failed: {err_type} - {msg}")
+            return False
+            
         if totp_data.get("status") != "success":
-            log_ok(f"❌ TOTP API error: {totp_data.get('message')}")
+            log_ok(f"❌ TOTP API unexpected response: {totp_data.get('message')}")
             return False
             
         new_token = safe_get(totp_data, "data.access_token")
@@ -1254,7 +1141,7 @@ def get_positions():
         return {}
     
     log_ok(f"🔍 Fetching holdings from mStock API...")
-    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {API_KEY[:10] if API_KEY else 'NONE'}...")
+    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {'***' + API_KEY[-4:] if API_KEY else 'NONE'}")
     
     url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
     headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
@@ -1311,7 +1198,7 @@ def safe_get_positions():
         return get_positions()
     except Exception as e:
         error_str = str(e)
-        if "TokenException" or "invalid session" in error_str:
+        if "TokenException" in error_str or "invalid session" in error_str:
             if handle_token_exception_and_refresh_token():
                 return get_positions()
             else:
@@ -1580,9 +1467,10 @@ def merge_positions_and_orders():
             
     log_ok(f"✅ Merged result: {len(merged)} active positions")
     
-    # Update global cache for fetch_market_data fallback
+    # Update global cache for fetch_market_data fallback (thread-safe)
     global live_positions
-    live_positions = {k[0]: v for k, v in merged.items()}
+    with _STATE_LOCK:
+        live_positions = {k[0]: v for k, v in merged.items()}
     
     return merged
 
@@ -1849,8 +1737,12 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
     # print(check_existing_orders(symbol, exchange, qty, side))
     
     if check_existing_orders(symbol, exchange, qty, side):
-        ex_msg = f"{symbol}:{exchange}" if side.upper() == "SELL" else f"{symbol}"
-        log_ok(f"⏸️ Skipping {side} order for {ex_msg} (Qty: {qty}) due to existing order")
+        # Determine if it was blocked by RMS Cooldown or a real order
+        if (symbol, exchange) in RMS_FAILURES:
+             log_ok(f"🛡️ Skipping {side} for {symbol}:{exchange}: RMS Cooldown active (Recent insufficient quantity rejection)", force=True)
+        else:
+             ex_msg = f"{symbol}:{exchange}" if side.upper() == "SELL" else f"{symbol}"
+             log_ok(f"⏸️ Skipping {side} order for {ex_msg} (Qty: {qty}) due to existing order")
         return False
     log_ok(f"Placing order : Symbol : {symbol}, Exchange : {exchange}, Quantity : {qty}, Side : {side}.")
     
@@ -1906,7 +1798,8 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 reason=f"RSI-based {side.upper()}",
                 broker="mstock",
                 rsi=rsi,
-                fee_breakdown=fee_breakdown
+                fee_breakdown=fee_breakdown,
+                fallback_entry_price=portfolio_state.get(symbol, {}).get("price", 0.0)
             )
             log_ok(f"📝 Trade logged to database (ID: {trade_id})")
             
@@ -2036,6 +1929,18 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
 def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bool:
     if is_offline():
         return False
+        
+    # Check for recent RMS (Quantity) Failures
+    if (symbol, exchange) in RMS_FAILURES:
+        last_fail = RMS_FAILURES[(symbol, exchange)]
+        # Cooldown period: 1 hour (3600 seconds)
+        if (datetime.now() - last_fail).total_seconds() < 3600:
+            # log_ok(f"🛡️ {symbol} is in RMS cooldown. Skipping check.")
+            return True
+        else:
+            # Cooldown expired
+            RMS_FAILURES.pop((symbol, exchange), None)
+
     url = "https://api.mstock.trade/openapi/typea/orders"
     headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
     response = safe_request("GET", url, headers=headers)
@@ -2043,8 +1948,8 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
         return False
     orders = (response.json() or {}).get("data", []) or []
     
-    # Define blocking statuses
-    blocking = {"OPEN", "PENDING", "TRIGGERED"}
+    # Define blocking statuses (v2: added ACCEPTED, SUBMITTED logic)
+    blocking = {"OPEN", "PENDING", "TRIGGERED", "ACCEPTED", "SUBMITTED"}
     
     # Track existence and quantities of buy and sell orders
     has_buy = False
@@ -2464,17 +2369,25 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 resp_dict = resp_json
 
             status = resp_dict.get("status")
-            message = resp_dict.get("message")
+            message = str(resp_dict.get("message") or response.text).upper()
             if response.status_code == 200 and status == "success":
                 log_ok(f"✅ {side} order placed for {symbol} (Qty: {qty})")
+                # Clear any previous RMS failure on success (e.g. if we bought more)
+                RMS_FAILURES.pop((symbol, exchange), None)
                 if state_mgr:
                     state_mgr.increment_trade_counter('success')
                 return True
             else:
-                log_ok(f"❌ Order failed for {symbol}: {message or response.text}")
+                log_ok(f"❌ Order failed for {symbol}: {message}")
+                
+                # RMS Quantity Check: Block further attempts if quantity is insufficient or zero available
+                if "INSUFFICIENT" in message or "AVAILABLE QTY IS - 0" in message or "SCRIP LIMIT INSUFFICIENT" in message:
+                    log_ok(f"🛡️ RMS Quantity Restriction: {symbol} added to cooldown list.")
+                    RMS_FAILURES[(symbol, exchange)] = datetime.now()
+
                 if state_mgr:
                     state_mgr.increment_trade_counter('failed')
-                if message and "TokenException" in message:
+                if "TOKENEXCEPTION" in message:
                     raise Exception("TokenException")
                 return False
         except Exception as e:
@@ -2603,6 +2516,9 @@ def run_cycle():
         positions_snapshot = {}
 
     for symbol, ex in SYMBOLS_TO_TRACK:
+        if STOP_REQUESTED:
+             log_ok("🛑 Cycle Interrupted: Stop Requested.", force=True)
+             return
         key = (symbol, ex)
         if key in processed:
             continue
@@ -2683,6 +2599,9 @@ def run_cycle():
     if state_mgr:
         managed = state_mgr.state.get('managed_holdings', {})
         for key_str, is_enabled in managed.items():
+            if STOP_REQUESTED:
+                log_ok("🛑 Hybrid Loop Interrupted: Stop Requested.", force=True)
+                return
             if not is_enabled: continue
             
             # Key is stringified tuple like "('RELIANCE', 'NSE')"

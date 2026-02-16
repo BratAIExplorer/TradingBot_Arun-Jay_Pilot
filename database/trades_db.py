@@ -168,7 +168,8 @@ class TradesDatabase:
                     broker: str = "mstock",
                     source: str = "BOT",
                     rsi: float = 0.0,
-                    fee_breakdown: Optional[Dict] = None) -> int:
+                    fee_breakdown: Optional[Dict] = None,
+                    fallback_entry_price: float = 0.0) -> int:
         """
         Insert a trade record
         
@@ -199,20 +200,26 @@ class TradesDatabase:
                     ORDER BY timestamp DESC LIMIT 1
                 """, (symbol,))
                 last_buy = cursor.fetchone()
+                
+                buy_price = 0.0
+                buy_net_per_unit = 0.0
+                
                 if last_buy:
                     buy_price = last_buy['price']
                     buy_net_per_unit = last_buy['net_amount'] / last_buy['quantity']
-                    
+                elif fallback_entry_price > 0:
+                    buy_price = fallback_entry_price
+                    buy_net_per_unit = fallback_entry_price # Estimate without fees
+                
+                if buy_price > 0:
                     sell_price = price
                     sell_net_per_unit = net_amount / quantity
                     
                     pnl_gross = (sell_price - buy_price) * quantity
                     pnl_net = (sell_net_per_unit - buy_net_per_unit) * quantity
                     
-                    if buy_price > 0:
-                        pnl_pct_gross = (pnl_gross / (buy_price * quantity)) * 100
-                    if buy_net_per_unit > 0:
-                        pnl_pct_net = (pnl_net / (buy_net_per_unit * quantity)) * 100
+                    pnl_pct_gross = (pnl_gross / (buy_price * quantity)) * 100
+                    pnl_pct_net = (pnl_net / (buy_net_per_unit * quantity)) * 100
 
             cursor.execute("""
                 INSERT INTO trades (
@@ -388,6 +395,60 @@ class TradesDatabase:
         """
         self.conn.close()
         print("✅ Database connection closed")
+
+    def export_trades_csv(self, start_date: str, end_date: str, output_dir: str = "exports") -> str:
+        """
+        Export trades to CSV for a specific date range.
+        
+        Args:
+            start_date: Start date string (YYYY-MM-DD)
+            end_date: End date string (YYYY-MM-DD)
+            output_dir: Directory to save the CSV file
+            
+        Returns:
+            str: Path to the created CSV file
+        """
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Calculate next day for end_date to include the full end date
+        # (Since timestamp includes time, and we compare against YYYY-MM-DD 00:00:00)
+        try:
+             # Just simple string comparison works for ISO dates, but to be precise with times:
+             # We want >= start_date 00:00:00 and <= end_date 23:59:59
+             # Simplest SQLite way: date(timestamp) BETWEEN start AND end
+             pass
+        except:
+             pass
+
+        query = """
+            SELECT 
+                timestamp, symbol, exchange, action, quantity, price,
+                gross_amount, total_fees, net_amount,
+                brokerage_fee, stt_fee, exchange_fee, gst_fee, sebi_fee, stamp_duty_fee,
+                strategy, reason, broker, source, rsi,
+                pnl_gross, pnl_net, pnl_pct_net
+            FROM trades
+            WHERE DATE(timestamp) >= DATE(?) AND DATE(timestamp) <= DATE(?)
+            ORDER BY timestamp ASC
+        """
+        
+        try:
+            df = pd.read_sql_query(query, self.conn, params=[start_date, end_date])
+            
+            if df.empty:
+                return None
+                
+            filename = f"trades_{start_date}_to_{end_date}.csv"
+            filepath = os.path.join(output_dir, filename)
+            
+            df.to_csv(filepath, index=False)
+            print(f"✅ Trades exported to {filepath}")
+            return filepath
+            
+        except Exception as e:
+            print(f"❌ Failed to export trades: {e}")
+            raise
 
 
 # Global database instance

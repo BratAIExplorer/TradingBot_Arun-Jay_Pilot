@@ -30,8 +30,26 @@ class MACDScanner:
     def get_stock_list(self, mode="FULL") -> List[str]:
         """
         Returns managed list of high-liquidity NSE stocks.
+        Matches Legacy Logic: Tries to load Nifty 500 from CSV, falls back to hardcoded list.
         """
-        # --- TOP 200 HIGH LIQUIDITY STOCKS ---
+        import os
+        import pandas as pd
+        
+        # 1. Try Loading Nifty 500 / All Stocks CSV (Legacy Parity)
+        csv_files = ["nifty500.csv", "all_nse_stocks.csv"]
+        for csv_file in csv_files:
+            if os.path.exists(csv_file):
+                try:
+                    df = pd.read_csv(csv_file)
+                    if 'Symbol' in df.columns:
+                        # Ensure .NS suffix
+                        stocks = [f"{sym}.NS" if not str(sym).endswith('.NS') else sym for sym in df['Symbol'].tolist()]
+                        # print(f"✅ Loaded {len(stocks)} stocks from {csv_file}")
+                        return sorted(list(set(stocks)))
+                except Exception as e:
+                    print(f"⚠️ Error loading {csv_file}: {e}")
+
+        # 2. Fallback: Hardcoded Top 200 (If CSVs missing)
         stocks = [
              # NIFTY 50
             "RELIANCE.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS", "TCS.NS", "ITC.NS", "LT.NS", "AXISBANK.NS", 
@@ -86,43 +104,46 @@ class MACDScanner:
         """
         Process the entire batch result from yf.download
         Returns list of results
+        Match Legacy Logic: 60d Lookback, SMA Filters, Long Term Bull
         """
         batch_results = []
         
         # yf.download with group_by='ticker' returns a Dict-like or MultiIndex
         # If single ticker it's a DataFrame, if multiple it's a DataFrame with MultiIndex columns
         
-        tickers = df_dict.columns.levels[0] if isinstance(df_dict.columns, pd.MultiIndex) else [df_dict.columns.name]
-        
         # Handle the case where Ticker is the level 0
         is_multi = isinstance(df_dict.columns, pd.MultiIndex)
         
         # If it's not multi-index, it means only 1 stock was successful or requested
-        if not is_multi:
-            # Reframe it to look like multi-index for generic logic: dict[ticker] -> df
-            # But wait, yf.download for 1 ticker returns simple DF.
-            # We will handle iteration carefully.
-            single_ticker_mode = True
-            # Trying to infer ticker name is hard if single. We assume list loop handles this?
-            # Actually yf.download(..., group_by='ticker') usually returns MultiIndex if >1.
+        # We will iterate through the requested tickers provided they are in columns
+        
+        # Prepare iteration list
+        tickers_to_process = []
+        if is_multi:
+            tickers_to_process = df_dict.columns.levels[0]
+        else:
+            # Single ticker result - how to know which ticker?
+            # Usually yf.download returns columns like 'Open', 'Close' directly for single ticker
+            # We assume the caller knows, but here we might need to deduce or handle robustly.
+            # For simplicity in batch mode (which is always >1 ideally), we assume multi.
+            # If single, we might skip or handle if we knew the ticker name.
+            # Given we pump 50 stocks, it should be multi.
             pass
 
-        # We can iterate through the requested tickers provided they are in columns
-        # If columns are (Price, Ticker), we swap. 
-        # But group_by='ticker' makes it (Ticker, Price).
-        
-        for ticker in df_dict.columns.levels[0]: # Iterating 'Ticker' level
+        for ticker in tickers_to_process:
             try:
                 # Extract Single DF
                 df = df_dict[ticker].copy()
                 
-                # Check data sufficiency
-                if df.empty or len(df) < 50: 
+                # Check data sufficiency (200 SMA needs ~200 pts, legacy checks 200)
+                if df.empty or len(df) < 200: 
                     continue
                 
                 # Drop NAs
                 df.dropna(inplace=True)
                 close = df['Close']
+                
+                # --- CALCULATE INDICATORS (Legacy 'ta' style logic) ---
                 
                 # 1. MACD (12, 26, 9)
                 ema12 = close.ewm(span=12, adjust=False).mean()
@@ -131,32 +152,42 @@ class MACDScanner:
                 signal_line = macd_line.ewm(span=9, adjust=False).mean()
                 
                 # 2. Moving Averages
-                ma20 = close.tail(25).rolling(window=20).mean() # optimize tail
-                ma50 = close.tail(55).rolling(window=50).mean()
+                # Legacy uses full rolling. We can do the same.
+                ma20 = close.rolling(window=20).mean()
+                ma50 = close.rolling(window=50).mean()
+                ma100 = close.rolling(window=100).mean()
+                ma200 = close.rolling(window=200).mean()
                 
-                # 3. Detect Crossover (Latest day)
-                # Condition: MACD[-1] > Signal[-1] AND MACD[-2] <= Signal[-2]
+                # Get Latest Values
+                curr_price = close.iloc[-1]
                 curr_macd = macd_line.iloc[-1]
                 curr_sig = signal_line.iloc[-1]
-                prev_macd = macd_line.iloc[-2]
-                prev_sig = signal_line.iloc[-2]
+                val_ma20 = ma20.iloc[-1]
+                val_ma50 = ma50.iloc[-1]
+                val_ma100 = ma100.iloc[-1]
+                val_ma200 = ma200.iloc[-1]
                 
-                bullish_cross = (curr_macd > curr_sig) and (prev_macd <= prev_sig)
+                # --- FILTER 1: TREND DIRECTION (MACD must be Bullish) ---
+                if curr_macd <= curr_sig:
+                    # print(f"DEBUG: {ticker} Rejected - Bearish MACD")
+                    continue # MACD is Bearish, skip immediately
+                    
+                # --- FILTER 2: SMA SUPPORT (Legacy: Must be above 20 OR 50) ---
+                above_20 = curr_price > val_ma20
+                above_50 = curr_price > val_ma50
                 
-                # User asked for "CROSS DATE". 
-                # If specifically TODAY/LATEST, we output date.
-                # If they want historical scans, we'd loop back. 
-                # Assuming "Latest Scan" means "Recent signal".
+                if not (above_20 or above_50):
+                     # print(f"DEBUG: {ticker} Rejected - Below SMA 20/50")
+                     continue # REJECT: Below both short-term averages (Bottom fishing risky)
                 
-                # Let's verify standard Bullish Trend (MACD > Signal)
-                # The user requirement: "MACD Line cross over the Signal line upwards... show the date it crossed"
-                
-                # We will search back up to 10 days for the crossover date
-                crossover_date = None
+                # --- FILTER 3: CROSSOVER DATE (Lookback 60 Days) ---
+                crossover_date = "Long Term Bull" # Default if no recent cross but trend is up
                 cross_found = False
                 
-                # Reverse loop last 15 candles
-                for i in range(1, 15):
+                # Look back 60 days (Legacy Logic)
+                lookback = min(60, len(df))
+                
+                for i in range(1, lookback):
                     idx = -i
                     m_curr = macd_line.iloc[idx]
                     s_curr = signal_line.iloc[idx]
@@ -169,28 +200,33 @@ class MACDScanner:
                         cross_found = True
                         break
                 
-                # Filter: Only show if MACD is currently ABOVE signal (Trend is valid)
-                if not (curr_macd > curr_sig):
-                    continue # Downward trend currently, ignore old crosses?
-                    
-                if not cross_found:
-                     # It might have maintained bullish for > 15 days
-                     # We skip if no recent actionable cross
-                     continue
-                     
-                # 4. Check Strong Buy Conditions
-                curr_price = close.iloc[-1]
-                val_ma20 = ma20.iloc[-1]
-                val_ma50 = ma50.iloc[-1]
+                # print(f"DEBUG: {ticker} MATCHED! Signal={crossover_date}")
                 
-                above_20 = curr_price > val_ma20
-                above_50 = curr_price > val_ma50
+                # --- SUPPORT / RESISTANCE LOGIC (Smart Buy) ---
+                mas = [
+                    (val_ma20, '20 DMA'), 
+                    (val_ma50, '50 DMA'), 
+                    (val_ma100, '100 DMA'), 
+                    (val_ma200, '200 DMA')
+                ]
+                # Filter out NaNs if history is short
+                mas = [m for m in mas if not pd.isna(m[0])]
                 
-                # Logic: STRONG BUY if above 20 OR above 50
+                supports = [m for m in mas if curr_price > m[0]]
+                resistances = [m for m in mas if curr_price < m[0]]
+                
+                # Nearest Support
+                support_val = max(supports, key=lambda x: x[0])[0] if supports else 0
+                support_desc = max(supports, key=lambda x: x[0])[1] if supports else "None"
+                
+                # Nearest Resistance
+                resistance_val = min(resistances, key=lambda x: x[0])[0] if resistances else curr_price * 1.05
+                resistance_desc = min(resistances, key=lambda x: x[0])[1] if resistances else "Blue Sky"
+
+                # Prepare Signal String
+                signal = "BUY"
                 if above_20 or above_50:
                     signal = "STRONG BUY"
-                else:
-                    signal = "BUY"
                     
                 # Format Result
                 res = {
@@ -200,6 +236,10 @@ class MACDScanner:
                     "CROSS DATE": crossover_date,
                     "20 DMA": "Yes" if above_20 else "No",
                     "50 DMA": "Yes" if above_50 else "No",
+                    "SUPPORT": support_val, # Float for logic
+                    "RESISTANCE": resistance_val, # Float for logic
+                    "SUPPORT_DESC": support_desc,
+                    "RESISTANCE_DESC": resistance_desc,
                     "timestamp": datetime.now()
                 }
                 batch_results.append(res)
@@ -257,7 +297,11 @@ class MACDScanner:
                 # except: ...
                 
                 if data.empty:
+                    print("DEBUG: Data batch is empty.")
                     continue
+                
+                print(f"DEBUG: Data Shape: {data.shape}")
+                print(f"DEBUG: Data Columns Level 0: {data.columns.levels[0].tolist() if isinstance(data.columns, pd.MultiIndex) else data.columns.tolist()}")
                     
                 # 2. PROCESS CHUNK
                 processed = self.calculate_indicators_batch(data)
@@ -293,7 +337,7 @@ class MACDScanner:
         
         for ticker in tickers_list:
             # We assume it takes ~0.5s per request. Slower but robust.
-            df = fetch_yahoo_history_direct(ticker, period="3mo", interval="1d")
+            df = fetch_yahoo_history_direct(ticker, period="1y", interval="1d")
             
             if not df.empty and len(df) > 0:
                 frames[ticker] = df
@@ -301,7 +345,7 @@ class MACDScanner:
             else:
                  # Try adding .NS if missing (fallback for badly formatted input)
                  if not ticker.endswith(".NS") and not ticker.endswith(".BO"):
-                     df = fetch_yahoo_history_direct(f"{ticker}.NS", period="3mo", interval="1d")
+                     df = fetch_yahoo_history_direct(f"{ticker}.NS", period="1y", interval="1d")
                      if not df.empty:
                          frames[f"{ticker}.NS"] = df # Store with suffix
                          successful += 1
@@ -327,11 +371,21 @@ class MACDScanner:
 if __name__ == "__main__":
     print("Testing Batch Scanner...")
     scanner = MACDScanner()
-    res = scanner.scan_market(max_stocks=100)
+    
+    # Check if stock list loads correctly
+    stocks = scanner.get_stock_list()
+    print(f"DEBUG: Loaded {len(stocks)} stocks for scanning.")
+    
+    # Progress callback
+    def debug_callback(current, total, msg):
+        print(f"[{current}/{total}] {msg}")
+        
+    scanner.progress_callback = debug_callback
+    res = scanner.scan_market(max_stocks=100) # Still limit to 100 for verification speed, user can change later
     
     # Print Table
     if res:
         df = pd.DataFrame(res)
-        print(df[["SYMBOL", "LTP", "SIGNAL", "CROSS DATE", "20 DMA", "50 DMA"]].to_string(index=False))
+        print(df[["SYMBOL", "LTP", "SIGNAL", "CROSS DATE", "SUPPORT", "RESISTANCE"]].to_string(index=False))
     else:
         print("No results found.")

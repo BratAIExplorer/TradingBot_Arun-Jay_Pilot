@@ -474,7 +474,7 @@ class SettingsGUI:
         
         self.stop_loss_var = ctk.DoubleVar(value=risk.get("stop_loss_pct", 5.0))
         sl_slider = ctk.CTkSlider(card_primary, from_=0.5, to=20, number_of_steps=39, variable=self.stop_loss_var, 
-                                  width=250, progress_color=COLOR_ACCENT, button_color=COLOR_ACCENT, hover_color="#357A8D",
+                                  width=250, progress_color=COLOR_ACCENT, button_color=COLOR_ACCENT,
                                   command=lambda val: sl_val.configure(text=f"{val:.1f}%"))
         sl_slider.grid(row=0, column=1, sticky="ew", padx=10)
         
@@ -488,7 +488,7 @@ class SettingsGUI:
         
         self.profit_target_var = ctk.DoubleVar(value=risk.get("profit_target_pct", 10.0))
         tp_slider = ctk.CTkSlider(card_primary, from_=1, to=50, number_of_steps=98, variable=self.profit_target_var, 
-                                  width=250, progress_color=COLOR_SUCCESS, button_color=COLOR_SUCCESS, hover_color="#0E9F6E",
+                                  width=250, progress_color=COLOR_SUCCESS, button_color=COLOR_SUCCESS,
                                   command=lambda val: tp_val.configure(text=f"{val:.1f}%"))
         tp_slider.grid(row=2, column=1, sticky="ew", padx=10)
         
@@ -1173,25 +1173,33 @@ class SettingsGUI:
     def save_settings(self):
         """Save all settings to JSON"""
         try:
-            # Build settings dictionary
-            new_settings = {
+            # Save SENSITIVE fields via set() — triggers Fernet encryption at rest
+            sensitive_fields = {
+                "broker.api_key": self.api_key_entry.get(),
+                "broker.api_secret": self.api_secret_entry.get(),
+                "broker.password": self.password_entry.get(),
+                "broker.access_token": self.access_token_entry.get(),
+                "broker.totp_secret": self.totp_entry.get(),
+                "notifications.telegram_bot_token": self.tg_token_entry.get(),
+            }
+            for key_path, value in sensitive_fields.items():
+                if value:  # Only encrypt non-empty values
+                    self.settings_mgr.set(key_path, value)
+
+            # Save NON-SENSITIVE fields via bulk update
+            non_sensitive = {
                 "app_settings": {
                     "paper_trading_mode": self.paper_mode_var.get(),
                     "nifty_50_only": self.nifty_filter_var.get()
                 },
                 "broker": {
                     "name": self.broker_var.get(),
-                    "api_key": self.api_key_entry.get(),
-                    "api_secret": self.api_secret_entry.get(),
                     "client_code": self.client_code_entry.get(),
-                    "password": self.password_entry.get(),
-                    "access_token": self.access_token_entry.get(),
-                    "totp_secret": self.totp_entry.get()
                 },
                 "capital": {
                     "allocated_limit": float(self.allocated_capital_entry.get()),
                     "max_per_stock_type": self.sizing_method_var.get(),
-                    "per_trade_pct": self.per_trade_var.get(), # Updated key name to match load
+                    "per_trade_pct": self.per_trade_var.get(),
                     "max_per_stock_fixed_amount": float(self.fixed_amount_entry.get()),
                     "max_positions": self.max_positions_var.get(),
                     "compound_profits": self.compound_var.get()
@@ -1205,19 +1213,17 @@ class SettingsGUI:
                 },
                 "notifications": {
                     "enabled": self.tg_enabled_var.get(),
-                    "telegram_bot_token": self.tg_token_entry.get(),
                     "telegram_chat_id": self.tg_chat_id_entry.get()
                 }
             }
-            
-            # Merge with existing settings (preserve other sections)
-            current_settings = self.settings_mgr.settings
-            current_settings.update(new_settings)
-            
-            # Save to JSON
-            self.settings_mgr.save()
-            
-            # Save to JSON
+
+            # Deep merge non-sensitive fields (preserve existing keys in each section)
+            for section, values in non_sensitive.items():
+                if section not in self.settings_mgr.settings:
+                    self.settings_mgr.settings[section] = {}
+                self.settings_mgr.settings[section].update(values)
+
+            # Single save call
             self.settings_mgr.save()
             
             if self.on_save_callback:

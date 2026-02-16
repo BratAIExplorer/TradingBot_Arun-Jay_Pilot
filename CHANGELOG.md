@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-02-16 - Stability & UI Accuracy Update
+
+### Added
+- **RMS Cooldown System** (`kickstart.py`)
+  - Automatic 1-hour cooldown for symbols with "Insufficient Quantity" rejections.
+  - Prevents infinite failure loops when broker data isn't synchronized.
+  
+- **P&L Fallback Calculation** (`trades_db.py`)
+  - Added support for calculating P&L using the last known entry price if the original BUY record is missing in the database.
+  - Improves accuracy for positions held across bot restarts.
+
+### Changed
+- **Immediate Panic Stop** (`kickstart.py`)
+  - Refactored `run_cycle` to check `STOP_REQUESTED` mid-cycle.
+  - Bot now halts immediately between symbol processing instead of waiting for full cycle completion.
+  
+- **Real-time Failure Counter** (`sensei_v1_dashboard.py`)
+  - The "FAILED" counter on the dashboard now reflects actual order execution failures from the broker.
+  - Disconnected from purely negative P&L trades to separate execution health from market performance.
+
+### Fixed
+- **Missing RSI/P&L in History**: Improved data pipeline to ensure RSI and P&L are consistently populated in the 'Trades' tab.
+- **Duplicate Order Protection**: Added `ACCEPTED` and `SUBMITTED` statuses to order blocking logic.
+
+---
+
 ## [2.4.0] - 2026-02-09 - Family-Ready UX Sprint
 
 ### Added

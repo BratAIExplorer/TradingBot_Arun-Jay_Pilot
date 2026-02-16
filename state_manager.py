@@ -42,8 +42,6 @@ class StateManager:
                     # Log the restoration summary
                     print(f"✅ StateManagerProxy: Restored {len(merged)} keys from {self.state_file}")
                     return merged
-                    logging.info(f"   Last update: {merged.get('last_update', 'Unknown')}")
-                    return merged
             except Exception as e:
                 logging.error(f"❌ Error loading state: {e}")
                 return defaults

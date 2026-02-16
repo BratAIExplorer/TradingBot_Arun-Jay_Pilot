@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2.4.2
-**Last Updated**: February 13, 2026  
-**Status**: v2.4.2 - Risk UI & Stability Fixes  
+**Project**: ARUN Trading Bot Titan V2.5.0
+**Last Updated**: February 16, 2026  
+**Status**: v2.5.0 - Stability & Execution Accuracy  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -407,4 +407,248 @@ strategies/          → sector_map.py, trading_tips.json
     -   **Fix**: Added missing `COLOR_DANGER` and `COLOR_SUCCESS` constants.
 
 **Status**: v2.4.2 - Risk UI & Stability Fixes ✅
+
+### Session: February 16, 2026 - Google Gemini (Antigravity)
+**Objective:** Stability & UI Accuracy (Panic Stop, RMS, Trade Counters)
+
+**Work Completed:**
+1.  **Immediate Panic Stop**:
+    -   Refactored `kickstart.run_cycle()` to check `STOP_REQUESTED` mid-loop (both main and hybrid loops).
+    -   Ensures the bot halts immediately between symbols instead of waiting minutes for a full cycle completion.
+2.  **RMS Failure Cooldown**:
+    -   Implemented `RMS_FAILURES` dictionary to track symbols with "Insufficient Quantity" errors.
+    -   Automatically applies a 1-hour cooldown to blocked symbols to prevent broker API spam and infinite loops.
+3.  **UI Counter Accuracy**:
+    -   Updated `sensei_v1_dashboard.py` to use `state_mgr.get_trade_counters()` for SUCCESS/FAILED counts.
+    -   "FAILED" now correctly reflects broker execution rejections rather than just losing trades.
+4.  **Data Persistence Robustness**:
+    -   Added `fallback_entry_price` to `trades_db.insert_trade()`.
+    -   Ensures P&L is calculated using current portfolio entry price if the bot's initial BUY record is missing.
+5.  **Documentation Refresh**:
+    -   Updated all core docs (`README`, `CHANGELOG`, `PROJECT`, `PROJECT_STATUS`) to v2.5.0.
+    -   Fixed main file name references in guides.
+
+6.  **Trade CSV Export**:
+    -   Added `export_trades_csv()` to `database/trades_db.py` for exporting trade history.
+    -   Dashboard Trades tab now includes date range inputs and a "Download CSV" button.
+
+**Status:** v2.5.0 Stable ✅
+
+### Session: February 16, 2026 - Claude Opus 4.6 (Anthropic)
+**Objective**: Full Security & Architecture Audit (Senior Technical Auditor Review)
+
+**Scope**: Complete codebase review across all core files — security, reliability, scalability, code quality, mStock API compatibility.
+
+**Files Reviewed**: `kickstart.py`, `sensei_v1_dashboard.py`, `scanner_engine.py`, `settings_manager.py`, `settings_gui.py`, `constants.py`, `utils.py`, `state_manager.py`, `risk_manager.py`, `settings.json`
+
+**Backup Created**: `backups/v2.4.0_pre_audit_20260216/` (19 files)
+
+**Full Audit Report**: `Documentation/Technical/SECURITY_ARCHITECTURE_AUDIT_v2.5.0.md`
+
+**Critical Findings (NO CODE CHANGES MADE — Audit Only)**:
+
+1. **CRITICAL — Plaintext Credentials** (`settings.json`):
+   - Password `Bharat@123` and TOTP secret in plaintext
+   - Root cause: `settings_gui.py:save_settings()` bypasses encryption — uses `dict.update()` instead of `settings_mgr.set()` which triggers Fernet encryption
+   - Fix: Route sensitive fields through `settings_mgr.set()` individually
+
+2. **CRITICAL — Credentials in Git History** (`settings.json` tracked by git):
+   - API key, password, TOTP secret all in git history
+   - Fix: `git rm --cached settings.json`, add `.gitignore`, rotate ALL credentials
+
+3. **HIGH — Operator Precedence Bug** (`kickstart.py:1325`):
+   - `if "TokenException" or "invalid session" in error_str:` → ALWAYS TRUE
+   - Fix: `if "TokenException" in error_str or "invalid session" in error_str:`
+
+4. **HIGH — 4 Duplicate SettingsManager Instances**:
+   - `kickstart.py` creates 3 instances (lines 68, 368, 1168) + `settings_gui.py` creates 1
+   - Fix: Singleton pattern via `SettingsManager.get_instance()`
+
+5. **MEDIUM — No Thread Safety** on shared globals (`CYCLE_QUOTES`, `live_positions`, etc.)
+6. **MEDIUM — Scanner stop doesn't propagate** (dashboard sets flag but never calls `scanner.stop()`)
+7. **LOW — Dead code**: `state_manager.py:44-46` unreachable, `kickstart.py:703` duplicate return
+8. **LOW — Secrets logged**: TOTP code logged plaintext at `kickstart.py:1023`
+
+**mStock API Compatibility Verified**:
+- All planned fixes are internal (encryption, singletons, thread safety) — NO API call changes needed
+- Auth header format `token {API_KEY}:{ACCESS_TOKEN}` unchanged
+- REIT BSE fallback (implemented in v2.3.1) confirmed correct
+- Zerodha: NOT implemented — only mStock API in codebase
+
+**What Was NOT Changed**:
+- No code modifications were made in this session
+- Only documentation and backup created
+- All fixes are documented with exact file:line references and fix plans
+
+**Next Agent Priority Order**:
+1. P0: Remove `settings.json` from git, rotate credentials
+2. P0: Fix `save_settings()` encryption bypass in `settings_gui.py`
+3. P0: Stop logging secrets (TOTP, API key prefixes)
+4. P1: Fix operator precedence bug in `kickstart.py:1325`
+5. P1: Singleton SettingsManager pattern
+6. P2: Thread safety locks on shared globals
+7. P2: Scanner stop propagation
+8. P3: Dead code cleanup
+
+**Status:** Audit Complete, Fixes Pending ⏸️
+
+### Session: February 16, 2026 (Continued) - Claude Opus 4.6 (Anthropic)
+**Objective**: Implement ALL Audit Fixes (P0 → P3)
+
+**All 8 fixes from the audit were implemented:**
+
+1. **P0: Removed `settings.json` from git** — `git rm --cached settings.json bot_state.json`. Template `settings_default.json` updated with `access_token`/`totp_secret` fields. User must rotate credentials.
+
+2. **P0: Fixed encryption bypass** in `settings_gui.py:save_settings()` — Sensitive fields (`api_key`, `api_secret`, `password`, `access_token`, `totp_secret`, `telegram_bot_token`) now routed through `settings_mgr.set()` which triggers Fernet encryption. Non-sensitive fields use bulk update. Removed duplicate `save()` call.
+
+3. **P0: Stopped logging secrets** in `kickstart.py`:
+   - Removed `DEBUG REQ` print (line 296)
+   - Masked TOTP: `***{otp_code[-2:]}` (line 1023)
+   - Removed response data log containing tokens (line 1048)
+   - Masked API key: `'***' + API_KEY[-4:]` (line 1268)
+
+4. **P1: Fixed operator precedence bug** at `kickstart.py:1325`:
+   `if "TokenException" or "invalid session" in error_str:` → `if "TokenException" in error_str or "invalid session" in error_str:`
+
+5. **P1: Singleton SettingsManager** — Added `__new__` + `_initialized` guard in `settings_manager.py`. All 4+ instantiation sites now share one instance. Zero caller changes needed.
+
+6. **P2: Thread safety locks** — Added `threading.Lock()` (`_STATE_LOCK`) in `kickstart.py`. Protected `live_positions` writes, `reset_cycle_state()`, and `reset_cycle_quotes()`.
+
+7. **P2: Scanner stop propagation** — `start_scanner()` now stores `self.active_scanner = scanner`. `stop_scanner()` calls `self.active_scanner.stop()`.
+
+8. **P3: Dead code removed**:
+   - `state_manager.py:45-46` — unreachable code after `return`
+   - `kickstart.py:709` — duplicate `return []`
+   - `kickstart.py:856-987` — entire `_legacy_UNUSED_run_cycle()` (~130 lines)
+
+**Files Modified**: `kickstart.py`, `settings_gui.py`, `settings_manager.py`, `sensei_v1_dashboard.py`, `state_manager.py`, `settings_default.json`
+**Files Created**: `Documentation/Technical/ERROR_LOG_AND_FIXES.md`
+
+**Remaining User Action**:
+- Rotate ALL broker credentials via mStock Developer Console (API key, API secret, password, TOTP secret)
+- Re-enroll TOTP after secret rotation
+
+**Status:** v2.5.1 - Security Audit Fixes Applied ✅
+
+---
+
+## 🔧 DETAILED FIX INSTRUCTIONS (REFERENCE — All Implemented)
+
+### Fix 1: Remove settings.json from Git (P0)
+```bash
+# 1. Add to .gitignore
+echo "settings.json" >> .gitignore
+echo ".encryption_key" >> .gitignore
+
+# 2. Remove from git tracking (keeps local file)
+git rm --cached settings.json
+
+# 3. Create template for git
+cp settings.json settings_default.json
+# Edit settings_default.json to remove all credential values (replace with "")
+
+# 4. Commit
+git add .gitignore settings_default.json
+git commit -m "security: remove credentials from git tracking"
+```
+**IMPORTANT**: After this, user MUST rotate all credentials via mStock Developer Console.
+
+### Fix 2: Encryption Bypass in save_settings() (P0)
+**File**: `settings_gui.py`, method `save_settings()` (~line 1173)
+**Current**: Builds raw dict, calls `current_settings.update()`, then `save()`
+**Fix**: For sensitive fields, use `settings_mgr.set()` which triggers `_is_sensitive_field()` → `_encrypt_value()`:
+```python
+def save_settings(self):
+    try:
+        # Save SENSITIVE fields via set() (triggers encryption)
+        sensitive = {
+            "broker.api_key": self.api_key_entry.get(),
+            "broker.api_secret": self.api_secret_entry.get(),
+            "broker.password": self.password_entry.get(),
+            "broker.access_token": self.access_token_entry.get(),
+            "broker.totp_secret": self.totp_entry.get(),
+            "notifications.telegram_bot_token": self.tg_token_entry.get(),
+        }
+        for key_path, value in sensitive.items():
+            if value:  # Only encrypt non-empty
+                self.settings_mgr.set(key_path, value)
+
+        # Save NON-SENSITIVE fields via bulk update (no encryption needed)
+        non_sensitive = {
+            "app_settings": {
+                "paper_trading_mode": self.paper_mode_var.get(),
+                "nifty_50_only": self.nifty_filter_var.get()
+            },
+            "broker": {
+                "name": self.broker_var.get(),
+                "client_code": self.client_code_entry.get(),
+            },
+            "capital": { ... },  # keep existing
+            "risk": { ... },     # keep existing
+            "notifications": {
+                "enabled": self.tg_enabled_var.get(),
+                "telegram_chat_id": self.tg_chat_id_entry.get(),
+            }
+        }
+        # Deep merge non-sensitive only
+        for section, values in non_sensitive.items():
+            if section not in self.settings_mgr.settings:
+                self.settings_mgr.settings[section] = {}
+            self.settings_mgr.settings[section].update(values)
+
+        self.settings_mgr.save()  # Single save (remove duplicate)
+        ...
+```
+**Also**: Remove the duplicate `self.settings_mgr.save()` call at line ~1221.
+
+### Fix 3: Stop Logging Secrets (P0)
+**File**: `kickstart.py`
+- Line ~1023: `log_ok(f"Generated TOTP: {otp_code}")` → DELETE or mask
+- Line ~1048: `log_ok(f"Response Data: {totp_data}")` → DELETE (contains token)
+- Line ~1268: `API_KEY[:10]` → `'***' + API_KEY[-4:]`
+- Line ~296: `print(f"DEBUG REQ: {method} {url}")` → DELETE or gate behind flag
+
+### Fix 4: Operator Precedence Bug (P1)
+**File**: `kickstart.py:1325`
+```python
+# CHANGE FROM:
+if "TokenException" or "invalid session" in error_str:
+# TO:
+if "TokenException" in error_str or "invalid session" in error_str:
+```
+
+### Fix 5: Singleton SettingsManager (P1)
+**File**: `settings_manager.py`
+```python
+class SettingsManager:
+    _instance = None
+
+    def __new__(cls, settings_file="settings.json"):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+```
+Then verify `kickstart.py` lines 68, 368, 1168 all resolve to same instance.
+
+### Fix 6: Thread Safety (P2)
+**File**: `kickstart.py` — add near top:
+```python
+import threading
+_STATE_LOCK = threading.Lock()
+```
+Then wrap mutations of `CYCLE_QUOTES`, `live_positions`, `FETCH_STATE` with:
+```python
+with _STATE_LOCK:
+    CYCLE_QUOTES[key] = value
+```
+
+### Fix 7: Scanner Stop (P2)
+**File**: `sensei_v1_dashboard.py`
+In `start_scanner()`, store reference: `self.active_scanner = scanner`
+In `stop_scanner()`, add: `if hasattr(self, 'active_scanner'): self.active_scanner.stop()`
+
+### Fix 8: Dead Code Cleanup (P3)
+- `state_manager.py:45-46` — delete unreachable lines after first `return merged`
+- `kickstart.py:703` — delete duplicate `return []`
+- `kickstart.py:_legacy_UNUSED_run_cycle()` — delete entire function (~850 lines)
 

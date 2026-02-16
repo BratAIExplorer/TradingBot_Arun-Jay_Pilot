@@ -14,8 +14,8 @@ An autonomous retail unit designed for high-performance algorithmic trading acro
 - **High Reliability**: Real-time heartbeat, auto-relogin, and connectivity resilience.
 
 ## Roadmap
-- **Phase 1**: Stability & Symbol Accuracy (mStock REITs).
-- **Phase 2**: Multi-Pair Architecture refinement.
+- **Phase 1 [COMPLETE]**: Stability & Symbol Accuracy (mStock REITs, RMS fixes).
+- **Phase 2 [IN-PROGRESS]**: Multi-Pair Architecture refinement & Hybrid Butler Mode.
 - **Phase 3**: Optional read-only bridge to the FinFlow Wealth Hub.
 
 > [!IMPORTANT]

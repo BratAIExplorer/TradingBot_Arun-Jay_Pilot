@@ -8,7 +8,7 @@ import queue
 import customtkinter as ctk
 from tkinter import END, ttk, messagebox
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
@@ -96,6 +96,7 @@ class DashboardV2:
         # Scanner state
         self.scanner_running = False
         self.scanner_results = []
+        self.last_scan_total = 0
         self.scanner_thread = None
 
         # Log redirection (DISABLED - Can cause GUI freeze)
@@ -485,6 +486,42 @@ class DashboardV2:
         self.root.after(1000, self.refresh_quick_monitor)
 
 
+    def download_trades_csv(self):
+        """Handle CSV download request"""
+        if not DATABASE_AVAILABLE or not db:
+            messagebox.showerror("Error", "Database not available")
+            return
+
+        start_date = self.entry_start_date.get()
+        end_date = self.entry_end_date.get()
+
+        # Simple validation
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+            datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Invalid Date", "Please use YYYY-MM-DD format")
+            return
+
+        try:
+            # Create exports directory in user's Documents or project root
+            # Using project root 'exports' for simplicity as per plan
+            output_dir = os.path.join(os.getcwd(), "exports")
+            
+            filepath = db.export_trades_csv(start_date, end_date, output_dir)
+            
+            if filepath:
+                messagebox.showinfo("Export Success", f"Trades exported successfully!\n\nLocation:\n{filepath}")
+                # Optional: Open the folder
+                try:
+                    os.startfile(output_dir)
+                except: pass
+            else:
+                messagebox.showinfo("Export Empty", "No trades found for the selected date range.")
+                
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"An error occurred:\n{str(e)}")
+
     def build_positions_table(self, parent):
         # Filter/View Toggle
         filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
@@ -563,6 +600,38 @@ class DashboardV2:
         title_frame.pack(side="left")
         ctk.CTkFrame(title_frame, width=4, height=24, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
         ctk.CTkLabel(title_frame, text=" TRADE HISTORY & METRICS", font=("Roboto", 20, "bold"), text_color="#1a1a1a").pack(side="left", padx=10)
+
+        # 0. Export Controls
+        export_frame = ctk.CTkFrame(self.view_trades, fg_color="transparent")
+        export_frame.pack(fill="x", pady=(0, 20), padx=20)
+        
+        ctk.CTkLabel(export_frame, text="Export Data:", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=(5, 10))
+        
+        # Simple Date Entry fields (YYYY-MM-DD)
+        # Default: Last 30 days
+        now = datetime.now()
+        start_def = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        end_def = now.strftime("%Y-%m-%d")
+        
+        self.entry_start_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
+        self.entry_start_date.pack(side="left", padx=5)
+        self.entry_start_date.insert(0, start_def)
+        
+        ctk.CTkLabel(export_frame, text="to", text_color="#666").pack(side="left", padx=5)
+        
+        self.entry_end_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
+        self.entry_end_date.pack(side="left", padx=5)
+        self.entry_end_date.insert(0, end_def)
+        
+        ctk.CTkButton(
+            export_frame, 
+            text="📥 DOWNLOAD CSV", 
+            command=self.download_trades_csv,
+            fg_color="#333", 
+            hover_color=COLOR_ACCENT,
+            width=140,
+            height=32
+        ).pack(side="left", padx=20)
 
         # 1. Counter Row
         counter_row = ctk.CTkFrame(self.view_trades, fg_color="transparent")
@@ -679,8 +748,9 @@ class DashboardV2:
         if hasattr(self, 'settings_gui_instance'):
             def diverted_update(msg, color="gray"):
                 try:
-                    self.stocks_status_label.configure(text=msg, text_color=color)
-                    self.stocks_status_label.update()
+                    if hasattr(self, 'stocks_status_label') and self.stocks_status_label.winfo_exists():
+                        self.stocks_status_label.configure(text=msg, text_color=color)
+                        self.stocks_status_label.update()
                 except: pass
             
             # Monkey-patch the instance method
@@ -913,6 +983,7 @@ class DashboardV2:
                 self.log_viewer.insert("1.0", "No log file found at logs/bot.log")
         except Exception as e:
             self.log_viewer.insert("end", f"\nError reading logs: {e}")
+
 
     def build_start_here_view(self):
         """Onboarding Guide Tab"""
@@ -1216,8 +1287,9 @@ class DashboardV2:
 
             self.write_log(f"🔍 Starting market scan ({mode_str} mode)...\n")
 
-            # Create scanner instance
+            # Create scanner instance and store reference for stop propagation
             scanner = MACDScanner(progress_callback=self.scanner_progress_update)
+            self.active_scanner = scanner
 
             # Run in background thread (NON-BLOCKING)
             def scan_worker():
@@ -1235,8 +1307,10 @@ class DashboardV2:
             self.scanner_running = False
 
     def stop_scanner(self):
-        """Stop running scanner"""
+        """Stop running scanner — propagates stop to scanner engine"""
         self.scanner_running = False
+        if hasattr(self, 'active_scanner') and self.active_scanner:
+            self.active_scanner.stop()
         self.write_log("⏹ Stopping scanner...\n")
 
         # Reset UI
@@ -1248,6 +1322,9 @@ class DashboardV2:
         """Progress callback from scanner (Thread-safe)"""
         def update_ui():
             try:
+                # Store total for final report
+                self.last_scan_total = total
+                
                 # Ensure total is not zero to avoid division error
                 if total > 0:
                     progress = current / total
@@ -1277,7 +1354,7 @@ class DashboardV2:
 
         # Update last scan timestamp
         self.lbl_last_scan.configure(
-            text=f"Last scan: {datetime.now().strftime('%d-%b %H:%M')} • Found {len(results)} opportunities"
+            text=f"Last scan: {datetime.now().strftime('%d-%b %H:%M')} • Found {len(results)} opportunities (scanned {self.last_scan_total} stocks)"
         )
 
         # Populate table
@@ -1349,8 +1426,8 @@ class DashboardV2:
             # Tag for coloring
             is_tracked = symbol.upper() in tracked
             tag = "tracked" if is_tracked else ("strong_buy" if signal == "STRONG BUY" else "buy")
-            action_text = "Tracked" if is_tracked else "+ Track"
-
+            action_text = "⚡ Trade" # Always allow smart trade
+            
             self.scanner_table.insert(
                 "", END,
                 values=(
@@ -1376,7 +1453,7 @@ class DashboardV2:
             self.populate_scanner_results(self.scanner_results)
 
     def on_scanner_track_click(self, event):
-        """Handle click on Track column to add stock to config"""
+        """Handle click on 'Trade' column to open Smart Trade Modal"""
         # Identify which column was clicked
         region = self.scanner_table.identify_region(event.x, event.y)
         if region != "cell":
@@ -1396,45 +1473,55 @@ class DashboardV2:
             return
 
         symbol = values[0]
-        action = values[6]
+        
+        # Find Result Dict
+        result_dict = None
+        if hasattr(self, 'scanner_results') and self.scanner_results:
+             result_dict = next((r for r in self.scanner_results if r['SYMBOL'] == symbol), None)
+        
+        if not result_dict:
+             self._show_scanner_toast(f"Details not found for {symbol}")
+             return
+             
+        # Extract data
+        ltp = result_dict.get('LTP', 0)
+        support = result_dict.get('SUPPORT', 0)
+        resistance = result_dict.get('RESISTANCE', 0)
 
-        # Already tracked
-        if action == "Tracked":
-            self._show_scanner_toast(f"{symbol} is already in your Stocks list")
-            return
+        # Success Callback
+        def on_trade_success():
+             # Add to Tracking Config automatically
+             try:
+                 new_stock = {
+                    "symbol": symbol.upper(),
+                    "exchange": "NSE",
+                    "enabled": True,
+                    "strategy": "TRADE",
+                    "timeframe": "15T",
+                    "buy_rsi": 40, 
+                    "sell_rsi": 70,
+                    "Ignore_RSI": False,
+                    "quantity": 0, 
+                    "profit_target_pct": 10.0
+                }
+                 self.settings_mgr.add_stock_config(new_stock)
+                 self.write_log(f"➕ {symbol} added to monitoring (Post-Trade).\n")
+                 
+                 # Refresh tables
+                 self.populate_scanner_results(self.scanner_results) 
+                 if hasattr(self, 'settings_gui_instance'):
+                     try: self.settings_gui_instance.refresh_stock_table()
+                     except: pass
+                 
+                 # Show Toast
+                 self._show_scanner_toast(f"Trade Executed & Monitored for {symbol}")
+                 
+             except Exception as e:
+                 self.write_log(f"⚠️ Tracking add error: {e}\n")
 
-        # Add to stock config
-        new_stock = {
-            "symbol": symbol.upper(),
-            "exchange": "NSE",
-            "enabled": True,
-            "strategy": "TRADE",
-            "timeframe": "15T",
-            "buy_rsi": 35,
-            "sell_rsi": 65,
-            "Ignore_RSI": False,
-            "quantity": 0,
-            "profit_target_pct": 10.0
-        }
+        # Open Modal
+        SmartTradeModal(self.root, symbol, ltp, support, resistance, self.settings_mgr, on_success_callback=on_trade_success)
 
-        success = self.settings_mgr.add_stock_config(new_stock)
-        if success:
-            # Update this row to show "Tracked"
-            current_values = list(values)
-            current_values[6] = "Tracked"
-            self.scanner_table.item(item, values=current_values, tags=("tracked",))
-
-            # Refresh STOCKS table if available
-            if hasattr(self, 'settings_gui_instance'):
-                try:
-                    self.settings_gui_instance.refresh_stock_table()
-                except:
-                    pass
-
-            self._show_scanner_toast(f"{symbol} added to Stocks — engine will monitor RSI")
-            self.write_log(f"➕ {symbol} added to Stocks from Scanner\n")
-        else:
-            self._show_scanner_toast(f"Failed to add {symbol}")
 
     def _show_scanner_toast(self, message):
         """Show brief toast notification in scanner results"""
@@ -2184,21 +2271,11 @@ class DashboardV2:
             try:
                 from state_manager import state as state_mgr
                 
-                # Use Database as source of truth for "Today" counters
-                # Filter today's trades for BOT trades only
-                bot_today = []
-                if today_trades is not None:
-                    # Convert DataFrame to list of dicts if necessary
-                    if hasattr(today_trades, 'to_dict'):
-                        entries = today_trades.to_dict('records')
-                    else:
-                        entries = today_trades
-                    
-                    bot_today = [t for t in entries if "BOT" in str(t.get('source', '')).upper()]
-                
-                attempts = len(bot_today)
-                success = sum(1 for t in bot_today if t.get('action') == 'SELL' and (t.get('pnl_net', 0) or 0) > 0)
-                failed = sum(1 for t in bot_today if t.get('action') == 'SELL' and (t.get('pnl_net', 0) or 0) < 0)
+                # Use StateManager as source of truth for execution counters
+                counters = state_mgr.get_trade_counters()
+                attempts = counters.get('attempts', 0)
+                success = counters.get('success', 0)
+                failed = counters.get('failed', 0)
 
                 # Sync local trade_stats for consistency
                 self.trade_stats['attempts'] = attempts
@@ -2326,11 +2403,13 @@ class DashboardV2:
         
         # 1. Technical Log (Bottom/Logs Tab) - Show Everything
         try:
-            if hasattr(self, 'log_area'):
-                self.log_area.configure(state="normal")
-                self.log_area.insert("end", formatted + "\n")
-                self.log_area.see("end")
-                self.log_area.configure(state="disabled")
+            # Use log_viewer (defined at 897) or log_area (legacy reference)
+            target_log = getattr(self, 'log_viewer', getattr(self, 'log_area', None))
+            if target_log and target_log.winfo_exists():
+                target_log.configure(state="normal")
+                target_log.insert("end", formatted + "\n")
+                target_log.see("end")
+                target_log.configure(state="disabled")
         except: pass
         
         # 2. Trade Activity Monitor (Tab 2) - LIVE EXECUTION TRACKING
@@ -2361,7 +2440,7 @@ class DashboardV2:
                 # to ensure data integrity across components and restarts.
                 
                 # Update Activity Log Textbox
-                if hasattr(self, 'trade_log'):
+                if hasattr(self, 'trade_log') and self.trade_log.winfo_exists():
                     self.trade_log.configure(state="normal")
                     prefix = "❌ " if is_failure else "✅ " if is_success else "ℹ "
                     self.trade_log.insert("0.0", f"{timestamp} {prefix} {text}\n") # Insert at top
@@ -2606,8 +2685,221 @@ def check_single_instance():
             
         atexit.register(cleanup_lock)
         
+        
     except Exception as e:
         print(f"Failed to create lock file: {e}")
+
+# -----------------------------------------------------------------------------
+# SMART TRADE MODAL (New Feature)
+# -----------------------------------------------------------------------------
+class SmartTradeModal(ctk.CTkToplevel):
+    def __init__(self, parent, symbol, ltp, support, resistance, settings_mgr, on_success_callback=None):
+        super().__init__(parent)
+        self.title(f"⚡ Smart Trade: {symbol}")
+        self.geometry("420x680")
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        
+        self.symbol = symbol
+        self.ltp = float(ltp)
+        self.support = float(support)
+        self.resistance = float(resistance)
+        self.settings_mgr = settings_mgr
+        self.on_success = on_success_callback
+        
+        # Defaults
+        self.risk_pct = 2.0  # Default 2% Risk
+        self.capital = 100000.0 # Default Capital (should fetch from settings/live)
+        
+        # Fetch Capital from Settings if available
+        try:
+            self.capital = float(settings_mgr.get("risk.max_capital", 100000.0))
+        except: pass
+        
+        # UI Layout
+        self._build_ui()
+        self._calculate_quantity() # Initial calculation
+        
+    def _build_ui(self):
+        # Header
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=20)
+        
+        ctk.CTkLabel(header, text=f"{self.symbol}", font=("Roboto", 24, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        ctk.CTkLabel(header, text=f"LTP: ₹{self.ltp:,.2f}", font=("Roboto", 16), text_color=COLOR_ACCENT).pack(anchor="w")
+        
+        # Form Container
+        form = ctk.CTkFrame(self, fg_color="#F9FAFB", corner_radius=10)
+        form.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # 1. Entry Price (Editable)
+        self._add_input(form, "Entry Price (₹)", self.ltp, "entry_var")
+        
+        # 2. Stop Loss (Auto-filled from Support)
+        self._add_input(form, "Stop Loss (₹)", self.support, "sl_var")
+        ctk.CTkLabel(form, text=f"Support: {self.support}", font=("Arial", 10), text_color="gray").pack(anchor="w", padx=20, pady=(0, 5))
+        
+        # 3. Target (Auto-filled 1:2)
+        risk_per_share = self.ltp - self.support
+        target_price = self.ltp + (risk_per_share * 2) if risk_per_share > 0 else self.ltp * 1.05
+        self._add_input(form, "Target Price (₹)", target_price, "target_var")
+        
+        # 4. Risk % Slider
+        ctk.CTkLabel(form, text="Risk Per Trade (%)", font=("Roboto", 12, "bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(10, 0))
+        self.risk_slider = ctk.CTkSlider(form, from_=0.5, to=5.0, number_of_steps=9, command=self._on_risk_change)
+        self.risk_slider.set(self.risk_pct)
+        self.risk_slider.pack(fill="x", padx=20, pady=5)
+        self.lbl_risk_pct = ctk.CTkLabel(form, text=f"{self.risk_pct}%", font=("Roboto", 12, "bold"), text_color=COLOR_ACCENT)
+        self.lbl_risk_pct.pack(anchor="e", padx=20)
+        
+        # 5. Quantity (Calculated)
+        self._add_input(form, "Quantity (Calc)", 1, "qty_var", readonly=False) # Editable but auto-calcs also
+        
+        # Stats Box
+        self.stats_frame = ctk.CTkFrame(self, fg_color="#EFF6FF", corner_radius=8, border_width=1, border_color="#BFDBFE")
+        self.stats_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.lbl_risk_amt = ctk.CTkLabel(self.stats_frame, text="Risk: ₹1000", font=("Roboto", 13), text_color="#1E40AF")
+        self.lbl_risk_amt.pack(side="left", padx=15, pady=10)
+        
+        self.lbl_rr = ctk.CTkLabel(self.stats_frame, text="R:R: 1:2.0", font=("Roboto", 13, "bold"), text_color="#059669")
+        self.lbl_rr.pack(side="right", padx=15, pady=10)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", border_width=1, border_color="#D1D5DB", text_color="gray", command=self.destroy).pack(side="left", expand=True, fill="x", padx=(0, 10))
+        
+        self.btn_place = ctk.CTkButton(btn_frame, text="⚡ PLACE ORDER", fg_color=COLOR_ACCENT, font=("Roboto", 14, "bold"), command=self._place_order)
+        self.btn_place.pack(side="right", expand=True, fill="x", padx=(10, 0))
+
+        # Bind events for recalc
+        self.entry_var.trace_add("write", self._recalc)
+        self.sl_var.trace_add("write", self._recalc)
+        self.target_var.trace_add("write", self._recalc)
+        # Qty manual override check? Maybe later.
+
+    def _add_input(self, parent, label, value, var_name, readonly=False):
+        ctk.CTkLabel(parent, text=label, font=("Roboto", 12, "bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(5, 0))
+        var = ctk.StringVar(value=f"{float(value):.2f}" if isinstance(value, float) else str(value))
+        setattr(self, var_name, var)
+        entry = ctk.CTkEntry(parent, textvariable=var, border_color="#E5E7EB")
+        entry.pack(fill="x", padx=20, pady=5)
+        if readonly: entry.configure(state="readonly")
+        
+    def _on_risk_change(self, value):
+        self.risk_pct = round(value, 1)
+        self.lbl_risk_pct.configure(text=f"{self.risk_pct}%")
+        self._calculate_quantity()
+        
+    def _recalc(self, *args):
+        # Triggered on manual entry change
+        # We need to distinguish between User Typing vs Auto-Calc to avoid loop
+        # For now, simplistic recalc on Entry/SL change
+        try:
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            
+            if entry <= 0 or sl <= 0 or entry <= sl:
+                return # Invalid for Long trade
+                
+            risk_per_share = entry - sl
+            total_risk = self.capital * (self.risk_pct / 100.0)
+            qty = int(total_risk / risk_per_share)
+            
+            # Update Qty var without triggering another trace?
+            # self.qty_var.set(str(qty)) # This might loop if we traced qty too. We didn't trace qty.
+            
+            # Logic: If user changes Entry/SL -> Recalc Qty.
+            # If user changes Qty manually -> Update Risk Stats (requires reverse logic)
+            # Simplification: Always drive Qty from Risk parameters for "Smart Buy"
+            
+            self._update_stats(qty, entry, sl, float(self.target_var.get()))
+            
+        except ValueError:
+            pass
+
+    def _calculate_quantity(self):
+        try:
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            
+            if entry > sl:
+                risk_per_share = entry - sl
+                total_risk = self.capital * (self.risk_pct / 100.0)
+                qty = max(1, int(total_risk / risk_per_share))
+                self.qty_var.set(str(qty))
+                self._update_stats(qty, entry, sl, float(self.target_var.get()))
+            else:
+                 self.qty_var.set("0")
+        except:
+             self.qty_var.set("0")
+
+    def _update_stats(self, qty, entry, sl, target):
+        risk_amt = (entry - sl) * qty
+        reward_amt = (target - entry) * qty
+        rr = reward_amt / risk_amt if risk_amt > 0 else 0
+        
+        self.lbl_risk_amt.configure(text=f"Risk: ₹{risk_amt:,.0f}")
+        self.lbl_rr.configure(text=f"R:R: 1:{rr:.1f}")
+
+    def _place_order(self):
+        try:
+            qty = int(self.qty_var.get())
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            target = float(self.target_var.get())
+            
+            # Call Backend
+            import kickstart
+            # We use Limit order if price specified, else Market? 
+            # Smart Buy implies Limit at Entry Price usually.
+            
+            # Place Order
+            success = kickstart.place_order(
+                symbol=self.symbol,
+                exchange="NSE",
+                qty=qty,
+                side="BUY",
+                instrument_token=None, # Will auto-resolve
+                price=entry # Limit Price
+            )
+            
+            if success:
+                # Add to DB
+                try:
+                    from database.trades_db import TradesDatabase
+                    db = TradesDatabase()
+                    db.insert_trade(
+                        symbol=self.symbol,
+                        exchange="NSE",
+                        action="BUY",
+                        quantity=qty,
+                        price=entry,
+                        gross_amount=entry*qty,
+                        total_fees=0,
+                        net_amount=entry*qty,
+                        strategy="Smart Buy (Scanner)",
+                        reason=f"Scanner Signal | Stop: {sl} | Target: {target}",
+                        broker="BOT"
+                    )
+                    
+                    # Log Info for Risk Manager (Optional: DB is enough usually)
+                    # We should also ensure the bot starts monitoring it.
+                    # kickstart.run_cycle() will pick it up from positions/orders merge.
+                    
+                    messagebox.showinfo("Success", f"Order Placed for {qty} x {self.symbol}")
+                    if self.on_success: self.on_success()
+                    self.destroy()
+                    
+                except Exception as db_e:
+                     messagebox.showwarning("Warning", f"Order Placed but DB Error: {db_e}")
+            else:
+                messagebox.showerror("Error", "Failed to place order via Broker API")
+                
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
 if __name__ == "__main__":
     try:

@@ -13,10 +13,22 @@ import base64
 
 class SettingsManager:
     """
-    Manages bot settings with validation and defaults
+    Manages bot settings with validation and defaults.
+    Singleton pattern — all SettingsManager() calls return the same instance
+    to prevent stale-data races between multiple copies.
     """
-    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, settings_file: str = "settings.json"):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, settings_file: str = "settings.json"):
+        if SettingsManager._initialized:
+            return
+        SettingsManager._initialized = True
         self.settings_file = settings_file
         self.settings = {}
         self._encryption_key = self._get_or_create_encryption_key()

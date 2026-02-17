@@ -87,9 +87,7 @@ class DashboardV2:
         self.stop_update_flag = threading.Event()
         self.data_queue = queue.Queue(maxsize=100)
         self.running = False
-        self.running = False
         self.alerts_list = [] # Store recent alerts
-        self.is_online_status = False # Connection status flag
         
         # Trade Activity Tracking
         self.trade_stats = {'attempts': 0, 'success': 0, 'failed': 0}
@@ -155,7 +153,6 @@ class DashboardV2:
         
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
         threading.Thread(target=self.positions_worker, daemon=True).start()
-        threading.Thread(target=self.connectivity_worker, daemon=True).start()
         
     def update_ui_loop(self):
         """Main UI Update Loop (Consumer)"""
@@ -165,18 +162,6 @@ class DashboardV2:
             if hasattr(self, 'positions_label'):
                 self.positions_label.configure(text=f"📊 Live Positions (Last Check: {now})")
             
-            # Update Connection Indicator
-            if hasattr(self, 'status_indicator'):
-                color = "#10B981" if self.is_online_status else "gray" # Green or Gray
-                text = "●"
-                if not self.is_online_status:
-                     text = "○" # Hollow if offline/connecting
-                     
-                self.status_indicator.configure(text_color=color, text=text)
-                
-                tooltip = "Backend: Online 🟢" if self.is_online_status else "Backend: Connecting... 🟡"
-                self.status_tooltip.configure(text=tooltip)
-
             # 2. Consume Data Queue
             updates_processed = 0
             while not self.data_queue.empty() and updates_processed < 20:
@@ -235,18 +220,6 @@ class DashboardV2:
                 self.write_log(f"❌ Positions fetch error: {e}\n")
             time.sleep(10)  # Refresh every 10 seconds
 
-    def connectivity_worker(self):
-        """Background worker to check backend connectivity"""
-        while not self.stop_update_flag.is_set():
-            try:
-                # Use is_system_online from kickstart
-                online = is_system_online()
-                self.is_online_status = online
-            except Exception as e:
-                self.is_online_status = False
-                print(f"Connectivity check failed: {e}")
-            time.sleep(5) # Check every 5 seconds
-
     def balance_refresh_timer(self):
         """Auto-refresh balance every 15 minutes"""
         self.refresh_balance()
@@ -300,12 +273,6 @@ class DashboardV2:
         # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
         user_frame.pack(side="right", padx=10)
-        
-        # Connection Status Indicator
-        self.status_indicator = ctk.CTkLabel(user_frame, text="●", font=("Arial", 24), text_color="gray")
-        self.status_indicator.pack(side="left", padx=5)
-        self.status_tooltip = ctk.CTkLabel(user_frame, text="Backend: Connecting...", font=("Roboto", 10), text_color="gray")
-        self.status_tooltip.pack(side="left", padx=(0, 10))
         
         ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
@@ -618,10 +585,6 @@ class DashboardV2:
         self.pos_table.tag_configure("red", foreground=COLOR_DANGER)
         self.pos_table.tag_configure("bot", background="#0A2A0A") 
         self.pos_table.tag_configure("manual", background="#2A2A0A") 
-
-        # Loading Skeleton / Indicator
-        self.lbl_pos_loading = ctk.CTkLabel(table_frame, text="⏳ Loading Positions...", font=("Roboto", 16, "bold"), text_color="#AAA")
-        self.lbl_pos_loading.place(relx=0.5, rely=0.5, anchor="center")
 
         # Store all positions for filtering
         self.all_positions_data = {}
@@ -1572,10 +1535,6 @@ class DashboardV2:
     def filter_positions_display(self, filter_value=None):
         """Filter positions table by source (ALL/BOT/MANUAL)"""
         try:
-            # Hide Loading Indicator if it exists
-            if hasattr(self, 'lbl_pos_loading') and self.lbl_pos_loading.winfo_exists():
-                self.lbl_pos_loading.place_forget()
-
             filter_val = self.holdings_filter_var.get()
 
             # Clear table
@@ -1633,13 +1592,9 @@ class DashboardV2:
             self.lbl_position_stats.configure(
                 text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
             )
-        except Exception as e:
-            print(f"Filter error: {e}")
 
-    def update_positions(self, positions):
-        """Update positions data and refresh view"""
-        self.all_positions_data = positions
-        self.filter_positions_display()
+        except Exception as e:
+            self.write_log(f"❌ Filter error: {e}\n")
 
     def build_hybrid_view(self):
         """View for managing existing holdings with the "Butler" toggle"""
@@ -1838,11 +1793,6 @@ class DashboardV2:
             
             t2 = threading.Thread(target=self.rsi_worker, daemon=True)
             t2.start()
-
-            # Start Connectivity Monitor (Missing piece for Offline Recovery)
-            # This thread will now run in background and keep OFFLINE status updated
-            t3 = threading.Thread(target=kickstart.connectivity_monitor, daemon=True)
-            t3.start()
             
         except Exception as e:
             import traceback

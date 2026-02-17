@@ -1,7 +1,7 @@
 # 🏗️ ARUN Project Status & Architecture (Titan V2)
 
 **Last Updated:** February 16, 2026
-**Version:** Titan V2.5.0 (Stability & Execution Accuracy)
+**Version:** Titan V2.5.2 (Never Sell at Loss Hardening)
 
 ---
 
@@ -44,6 +44,8 @@ Here is the updated breakdown of the Titan V2 codebase.
 ---
 
 ## 🛠 Recent Engineering Improvements
+*   **Never Sell at Loss Hardening (v2.5.2)**: Implemented 3-layer defense-in-depth to strictly block loss sells when `never_sell_at_loss` is enabled. Includes hardcoded safety gate in `kickstart.py`, updated catastrophic stop logic in `risk_manager.py`, and risk execution checks.
+*   **Security Audit Fixes (v2.5.1)**: Addressed critical security findings including credential encryption, git exclusion, and secret logging. Fixed operator precedence bug and enforced singleton pattern for SettingsManager.
 *   **Stability & Accuracy Update (v2.5.0)**:
     *   **RMS Cooldown**: Automated 1-hour cooldown for "Insufficient Quantity" rejections to prevent infinite SELl loops.
     *   **Immediate Panic Stop**: Refactored `run_cycle` with mid-loop checks for `STOP_REQUESTED`, ensuring immediate response to user stop commands.

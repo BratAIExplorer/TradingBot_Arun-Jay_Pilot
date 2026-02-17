@@ -533,10 +533,15 @@ def fetch_market_data(symbol, exchange):
                 exchanges_to_try = [exchange]
 
             for ex in exchanges_to_try:
-                if broker:
-                    result = broker.get_quote(symbol, ex)
+                params = {"i": f"{ex}:{mstock_symbol}"}
+                response = safe_request("GET", url, headers=headers, params=params)
+
+                if response and response.status_code == 200:
+                    data = response.json() or {}
+                    result = (data.get("data") or {}).get(params["i"])
                     if result:
                         return result, ex
+                # Silently skip REIT failures (falls through to holdings LTP)
 
         except Exception as e:
             # Skip logging if simulation/fallback might hit
@@ -621,9 +626,24 @@ def fetch_funds():
     if is_offline() or not ACCESS_TOKEN:
         return 0.0
     
-    if broker:
-        return broker.get_funds()
-    return 0.0
+    # Fund Summary Endpoint (Corrected per documentation)
+    url = "https://api.mstock.trade/openapi/typea/user/fundsummary"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Response Structure:
+            # { "status": "success", "data": [ { "AVAILABLE_BALANCE": "...", ... } ] }
+            if data.get("status") == "success":
+                inner_data = data.get("data", [])
+                if isinstance(inner_data, list) and inner_data:
+                    fund_data = inner_data[0]
+                    return float(fund_data.get("AVAILABLE_BALANCE", 0.0))
+    except Exception as e:
+        log_ok(f"⏳ Couldn't check your balance right now - will try again. Your funds are safe.")
+        return 0.0
 
 def check_connectivity_latency() -> Tuple[bool, int]:
     """Check API connection and measure latency in ms"""
@@ -673,8 +693,19 @@ def fetch_orders():
     if is_offline() or not ACCESS_TOKEN:
         return []
     
-    if broker:
-        return broker.get_orders()
+    # Generic endpoint for mStock/Mirae (Orders)
+    url = "https://api.mstock.trade/openapi/typea/orders"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Expecting list of orders in data['data']
+            return data.get("data", [])
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch orders: {e}")
+    
     return []
 
 def cancel_all_orders() -> int:
@@ -994,24 +1025,6 @@ if not ACCESS_TOKEN:
     else:
         log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
 
-# ---------------- Broker API Integration ----------------
-broker = None
-
-def auto_login_callback():
-    """Callback for BrokerAPI to handle token refresh"""
-    # Use global perform_auto_login
-    if perform_auto_login():
-        return API_KEY, ACCESS_TOKEN
-    return None, None
-
-try:
-    from broker_api import BrokerAPI
-    if all([API_KEY, ACCESS_TOKEN, CLIENT_CODE]):
-         broker = BrokerAPI(API_KEY, ACCESS_TOKEN, CLIENT_CODE, login_callback=auto_login_callback)
-         # log_ok("✅ Broker API initialized with auto-login support")
-except Exception as e:
-    log_ok(f"⚠️ Broker API Init Failed: {e}")
-
 # Modified initialization to wait for SettingsManager
 SYMBOLS_TO_TRACK = []
 config_dict = {}
@@ -1129,13 +1142,26 @@ def get_positions():
         log_ok("⚠️ Offline mode - skipping positions fetch")
         return {}
     
-    log_ok(f"🔍 Fetching holdings from mStock API (via BrokerAPI)...")
+    log_ok(f"🔍 Fetching holdings from mStock API...")
+    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {'***' + API_KEY[-4:] if API_KEY else 'NONE'}")
     
-    if broker:
-        positions = broker.get_holdings()
-    else:
-        log_ok("⚠️ Broker API not initialized.")
-        positions = []
+    url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    resp = safe_request("GET", url, headers=headers)
+    if resp is None:
+        log_ok("❌ API request returned None")
+        return {}
+    
+    # log_ok(f"📡 API Response Status: {resp.status_code}")
+    
+    if resp.status_code != 200:
+        if not is_offline():
+            log_ok(f"❌ Positions fetch error: {resp.text}")
+            if "TokenException" in resp.text or "invalid session" in resp.text:
+                raise Exception("TokenException")
+        return {}
+    data_json = resp.json() or {}
+    positions = data_json.get("data", []) or []
     
     # Mark token as validated for today (Smart Session Persistence)
     if state_mgr:
@@ -1242,13 +1268,19 @@ def get_intraday_positions():
     if is_offline() or not ACCESS_TOKEN:
         return {}
     
-    log_ok("🔍 Fetching active intraday positions (via BrokerAPI)...")
+    log_ok("🔍 Fetching active intraday positions from mStock API...")
+    url = "https://api.mstock.trade/openapi/typea/portfolio/positions"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
     
     try:
-        if broker:
-            positions = broker.get_positions()
-        else:
-            positions = []
+        resp = safe_request("GET", url, headers=headers)
+        if resp is None or resp.status_code != 200:
+            if resp is not None and not is_offline():
+                log_ok(f"❌ Intraday positions fetch error: {resp.text}")
+            return {}
+            
+        data_json = resp.json() or {}
+        positions = data_json.get("data", []) or []
         pos_dict = {}
         
         for pos in positions:
@@ -1612,66 +1644,6 @@ def compute_rsi_progressive(close, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_macd(close_series, fast=12, slow=26, signal=9):
-    """Calculate MACD, Signal, and Histogram"""
-    exp1 = close_series.ewm(span=fast, adjust=False).mean()
-    exp2 = close_series.ewm(span=slow, adjust=False).mean()
-    macd_val = exp1 - exp2
-    signal_line = macd_val.ewm(span=signal, adjust=False).mean()
-    histogram = macd_val - signal_line
-    return macd_val, signal_line, histogram
-
-def calculate_atr(df, length=14):
-    """Calculate Average True Range"""
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    # TR calculation
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # ATR calculation (Rolling mean for simplicity/robustness match with common TradingView simple ATR)
-    # Wilder's Smoothing is better but simple rolling is often sufficient. 
-    # Let's use Wilder's if possible using ewm. com = length - 1
-    atr = tr.ewm(alpha=1/length, adjust=False).mean()
-    return atr
-
-def calculate_adx(df, length=14):
-    """Calculate ADX (Trend Strength)"""
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    # True Range
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # Directional Movement
-    up_move = high - high.shift(1)
-    down_move = low.shift(1) - low
-    
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-    
-    # Convert to Series
-    plus_dm = pd.Series(plus_dm, index=df.index)
-    minus_dm = pd.Series(minus_dm, index=df.index)
-    
-    # Smoothed TR and DM (Wilder's)
-    atr = tr.ewm(alpha=1/length, adjust=False).mean()
-    plus_di = 100 * (plus_dm.ewm(alpha=1/length, adjust=False).mean() / atr)
-    minus_di = 100 * (minus_dm.ewm(alpha=1/length, adjust=False).mean() / atr)
-    
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-    adx = dx.ewm(alpha=1/length, adjust=False).mean()
-    
-    return adx
-
 def floor_to_frame(dt, minutes):
     discard = (dt.minute % minutes) * 60 + dt.second
     return dt - timedelta(seconds=discard, microseconds=dt.microsecond)
@@ -1836,52 +1808,6 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 "stamp_duty": round(stamp, 2)
             }
             
-            # ---------------- Analytics Data Retrieval (Phase 4) ----------------
-            market_trend = 0.0
-            atr = 0.0
-            adx = 0.0
-            macd_val = 0.0
-            macd_signal = 0.0
-            macd_hist = 0.0
-            
-            try:
-                # 1. Market Trend (Nifty 50)
-                nifty_md, _ = fetch_market_data_once("Nifty 50", "NSE")
-                if nifty_md and "last_price" in nifty_md and "ohlc" in nifty_md:
-                    close = float(nifty_md["last_price"])
-                    # Use provided close from API if avail, else calculate from OHLC close if possible
-                    prev_close = float(nifty_md["ohlc"].get("close", close))
-                    if prev_close > 0:
-                        market_trend = ((close - prev_close) / prev_close) * 100
-            except Exception as e:
-                log_ok(f"⚠️ Failed to fetch Nifty 50 context: {e}")
-
-            try:
-                # 2. Technical Indicators (ATR, ADX, MACD)
-                # We need historical data for this. Using standard timeframe from config or default 15m.
-                tf = config_dict.get((symbol, exchange), {}).get("Timeframe", "15T")
-                
-                # Fetch history (reuse cache if possible, or fresh fetch)
-                # We use a short fetch just for these calcs if not available
-                hist_df = fetch_historical_data(symbol, exchange, tf, instrument_token, days=5)
-                
-                if hist_df is not None and not hist_df.empty and len(hist_df) > 30:
-                     # ATR
-                     atr_series = calculate_atr(hist_df)
-                     atr = float(atr_series.iloc[-1]) if not pd.isna(atr_series.iloc[-1]) else 0.0
-                     
-                     # ADX
-                     adx_series = calculate_adx(hist_df)
-                     adx = float(adx_series.iloc[-1]) if not pd.isna(adx_series.iloc[-1]) else 0.0
-                     
-                     # MACD
-                     macd, signal, hist = calculate_macd(hist_df['close'])
-                     macd_val = float(macd.iloc[-1]) if not pd.isna(macd.iloc[-1]) else 0.0
-                     macd_signal = float(signal.iloc[-1]) if not pd.isna(signal.iloc[-1]) else 0.0
-                     macd_hist = float(hist.iloc[-1]) if not pd.isna(hist.iloc[-1]) else 0.0
-            except Exception as e:
-                log_ok(f"⚠️ Failed to calculate analytics for {symbol}: {e}")
-
             # Log trade to database
             trade_id = db.insert_trade(
                 symbol=symbol,
@@ -1896,12 +1822,6 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 reason=f"RSI-based {side.upper()}",
                 broker="mstock",
                 rsi=rsi,
-                market_trend=round(market_trend, 2),
-                atr=round(atr, 2),
-                adx=round(adx, 2),
-                macd_val=round(macd_val, 2),
-                macd_signal=round(macd_signal, 2),
-                macd_hist=round(macd_hist, 2),
                 fee_breakdown=fee_breakdown,
                 fallback_entry_price=portfolio_state.get(symbol, {}).get("price", 0.0)
             )
@@ -1976,19 +1896,27 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
             if mstock_symbol in REIT_TOKEN_MAP:
                 target_token = REIT_TOKEN_MAP[mstock_symbol]
 
-            if broker:
-                response_data = broker.get_historical_data(
-                    exchange.upper(), 
-                    target_token, 
-                    api_timeframe, 
-                    from_encoded, 
-                    to_encoded
-                )
-            else:
-                response_data = None
-            
-            if not response_data:
+            url = (
+                f"https://api.mstock.trade/openapi/typea/instruments/historical/"
+                f"{exchange.upper()}/{target_token}/{api_timeframe}"
+                f"?from={from_encoded}&to={to_encoded}"
+            )
+            headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+            resp = safe_request("GET", url, headers=headers)
+            if resp is None:
                 return None
+            if resp.status_code != 200:
+                log_ok(f"❌ Historical data error for {symbol}: {resp.status_code} - {resp.text}")
+                if "TokenException" in resp.text:
+                    if handle_token_exception_and_refresh_token():
+                        return attempt_fetch()
+                    else:
+                        if not is_offline():
+                            log_ok("Failed to refresh mstock token, cannot fetch historical data.")
+                        return None
+                return None
+
+            response_data = resp.json() or {}
             candles = (response_data.get("data") or {}).get("candles", [])
             if response_data.get("status") != "success" or not candles:
                 log_ok(f"⚠️ No data returned for {symbol}: {response_data.get('message', 'No candles')}")
@@ -2349,45 +2277,28 @@ def is_system_online() -> bool:
         return False
 
 def connectivity_monitor():
-    """
-    Background thread to monitor internet connectivity.
-    Updates global OFFLINE state.
-    """
     offline = False
     offline_start = None
-    
-    log_ok("📡 Connectivity Monitor Started")
-    
-    while not STOP_REQUESTED:
-        try:
-            ok = is_system_online()
-            if ok:
-                if offline:
-                    downtime = now_ist() - offline_start
-                    secs = int(downtime.total_seconds())
-                    mins, rem = divmod(secs, 60)
-                    log_ok(f"🟢 Online again after {mins}m {rem}s downtime")
-                
-                offline = False
-                if OFFLINE["active"]:
-                    OFFLINE["active"] = False
-                    OFFLINE["since"] = None
-                    log_ok("🟢 Connectivity Restored - Resuming Operations")
-            else:
-                if not offline:
-                    offline = True
-                    offline_start = now_ist()
-                    if not OFFLINE["active"]:
-                        OFFLINE["active"] = True
-                        OFFLINE["since"] = offline_start
-                        log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
-        except Exception as e:
-            # Don't let monitor crash
-            print(f"Monitor error: {e}")
-            
-        time.sleep(5)
-    
-    log_ok("📡 Connectivity Monitor Stopped")
+    while True:
+        ok = is_system_online()
+        if ok:
+            if offline:
+                downtime = now_ist() - offline_start
+                secs = int(downtime.total_seconds())
+                mins, rem = divmod(secs, 60)
+                log_ok(f"🟢 Online again after {mins}m {rem}s downtime")
+            offline = False
+            OFFLINE["active"] = False
+            OFFLINE["since"] = None
+            run_cycle()
+        else:
+            if not offline:
+                offline = True
+                offline_start = now_ist()
+                OFFLINE["active"] = True
+                OFFLINE["since"] = offline_start
+                log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
+            time.sleep(5)
 
 # ---------------- Orders ----------------
 
@@ -2451,22 +2362,26 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
         return True
 
     def attempt_place_order():
-        if not broker:
-            return False
-
-        # Delegate execution to BrokerAPI
-        # Hardcoding product/validity/variety as per original implementation
-        response = broker.place_order(
-            symbol=symbol,
-            exchange=exchange,
-            side=side,
-            quantity=qty,
-            price=price,
-            product="CNC",
-            validity="DAY",
-            variety="regular", 
-            instrument_token=instrument_token
-        )
+        variety = "regular"
+        url = f"https://api.mstock.trade/openapi/typea/orders/{variety}"
+        data = {
+            'tradingsymbol': symbol,
+            'exchange': exchange,
+            'transaction_type': side.upper(),
+            'order_type': 'MARKET' if price == 0 else 'LIMIT',
+            'quantity': str(qty),
+            'product': 'CNC',
+            'validity': 'DAY',
+            'price': str(price),
+            'symboltoken': instrument_token
+        }
+        headers = {
+            'X-Mirae-Version': '1',
+            'Authorization': f'token {API_KEY}:{ACCESS_TOKEN}',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        encoded_payload = urlencode(data)
+        response = safe_request("POST", url, headers=headers, data=encoded_payload)
         if response is None:
             return False
 

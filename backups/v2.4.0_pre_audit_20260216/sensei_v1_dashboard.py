@@ -8,7 +8,7 @@ import queue
 import customtkinter as ctk
 from tkinter import END, ttk, messagebox
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
@@ -87,9 +87,7 @@ class DashboardV2:
         self.stop_update_flag = threading.Event()
         self.data_queue = queue.Queue(maxsize=100)
         self.running = False
-        self.running = False
         self.alerts_list = [] # Store recent alerts
-        self.is_online_status = False # Connection status flag
         
         # Trade Activity Tracking
         self.trade_stats = {'attempts': 0, 'success': 0, 'failed': 0}
@@ -155,7 +153,6 @@ class DashboardV2:
         
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
         threading.Thread(target=self.positions_worker, daemon=True).start()
-        threading.Thread(target=self.connectivity_worker, daemon=True).start()
         
     def update_ui_loop(self):
         """Main UI Update Loop (Consumer)"""
@@ -165,18 +162,6 @@ class DashboardV2:
             if hasattr(self, 'positions_label'):
                 self.positions_label.configure(text=f"📊 Live Positions (Last Check: {now})")
             
-            # Update Connection Indicator
-            if hasattr(self, 'status_indicator'):
-                color = "#10B981" if self.is_online_status else "gray" # Green or Gray
-                text = "●"
-                if not self.is_online_status:
-                     text = "○" # Hollow if offline/connecting
-                     
-                self.status_indicator.configure(text_color=color, text=text)
-                
-                tooltip = "Backend: Online 🟢" if self.is_online_status else "Backend: Connecting... 🟡"
-                self.status_tooltip.configure(text=tooltip)
-
             # 2. Consume Data Queue
             updates_processed = 0
             while not self.data_queue.empty() and updates_processed < 20:
@@ -235,18 +220,6 @@ class DashboardV2:
                 self.write_log(f"❌ Positions fetch error: {e}\n")
             time.sleep(10)  # Refresh every 10 seconds
 
-    def connectivity_worker(self):
-        """Background worker to check backend connectivity"""
-        while not self.stop_update_flag.is_set():
-            try:
-                # Use is_system_online from kickstart
-                online = is_system_online()
-                self.is_online_status = online
-            except Exception as e:
-                self.is_online_status = False
-                print(f"Connectivity check failed: {e}")
-            time.sleep(5) # Check every 5 seconds
-
     def balance_refresh_timer(self):
         """Auto-refresh balance every 15 minutes"""
         self.refresh_balance()
@@ -300,12 +273,6 @@ class DashboardV2:
         # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
         user_frame.pack(side="right", padx=10)
-        
-        # Connection Status Indicator
-        self.status_indicator = ctk.CTkLabel(user_frame, text="●", font=("Arial", 24), text_color="gray")
-        self.status_indicator.pack(side="left", padx=5)
-        self.status_tooltip = ctk.CTkLabel(user_frame, text="Backend: Connecting...", font=("Roboto", 10), text_color="gray")
-        self.status_tooltip.pack(side="left", padx=(0, 10))
         
         ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
@@ -519,42 +486,6 @@ class DashboardV2:
         self.root.after(1000, self.refresh_quick_monitor)
 
 
-    def download_trades_csv(self):
-        """Handle CSV download request"""
-        if not DATABASE_AVAILABLE or not db:
-            messagebox.showerror("Error", "Database not available")
-            return
-
-        start_date = self.entry_start_date.get()
-        end_date = self.entry_end_date.get()
-
-        # Simple validation
-        try:
-            datetime.strptime(start_date, "%Y-%m-%d")
-            datetime.strptime(end_date, "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror("Invalid Date", "Please use YYYY-MM-DD format")
-            return
-
-        try:
-            # Create exports directory in user's Documents or project root
-            # Using project root 'exports' for simplicity as per plan
-            output_dir = os.path.join(os.getcwd(), "exports")
-            
-            filepath = db.export_trades_csv(start_date, end_date, output_dir)
-            
-            if filepath:
-                messagebox.showinfo("Export Success", f"Trades exported successfully!\n\nLocation:\n{filepath}")
-                # Optional: Open the folder
-                try:
-                    os.startfile(output_dir)
-                except: pass
-            else:
-                messagebox.showinfo("Export Empty", "No trades found for the selected date range.")
-                
-        except Exception as e:
-            messagebox.showerror("Export Failed", f"An error occurred:\n{str(e)}")
-
     def build_positions_table(self, parent):
         # Filter/View Toggle
         filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
@@ -619,10 +550,6 @@ class DashboardV2:
         self.pos_table.tag_configure("bot", background="#0A2A0A") 
         self.pos_table.tag_configure("manual", background="#2A2A0A") 
 
-        # Loading Skeleton / Indicator
-        self.lbl_pos_loading = ctk.CTkLabel(table_frame, text="⏳ Loading Positions...", font=("Roboto", 16, "bold"), text_color="#AAA")
-        self.lbl_pos_loading.place(relx=0.5, rely=0.5, anchor="center")
-
         # Store all positions for filtering
         self.all_positions_data = {}
 
@@ -637,38 +564,6 @@ class DashboardV2:
         title_frame.pack(side="left")
         ctk.CTkFrame(title_frame, width=4, height=24, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
         ctk.CTkLabel(title_frame, text=" TRADE HISTORY & METRICS", font=("Roboto", 20, "bold"), text_color="#1a1a1a").pack(side="left", padx=10)
-
-        # 0. Export Controls
-        export_frame = ctk.CTkFrame(self.view_trades, fg_color="transparent")
-        export_frame.pack(fill="x", pady=(0, 20), padx=20)
-        
-        ctk.CTkLabel(export_frame, text="Export Data:", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=(5, 10))
-        
-        # Simple Date Entry fields (YYYY-MM-DD)
-        # Default: Last 30 days
-        now = datetime.now()
-        start_def = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-        end_def = now.strftime("%Y-%m-%d")
-        
-        self.entry_start_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
-        self.entry_start_date.pack(side="left", padx=5)
-        self.entry_start_date.insert(0, start_def)
-        
-        ctk.CTkLabel(export_frame, text="to", text_color="#666").pack(side="left", padx=5)
-        
-        self.entry_end_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
-        self.entry_end_date.pack(side="left", padx=5)
-        self.entry_end_date.insert(0, end_def)
-        
-        ctk.CTkButton(
-            export_frame, 
-            text="📥 DOWNLOAD CSV", 
-            command=self.download_trades_csv,
-            fg_color="#333", 
-            hover_color=COLOR_ACCENT,
-            width=140,
-            height=32
-        ).pack(side="left", padx=20)
 
         # 1. Counter Row
         counter_row = ctk.CTkFrame(self.view_trades, fg_color="transparent")
@@ -1324,9 +1219,8 @@ class DashboardV2:
 
             self.write_log(f"🔍 Starting market scan ({mode_str} mode)...\n")
 
-            # Create scanner instance and store reference for stop propagation
+            # Create scanner instance
             scanner = MACDScanner(progress_callback=self.scanner_progress_update)
-            self.active_scanner = scanner
 
             # Run in background thread (NON-BLOCKING)
             def scan_worker():
@@ -1344,10 +1238,8 @@ class DashboardV2:
             self.scanner_running = False
 
     def stop_scanner(self):
-        """Stop running scanner — propagates stop to scanner engine"""
+        """Stop running scanner"""
         self.scanner_running = False
-        if hasattr(self, 'active_scanner') and self.active_scanner:
-            self.active_scanner.stop()
         self.write_log("⏹ Stopping scanner...\n")
 
         # Reset UI
@@ -1572,10 +1464,6 @@ class DashboardV2:
     def filter_positions_display(self, filter_value=None):
         """Filter positions table by source (ALL/BOT/MANUAL)"""
         try:
-            # Hide Loading Indicator if it exists
-            if hasattr(self, 'lbl_pos_loading') and self.lbl_pos_loading.winfo_exists():
-                self.lbl_pos_loading.place_forget()
-
             filter_val = self.holdings_filter_var.get()
 
             # Clear table
@@ -1633,13 +1521,9 @@ class DashboardV2:
             self.lbl_position_stats.configure(
                 text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
             )
-        except Exception as e:
-            print(f"Filter error: {e}")
 
-    def update_positions(self, positions):
-        """Update positions data and refresh view"""
-        self.all_positions_data = positions
-        self.filter_positions_display()
+        except Exception as e:
+            self.write_log(f"❌ Filter error: {e}\n")
 
     def build_hybrid_view(self):
         """View for managing existing holdings with the "Butler" toggle"""
@@ -1838,11 +1722,6 @@ class DashboardV2:
             
             t2 = threading.Thread(target=self.rsi_worker, daemon=True)
             t2.start()
-
-            # Start Connectivity Monitor (Missing piece for Offline Recovery)
-            # This thread will now run in background and keep OFFLINE status updated
-            t3 = threading.Thread(target=kickstart.connectivity_monitor, daemon=True)
-            t3.start()
             
         except Exception as e:
             import traceback

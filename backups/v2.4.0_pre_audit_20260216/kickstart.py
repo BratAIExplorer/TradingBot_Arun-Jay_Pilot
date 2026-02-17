@@ -45,7 +45,6 @@ import traceback
 import pytz
 import time
 import socket
-import threading
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
@@ -184,13 +183,9 @@ FETCH_STATE: Dict[str, InflightState] = {}
 MISSING_TOKEN_LOGGED: Dict[str, bool] = {}
 CANDLE_CACHE: Dict[Tuple[str, str, str], pd.DataFrame] = {} # (symbol, exchange, timeframe) -> DataFrame
 
-# Thread safety lock for shared mutable state accessed by GUI + background threads
-_STATE_LOCK = threading.Lock()
-
 def reset_cycle_state():
-    with _STATE_LOCK:
-        MISSING_TOKEN_LOGGED.clear()
-        CYCLE_QUOTES.clear()
+    MISSING_TOKEN_LOGGED.clear()
+    CYCLE_QUOTES.clear()
 
 def log_missing_token_once(exchange: str, symbol: str, err: Exception):
     key = f"{exchange}:{symbol.upper()}"
@@ -281,8 +276,7 @@ def get_symbol_lock(symbol: str) -> bool:
     return SYMBOL_LOCKS.setdefault(symbol, False)
 
 def reset_cycle_quotes():
-    with _STATE_LOCK:
-        CYCLE_QUOTES.clear()
+    CYCLE_QUOTES.clear()
 
 def is_offline() -> bool:
     return bool(OFFLINE.get("active"))
@@ -299,7 +293,7 @@ def mark_online_if_needed():
         OFFLINE["since"] = None
 
 def safe_request(method, url, **kwargs):
-    # Debug request logging removed for security (was leaking API URLs with tokens)
+    print(f"DEBUG REQ: {method} {url}")
     try:
         if "timeout" not in kwargs:
             kwargs["timeout"] = (5, 15)
@@ -450,8 +444,7 @@ if settings:
         # Load Engine Beat Setting
         ENGINE_BEAT_SECONDS = float(settings.get("app_settings.engine_beat_seconds", 2.0))
         log_ok(f"💓 Engine Beat Frequency: {ENGINE_BEAT_SECONDS}s")
-    except Exception as e:
-        log_ok(f"⚠️ Failed to load engine settings: {e}")
+    except: pass
 
 def check_capital_safety(required_amount):
     """
@@ -533,14 +526,19 @@ def fetch_market_data(symbol, exchange):
                 exchanges_to_try = [exchange]
 
             for ex in exchanges_to_try:
-                if broker:
-                    result = broker.get_quote(symbol, ex)
+                params = {"i": f"{ex}:{mstock_symbol}"}
+                response = safe_request("GET", url, headers=headers, params=params)
+
+                if response and response.status_code == 200:
+                    data = response.json() or {}
+                    result = (data.get("data") or {}).get(params["i"])
                     if result:
                         return result, ex
+                # Silently skip REIT failures (falls through to holdings LTP)
 
         except Exception as e:
             # Skip logging if simulation/fallback might hit
-            log_ok(f"⚠️ Market data fetch failed for {symbol}: {e}")
+            pass
 
     # 1.5 Fallback to Holdings LTP if API fails (as suggested by user)
     if not is_offline():
@@ -563,8 +561,7 @@ def fetch_market_data(symbol, exchange):
                          "change_percent": 0.0,
                          "instrument_token": "HOLDING_FALLBACK"
                      }, exchange
-        except Exception as e:
-            log_ok(f"ℹ️ Holdings fallback failed for {symbol}: {e}")
+        except: pass
 
     # 2. Generate Fabricated Data if Allowed
     if should_simulate:
@@ -621,9 +618,24 @@ def fetch_funds():
     if is_offline() or not ACCESS_TOKEN:
         return 0.0
     
-    if broker:
-        return broker.get_funds()
-    return 0.0
+    # Fund Summary Endpoint (Corrected per documentation)
+    url = "https://api.mstock.trade/openapi/typea/user/fundsummary"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Response Structure:
+            # { "status": "success", "data": [ { "AVAILABLE_BALANCE": "...", ... } ] }
+            if data.get("status") == "success":
+                inner_data = data.get("data", [])
+                if isinstance(inner_data, list) and inner_data:
+                    fund_data = inner_data[0]
+                    return float(fund_data.get("AVAILABLE_BALANCE", 0.0))
+    except Exception as e:
+        log_ok(f"⏳ Couldn't check your balance right now - will try again. Your funds are safe.")
+        return 0.0
 
 def check_connectivity_latency() -> Tuple[bool, int]:
     """Check API connection and measure latency in ms"""
@@ -673,8 +685,21 @@ def fetch_orders():
     if is_offline() or not ACCESS_TOKEN:
         return []
     
-    if broker:
-        return broker.get_orders()
+    # Generic endpoint for mStock/Mirae (Orders)
+    url = "https://api.mstock.trade/openapi/typea/orders"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response and response.status_code == 200:
+            data = response.json()
+            # Expecting list of orders in data['data']
+            return data.get("data", [])
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch orders: {e}")
+    
+    return []
+
     return []
 
 def cancel_all_orders() -> int:
@@ -824,9 +849,137 @@ def resolve_instrument_token(symbol, exchange):
         log_ok(f"❌ Token resolve failed: {e}")
     return None
 
+def _legacy_UNUSED_run_cycle():
+    """
+    Main Trading Cycle
+    """
+    global STOP_REQUESTED
+    
+    if is_offline() and (not OFFLINE["since"] or (now_ist() - OFFLINE["since"]).total_seconds() < 15):
+        return
 
-# --- Legacy _legacy_UNUSED_run_cycle() removed (~130 lines of dead code) ---
-# See backups/v2.4.0_pre_audit_20260216/kickstart.py for original if needed
+    if STOP_REQUESTED:
+        return
+
+    if not config_dict:
+        log_ok("⚠️ No stocks configured. Please add stocks in Settings.")
+        return False
+
+    # --- Check Market Hours ---
+    current_time = now_ist().time()
+    # HACK: User requested 24h market for testing
+    market_open = datetime.strptime("00:00", "%H:%M").time()
+    market_close = datetime.strptime("23:59", "%H:%M").time()
+    
+    is_open = market_open <= current_time <= market_close
+    is_paper = settings.get("app_settings.paper_trading_mode", False) if settings else False
+
+    if not is_open and not is_paper:
+        return
+
+    # --- Main Loop ---
+    for symbol, exchange in SYMBOLS_TO_TRACK:
+        # 1. External Control Check (Database)
+        # Allows the Web API to stop the bot remotely
+        if DATABASE_AVAILABLE and db:
+            try:
+                status = db.get_control_flag("bot_status")
+                if status == "STOPPED":
+                     if not STOP_REQUESTED:
+                         log_ok("🛑 REMOTE STOP SIGNAL RECEIVED via Dashboard")
+                         request_stop()
+            except: pass
+
+        if STOP_REQUESTED: break
+        
+        # Rate Limiting: Prevent API Hammering (yfinance/mStock)
+        time.sleep(0.5)
+        
+        # log_ok(f"➡️ checking {symbol}...")
+        
+        try:
+            # 1. Fetch Config
+            conf = config_dict.get((symbol, exchange), {})
+            instrument_token = conf.get("instrument_token")
+            timeframe = conf.get("Timeframe", "15T")
+            
+            # Skip if critical info missing
+            if not instrument_token:
+               # Try to auto-resolve token if missing (Added for robustness)
+               log_ok(f"🔍 Attempting to resolve token for {symbol}...")
+               token = resolve_instrument_token(symbol, exchange)
+               if token:
+                   log_ok(f"✅ Resolved {symbol} -> {token}")
+                   conf['instrument_token'] = token
+                   instrument_token = token
+                   # Update global/cached config if possible
+                   if (symbol, exchange) in config_dict:
+                       config_dict[(symbol, exchange)]['instrument_token'] = token
+               else:
+                   log_ok(f"⚠️ Skipping {symbol}: Missing instrument_token and auto-resolve failed.")
+                   continue
+
+            # 2. Get Live Price & RSI
+            # Use 'fetch_market_data' to get latest LTP
+            md, _ = fetch_market_data(symbol, exchange)
+            if not md: continue
+            
+            ltp = md.get("last_price", 0)
+            
+            # Calculate RSI
+            ts, rsi_val = get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=ltp)
+            
+            if rsi_val is None:
+                # Suppress log spam if it's just a transient data issue
+                # log_ok(f"⚠️ {symbol}: RSI skipped (No Data)") 
+                continue
+
+            log_ok(f"📊 {symbol} RSI: {rsi_val:.2f} | Buy<{conf.get('RSI_Buy_Threshold', 30)} Sell>{conf.get('RSI_Sell_Threshold', 70)}")
+
+            # 3. Decision Logic (Simple RSI Mean Reversion)
+            # Buy < 30 (or user setting), Sell > 70
+            buy_threshold = conf.get("RSI_Buy_Threshold", 30)
+            sell_threshold = conf.get("RSI_Sell_Threshold", 70)
+            
+            # Check for existing position
+            pos = live_positions.get(symbol) # Optimization: Uses cached global
+            qty_held = pos['qty'] if pos else 0
+            
+            # BUY LOGIC
+            if rsi_val < buy_threshold and qty_held == 0:
+                log_ok(f"⚡ signal: {symbol} RSI {rsi_val:.1f} < {buy_threshold}. Attempting BUY...")
+                # Calculate quantity based on capital allocation
+                alloc = ALLOCATED_CAPITAL
+                if alloc > 0 and ltp > 0:
+                     # Simple logic: 10% of capital per trade or user setting
+                     per_trade = float(alloc) * 0.10 
+                     qty_to_buy = int(per_trade / ltp)
+                     if qty_to_buy > 0:
+                         execute_order(symbol, exchange, "BUY", qty_to_buy, ltp)
+
+            # SELL LOGIC
+            elif rsi_val > sell_threshold and qty_held > 0:
+                 log_ok(f"⚡ signal: {symbol} RSI {rsi_val:.1f} > {sell_threshold}. Attempting SELL...")
+                 execute_order(symbol, exchange, "SELL", qty_held, ltp)
+                 
+        except Exception as e:
+            log_ok(f"❌ Cycle Error for {symbol}: {e}")
+            continue
+
+    # Risk Management Cycle
+    if risk_mgr:
+        try:
+            actions = risk_mgr.check_all_positions()
+            for action in actions:
+                log_ok(f"🛡️ Risk Trigger: {action['reason']}")
+                execute_order(
+                    action['symbol'], action['exchange'], 
+                    "SELL", action['quantity'], action['current_price']
+                )
+        except Exception as re:
+            log_ok(f"⚠️ Risk Manager cycle failed: {re}")
+            
+    return True
 
 def perform_auto_login() -> bool:
     """
@@ -867,7 +1020,7 @@ def perform_auto_login() -> bool:
         try:
             totp = pyotp.TOTP(totp_secret)
             otp_code = totp.now()
-            log_ok(f"🔐 Generated TOTP: ***{otp_code[-2:]}")
+            log_ok(f"🔐 Generated TOTP: {otp_code}")
         except Exception as e:
             log_ok(f"❌ TOTP Generation failed: {e}")
             return False
@@ -892,7 +1045,7 @@ def perform_auto_login() -> bool:
             return False
             
         totp_data = totp_resp.json()
-        # Response data logging removed for security (contained access tokens)
+        log_ok(f"📡 Response Data: {totp_data}")  # DEBUG
         
         if totp_data.get("status") == "error":
             err_type = totp_data.get("error_type")
@@ -993,24 +1146,6 @@ if not ACCESS_TOKEN:
             sys.exit(1)
     else:
         log_ok("⚠️ Global Access Token is missing. Bot will not function until tokens are set in Settings.")
-
-# ---------------- Broker API Integration ----------------
-broker = None
-
-def auto_login_callback():
-    """Callback for BrokerAPI to handle token refresh"""
-    # Use global perform_auto_login
-    if perform_auto_login():
-        return API_KEY, ACCESS_TOKEN
-    return None, None
-
-try:
-    from broker_api import BrokerAPI
-    if all([API_KEY, ACCESS_TOKEN, CLIENT_CODE]):
-         broker = BrokerAPI(API_KEY, ACCESS_TOKEN, CLIENT_CODE, login_callback=auto_login_callback)
-         # log_ok("✅ Broker API initialized with auto-login support")
-except Exception as e:
-    log_ok(f"⚠️ Broker API Init Failed: {e}")
 
 # Modified initialization to wait for SettingsManager
 SYMBOLS_TO_TRACK = []
@@ -1129,13 +1264,26 @@ def get_positions():
         log_ok("⚠️ Offline mode - skipping positions fetch")
         return {}
     
-    log_ok(f"🔍 Fetching holdings from mStock API (via BrokerAPI)...")
+    log_ok(f"🔍 Fetching holdings from mStock API...")
+    log_ok(f"   Token present: {bool(ACCESS_TOKEN)}, API Key: {API_KEY[:10] if API_KEY else 'NONE'}...")
     
-    if broker:
-        positions = broker.get_holdings()
-    else:
-        log_ok("⚠️ Broker API not initialized.")
-        positions = []
+    url = "https://api.mstock.trade/openapi/typea/portfolio/holdings"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    resp = safe_request("GET", url, headers=headers)
+    if resp is None:
+        log_ok("❌ API request returned None")
+        return {}
+    
+    # log_ok(f"📡 API Response Status: {resp.status_code}")
+    
+    if resp.status_code != 200:
+        if not is_offline():
+            log_ok(f"❌ Positions fetch error: {resp.text}")
+            if "TokenException" in resp.text or "invalid session" in resp.text:
+                raise Exception("TokenException")
+        return {}
+    data_json = resp.json() or {}
+    positions = data_json.get("data", []) or []
     
     # Mark token as validated for today (Smart Session Persistence)
     if state_mgr:
@@ -1174,7 +1322,7 @@ def safe_get_positions():
         return get_positions()
     except Exception as e:
         error_str = str(e)
-        if "TokenException" in error_str or "invalid session" in error_str:
+        if "TokenException" or "invalid session" in error_str:
             if handle_token_exception_and_refresh_token():
                 return get_positions()
             else:
@@ -1242,13 +1390,19 @@ def get_intraday_positions():
     if is_offline() or not ACCESS_TOKEN:
         return {}
     
-    log_ok("🔍 Fetching active intraday positions (via BrokerAPI)...")
+    log_ok("🔍 Fetching active intraday positions from mStock API...")
+    url = "https://api.mstock.trade/openapi/typea/portfolio/positions"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
     
     try:
-        if broker:
-            positions = broker.get_positions()
-        else:
-            positions = []
+        resp = safe_request("GET", url, headers=headers)
+        if resp is None or resp.status_code != 200:
+            if resp is not None and not is_offline():
+                log_ok(f"❌ Intraday positions fetch error: {resp.text}")
+            return {}
+            
+        data_json = resp.json() or {}
+        positions = data_json.get("data", []) or []
         pos_dict = {}
         
         for pos in positions:
@@ -1437,10 +1591,9 @@ def merge_positions_and_orders():
             
     log_ok(f"✅ Merged result: {len(merged)} active positions")
     
-    # Update global cache for fetch_market_data fallback (thread-safe)
+    # Update global cache for fetch_market_data fallback
     global live_positions
-    with _STATE_LOCK:
-        live_positions = {k[0]: v for k, v in merged.items()}
+    live_positions = {k[0]: v for k, v in merged.items()}
     
     return merged
 
@@ -1612,66 +1765,6 @@ def compute_rsi_progressive(close, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_macd(close_series, fast=12, slow=26, signal=9):
-    """Calculate MACD, Signal, and Histogram"""
-    exp1 = close_series.ewm(span=fast, adjust=False).mean()
-    exp2 = close_series.ewm(span=slow, adjust=False).mean()
-    macd_val = exp1 - exp2
-    signal_line = macd_val.ewm(span=signal, adjust=False).mean()
-    histogram = macd_val - signal_line
-    return macd_val, signal_line, histogram
-
-def calculate_atr(df, length=14):
-    """Calculate Average True Range"""
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    # TR calculation
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # ATR calculation (Rolling mean for simplicity/robustness match with common TradingView simple ATR)
-    # Wilder's Smoothing is better but simple rolling is often sufficient. 
-    # Let's use Wilder's if possible using ewm. com = length - 1
-    atr = tr.ewm(alpha=1/length, adjust=False).mean()
-    return atr
-
-def calculate_adx(df, length=14):
-    """Calculate ADX (Trend Strength)"""
-    high = df['high']
-    low = df['low']
-    close = df['close']
-    
-    # True Range
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # Directional Movement
-    up_move = high - high.shift(1)
-    down_move = low.shift(1) - low
-    
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-    
-    # Convert to Series
-    plus_dm = pd.Series(plus_dm, index=df.index)
-    minus_dm = pd.Series(minus_dm, index=df.index)
-    
-    # Smoothed TR and DM (Wilder's)
-    atr = tr.ewm(alpha=1/length, adjust=False).mean()
-    plus_di = 100 * (plus_dm.ewm(alpha=1/length, adjust=False).mean() / atr)
-    minus_di = 100 * (minus_dm.ewm(alpha=1/length, adjust=False).mean() / atr)
-    
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
-    adx = dx.ewm(alpha=1/length, adjust=False).mean()
-    
-    return adx
-
 def floor_to_frame(dt, minutes):
     discard = (dt.minute % minutes) * 60 + dt.second
     return dt - timedelta(seconds=discard, microseconds=dt.microsecond)
@@ -1762,32 +1855,10 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
-
-    # ═══════════════════════════════════════════════════════════════════
-    # HARDCODED SAFETY GATE: Never Sell at Loss
-    # This is the FINAL checkpoint — no sell-at-loss can bypass this.
-    # ═══════════════════════════════════════════════════════════════════
-    if side.upper() == "SELL" and settings:
-        never_sell_at_loss = settings.get('risk.never_sell_at_loss', False)
-        if never_sell_at_loss:
-            entry_price = portfolio_state.get(symbol, {}).get("price", 0.0)
-            if entry_price > 0:
-                # Get current market price
-                md, _ = fetch_market_data_once(symbol, exchange)
-                current_ltp = float(md.get("last_price", 0)) if md else 0
-                if current_ltp > 0 and current_ltp < entry_price:
-                    log_ok(f"🛡️🛡️ HARD BLOCK: Sell REJECTED for {symbol} — LTP ₹{current_ltp:.2f} < Entry ₹{entry_price:.2f}. Never Sell at Loss is ON.", force=True)
-                    if notifier:
-                        try:
-                            notifier.send_circuit_breaker_alert({
-                                'symbol': symbol, 'exchange': exchange, 'action': 'BLOCKED',
-                                'quantity': qty, 'reason': f'Never Sell at Loss: LTP ₹{current_ltp:.2f} < Entry ₹{entry_price:.2f}',
-                                'current_price': current_ltp, 'profit_pct': ((current_ltp - entry_price) / entry_price) * 100
-                            })
-                        except Exception:
-                            pass
-                    return False
-
+        
+    # print(f"{symbol}, {exchange}, {qty}, {side}")
+    # print(check_existing_orders(symbol, exchange, qty, side))
+    
     if check_existing_orders(symbol, exchange, qty, side):
         # Determine if it was blocked by RMS Cooldown or a real order
         if (symbol, exchange) in RMS_FAILURES:
@@ -1836,52 +1907,6 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 "stamp_duty": round(stamp, 2)
             }
             
-            # ---------------- Analytics Data Retrieval (Phase 4) ----------------
-            market_trend = 0.0
-            atr = 0.0
-            adx = 0.0
-            macd_val = 0.0
-            macd_signal = 0.0
-            macd_hist = 0.0
-            
-            try:
-                # 1. Market Trend (Nifty 50)
-                nifty_md, _ = fetch_market_data_once("Nifty 50", "NSE")
-                if nifty_md and "last_price" in nifty_md and "ohlc" in nifty_md:
-                    close = float(nifty_md["last_price"])
-                    # Use provided close from API if avail, else calculate from OHLC close if possible
-                    prev_close = float(nifty_md["ohlc"].get("close", close))
-                    if prev_close > 0:
-                        market_trend = ((close - prev_close) / prev_close) * 100
-            except Exception as e:
-                log_ok(f"⚠️ Failed to fetch Nifty 50 context: {e}")
-
-            try:
-                # 2. Technical Indicators (ATR, ADX, MACD)
-                # We need historical data for this. Using standard timeframe from config or default 15m.
-                tf = config_dict.get((symbol, exchange), {}).get("Timeframe", "15T")
-                
-                # Fetch history (reuse cache if possible, or fresh fetch)
-                # We use a short fetch just for these calcs if not available
-                hist_df = fetch_historical_data(symbol, exchange, tf, instrument_token, days=5)
-                
-                if hist_df is not None and not hist_df.empty and len(hist_df) > 30:
-                     # ATR
-                     atr_series = calculate_atr(hist_df)
-                     atr = float(atr_series.iloc[-1]) if not pd.isna(atr_series.iloc[-1]) else 0.0
-                     
-                     # ADX
-                     adx_series = calculate_adx(hist_df)
-                     adx = float(adx_series.iloc[-1]) if not pd.isna(adx_series.iloc[-1]) else 0.0
-                     
-                     # MACD
-                     macd, signal, hist = calculate_macd(hist_df['close'])
-                     macd_val = float(macd.iloc[-1]) if not pd.isna(macd.iloc[-1]) else 0.0
-                     macd_signal = float(signal.iloc[-1]) if not pd.isna(signal.iloc[-1]) else 0.0
-                     macd_hist = float(hist.iloc[-1]) if not pd.isna(hist.iloc[-1]) else 0.0
-            except Exception as e:
-                log_ok(f"⚠️ Failed to calculate analytics for {symbol}: {e}")
-
             # Log trade to database
             trade_id = db.insert_trade(
                 symbol=symbol,
@@ -1896,12 +1921,6 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                 reason=f"RSI-based {side.upper()}",
                 broker="mstock",
                 rsi=rsi,
-                market_trend=round(market_trend, 2),
-                atr=round(atr, 2),
-                adx=round(adx, 2),
-                macd_val=round(macd_val, 2),
-                macd_signal=round(macd_signal, 2),
-                macd_hist=round(macd_hist, 2),
                 fee_breakdown=fee_breakdown,
                 fallback_entry_price=portfolio_state.get(symbol, {}).get("price", 0.0)
             )
@@ -1976,19 +1995,27 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
             if mstock_symbol in REIT_TOKEN_MAP:
                 target_token = REIT_TOKEN_MAP[mstock_symbol]
 
-            if broker:
-                response_data = broker.get_historical_data(
-                    exchange.upper(), 
-                    target_token, 
-                    api_timeframe, 
-                    from_encoded, 
-                    to_encoded
-                )
-            else:
-                response_data = None
-            
-            if not response_data:
+            url = (
+                f"https://api.mstock.trade/openapi/typea/instruments/historical/"
+                f"{exchange.upper()}/{target_token}/{api_timeframe}"
+                f"?from={from_encoded}&to={to_encoded}"
+            )
+            headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+            resp = safe_request("GET", url, headers=headers)
+            if resp is None:
                 return None
+            if resp.status_code != 200:
+                log_ok(f"❌ Historical data error for {symbol}: {resp.status_code} - {resp.text}")
+                if "TokenException" in resp.text:
+                    if handle_token_exception_and_refresh_token():
+                        return attempt_fetch()
+                    else:
+                        if not is_offline():
+                            log_ok("Failed to refresh mstock token, cannot fetch historical data.")
+                        return None
+                return None
+
+            response_data = resp.json() or {}
             candles = (response_data.get("data") or {}).get("candles", [])
             if response_data.get("status") != "success" or not candles:
                 log_ok(f"⚠️ No data returned for {symbol}: {response_data.get('message', 'No candles')}")
@@ -2349,45 +2376,28 @@ def is_system_online() -> bool:
         return False
 
 def connectivity_monitor():
-    """
-    Background thread to monitor internet connectivity.
-    Updates global OFFLINE state.
-    """
     offline = False
     offline_start = None
-    
-    log_ok("📡 Connectivity Monitor Started")
-    
-    while not STOP_REQUESTED:
-        try:
-            ok = is_system_online()
-            if ok:
-                if offline:
-                    downtime = now_ist() - offline_start
-                    secs = int(downtime.total_seconds())
-                    mins, rem = divmod(secs, 60)
-                    log_ok(f"🟢 Online again after {mins}m {rem}s downtime")
-                
-                offline = False
-                if OFFLINE["active"]:
-                    OFFLINE["active"] = False
-                    OFFLINE["since"] = None
-                    log_ok("🟢 Connectivity Restored - Resuming Operations")
-            else:
-                if not offline:
-                    offline = True
-                    offline_start = now_ist()
-                    if not OFFLINE["active"]:
-                        OFFLINE["active"] = True
-                        OFFLINE["since"] = offline_start
-                        log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
-        except Exception as e:
-            # Don't let monitor crash
-            print(f"Monitor error: {e}")
-            
-        time.sleep(5)
-    
-    log_ok("📡 Connectivity Monitor Stopped")
+    while True:
+        ok = is_system_online()
+        if ok:
+            if offline:
+                downtime = now_ist() - offline_start
+                secs = int(downtime.total_seconds())
+                mins, rem = divmod(secs, 60)
+                log_ok(f"🟢 Online again after {mins}m {rem}s downtime")
+            offline = False
+            OFFLINE["active"] = False
+            OFFLINE["since"] = None
+            run_cycle()
+        else:
+            if not offline:
+                offline = True
+                offline_start = now_ist()
+                OFFLINE["active"] = True
+                OFFLINE["since"] = offline_start
+                log_ok("🔴 Offline detected — pausing trading loop and monitoring connectivity")
+            time.sleep(5)
 
 # ---------------- Orders ----------------
 
@@ -2451,22 +2461,26 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
         return True
 
     def attempt_place_order():
-        if not broker:
-            return False
-
-        # Delegate execution to BrokerAPI
-        # Hardcoding product/validity/variety as per original implementation
-        response = broker.place_order(
-            symbol=symbol,
-            exchange=exchange,
-            side=side,
-            quantity=qty,
-            price=price,
-            product="CNC",
-            validity="DAY",
-            variety="regular", 
-            instrument_token=instrument_token
-        )
+        variety = "regular"
+        url = f"https://api.mstock.trade/openapi/typea/orders/{variety}"
+        data = {
+            'tradingsymbol': symbol,
+            'exchange': exchange,
+            'transaction_type': side.upper(),
+            'order_type': 'MARKET' if price == 0 else 'LIMIT',
+            'quantity': str(qty),
+            'product': 'CNC',
+            'validity': 'DAY',
+            'price': str(price),
+            'symboltoken': instrument_token
+        }
+        headers = {
+            'X-Mirae-Version': '1',
+            'Authorization': f'token {API_KEY}:{ACCESS_TOKEN}',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        encoded_payload = urlencode(data)
+        response = safe_request("POST", url, headers=headers, data=encoded_payload)
         if response is None:
             return False
 
@@ -2493,13 +2507,6 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 if "INSUFFICIENT" in message or "AVAILABLE QTY IS - 0" in message or "SCRIP LIMIT INSUFFICIENT" in message:
                     log_ok(f"🛡️ RMS Quantity Restriction: {symbol} added to cooldown list.")
                     RMS_FAILURES[(symbol, exchange)] = datetime.now()
-                    
-                    # REACTIVE RECONCILIATION
-                    # Check if we should auto-correct
-                    try:
-                        reconcile_with_broker(specific_symbol=symbol)
-                    except Exception as e:
-                        log_ok(f"⚠️ Reactive Reconciliation Failed: {e}")
 
                 if state_mgr:
                     state_mgr.increment_trade_counter('failed')
@@ -2526,117 +2533,6 @@ def place_order(symbol, exchange, qty, side, instrument_token, price=0, use_amo=
                 return False
         else:
             raise
-
-def reconcile_with_broker(specific_symbol=None):
-    """
-    Smart Reconciliation: Synchronize Bot DB with Broker Holdings.
-    - If specific_symbol provided (Reactive), checks only that symbol.
-    - Otherwise (Proactive), checks all active DB positions.
-    """
-    if is_offline() or not db:
-        return
-
-    log_ok(f"🔄 Starting Smart Reconciliation ({'Single: ' + specific_symbol if specific_symbol else 'Full Scan'})...")
-    
-    try:
-        # 1. Fetch Source of Truth (Broker Holdings)
-        # We need fresh data here, so bypass cache if possible or just call API
-        broker_holdings = get_positions() # This calls API
-        
-        # 2. Fetch Bot State (DB positions)
-        db_positions = db.get_open_positions()
-        
-        # Map for easy lookup: (symbol, exchange) -> quantity
-        broker_map = {}
-        for sym, data in broker_holdings.items():
-            # broker_holdings keys are usually just symbol strings if from get_positions
-            # But get_positions return dict keyed by symbol. 
-            # We need to be careful about exchange matching.
-            # get_positions returns simple dict {symbol: ...}
-            # We'll normalize to (symbol, exchange)
-            ex = data.get('exchange', 'NSE')
-            broker_map[(sym, ex)] = int(data.get('qty', 0))
-
-        # 3. Compare
-        to_check = db_positions
-        if specific_symbol:
-            to_check = [p for p in db_positions if p['symbol'] == specific_symbol]
-            
-        for db_pos in to_check:
-            sym = db_pos['symbol']
-            ex = db_pos['exchange']
-            db_qty = int(db_pos['net_quantity'])
-            
-            # Check against broker
-            broker_qty = broker_map.get((sym, ex), 0)
-            
-            # CASE A: CLOSED (Ghost Position)
-            # DB says we have it, Broker says 0
-            if db_qty > 0 and broker_qty == 0:
-                log_ok(f"👻 RECONCILIATION: Found Ghost Position {sym} (DB: {db_qty}, Broker: 0). Closing in DB...")
-                
-                # Auto-Correct DB
-                try:
-                    # Log a manual/external sell to zero it out
-                    # Use last known LTP from market data or DB stats
-                    close_price = float(db_pos.get('avg_entry_price', 0)) # Fallback
-                    
-                    # Try to get real price
-                    md, _ = fetch_market_data_once(sym, ex)
-                    if md and 'last_price' in md:
-                        close_price = float(md['last_price'])
-                        
-                    db.close_position_external(
-                        symbol=sym, 
-                        exchange=ex, 
-                        quantity=db_qty, 
-                        price=close_price,
-                        reason="Smart Reconciliation: Manual Exit Detected"
-                    )
-                    
-                    # Notification
-                    if notifier:
-                        notifier.send_message(f"🧹 *Smart Clean*: {sym} removed from dashboard.\nReason: Sold manually/externally.")
-                        
-                except Exception as e:
-                    log_ok(f"❌ Failed to reconcile {sym}: {e}")
-
-            # CASE B: QUANTITY MISMATCH (Partial Sell)
-            elif db_qty != broker_qty:
-                # If broker has LESS than DB -> we sold some manually
-                if broker_qty < db_qty:
-                    diff = db_qty - broker_qty
-                    log_ok(f"📉 RECONCILIATION: Quantity Mismatch {sym} (DB: {db_qty}, Broker: {broker_qty}). Adjusting down by {diff}...")
-                    try:
-                        md, _ = fetch_market_data_once(sym, ex)
-                        price = float(md.get('last_price', 0)) if md else 0
-                        db.close_position_external(
-                            symbol=sym,
-                            exchange=ex,
-                            quantity=diff,
-                            price=price, 
-                            reason=f"Smart Reconciliation: Quantity Sync (Adjusted {db_qty}->{broker_qty})"
-                        )
-                    except Exception as e:
-                        log_ok(f"❌ Failed to sync qty for {sym}: {e}")
-                
-                # If broker has MORE than DB -> we bought some manually (Orphan Selection)
-                # We typically don't auto-add these to DB to avoid messing up strategy logic, 
-                # but we show them in dashboard via the 'merge' logic we already have.
-                else:
-                    log_ok(f"ℹ️ RECONCILIATION: Found extra shares for {sym} (DB: {db_qty}, Broker: {broker_qty}). Showing as Manual/Hybrid.")
-
-        # 4. Remove from RMS Failures if reconciled
-        if specific_symbol:
-             # If we just fixed it, clear the cooldown
-             # We blindly clear it so the bot checks again (and finds 0 qty -> skips logic cleanly)
-             RMS_FAILURES.pop((specific_symbol, 'NSE'), None)
-             RMS_FAILURES.pop((specific_symbol, 'BSE'), None)
-             
-    except Exception as e:
-        log_ok(f"⚠️ Reconciliation Logic Failed: {e}")
-        import traceback
-        traceback.print_exc()
 
 # ---------------- Runner ----------------
 
@@ -2680,27 +2576,20 @@ def run_cycle():
                 reason = action['reason']
                 
                 log_ok(f"🚨 RISK TRIGGER: {reason}", force=True)
-
-                # Defense-in-depth: Block loss sells before even fetching instrument token
-                if action['action'] == "SELL" and action.get('pnl_pct', 0) < 0:
-                    never_sell = settings.get('risk.never_sell_at_loss', False) if settings else False
-                    if never_sell:
-                        log_ok(f"🛡️ RISK SELL BLOCKED for {symbol}: P&L {action.get('pnl_pct', 0):.1f}% — Never Sell at Loss is ON.", force=True)
-                        continue
-
+                
                 # Get instrument token for sell order
                 market_data, _ = fetch_market_data_once(symbol, exchange)
                 instrument_token = market_data.get("instrument_token") if market_data else None
-
+                
                 if instrument_token:
                     # Prevent redundant sells if an order is already open
                     if action['action'] == "SELL" and check_existing_orders(symbol, exchange, qty, "SELL"):
                         log_ok(f"⏭️ Risk SELL already in progress for {symbol}, skipping duplicate trigger.")
                         continue
 
-                    # Trigger sell order (also protected by hardcoded gate in safe_place_order_when_open)
+                    # Trigger sell order
                     safe_place_order_when_open(
-                        symbol, exchange, qty, action['action'],
+                        symbol, exchange, qty, action['action'], 
                         instrument_token, price=0, use_amo=False
                     )
 
@@ -2896,8 +2785,7 @@ def main_loop():
     try:
         if perform_auto_login():
             pass
-    except Exception as e: 
-        log_ok(f"⚠️ Auto-login periodic refresh failed: {e}")
+    except Exception: pass
     
     # ---------------- Load State (Phase 0A) ----------------
     if state_mgr:
@@ -2911,27 +2799,6 @@ def main_loop():
                 return
         except Exception as e:
             log_ok(f"⚠️ State load failed: {e}", force=True)
-
-    # ---------------- Smart Reconciliation (Proactive) ----------------
-    # Schedule: Market Open (09:15), Lunch (12:00), Pre-Close (15:15)
-    now = now_ist()
-    current_time_str = now.strftime("%H:%M")
-    
-    # Simple check to run 3x a day (approx)
-    # We use a global variable to track last run time/date to avoid spamming every cycle within the minute
-    global LAST_RECONCILIATION_TIME
-    if 'LAST_RECONCILIATION_TIME' not in globals():
-        LAST_RECONCILIATION_TIME = None
-        
-    schedule_times = ["09:16", "12:00", "15:15"]
-    
-    if current_time_str in schedule_times:
-        # Check if we already ran for this specific time slot to prevent multiple triggers in the same minute
-        last_run_str = LAST_RECONCILIATION_TIME.strftime("%H:%M") if LAST_RECONCILIATION_TIME else ""
-        if last_run_str != current_time_str:
-             log_ok(f"⏰ Triggering Scheduled Reconciliation ({current_time_str})...")
-             reconcile_with_broker()
-             LAST_RECONCILIATION_TIME = now
     
     log_ok("🕒 Scheduler started (continuous)", force=True)
     if is_system_online():

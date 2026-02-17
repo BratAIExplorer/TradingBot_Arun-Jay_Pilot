@@ -11,6 +11,7 @@ An autonomous retail unit designed for high-performance algorithmic trading acro
 ## Key Features
 - **Multi-Pair Execution**: Track and trade multiple symbols simultaneously.
 - **Hybrid Butler Mode**: Integrated PnL tracking for both Bot-managed and Manually-held (CNC) positions.
+- **Advanced Analytics**: Captures Market Trend (Nifty 50), MACD, ATR, and ADX for every trade to enable deep-dive performance analysis.
 - **High Reliability**: Real-time heartbeat, auto-relogin, and connectivity resilience.
 
 ## Roadmap

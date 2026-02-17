@@ -149,29 +149,6 @@ class TradesDatabase:
                 self.conn.commit()
                 print("✅ Migration 'rsi' complete")
 
-            if 'market_trend' not in columns:
-                print("🔄 Migrating database: Adding 'market_trend' column...")
-                cursor.execute("ALTER TABLE trades ADD COLUMN market_trend REAL")
-                self.conn.commit()
-                
-            if 'atr' not in columns:
-                print("🔄 Migrating database: Adding 'atr' column...")
-                cursor.execute("ALTER TABLE trades ADD COLUMN atr REAL")
-                self.conn.commit()
-                
-            if 'adx' not in columns:
-                print("🔄 Migrating database: Adding 'adx' column...")
-                cursor.execute("ALTER TABLE trades ADD COLUMN adx REAL")
-                self.conn.commit()
-
-            if 'macd_hist' not in columns:
-                print("🔄 Migrating database: Adding 'macd' columns...")
-                cursor.execute("ALTER TABLE trades ADD COLUMN macd_val REAL")
-                cursor.execute("ALTER TABLE trades ADD COLUMN macd_signal REAL")
-                cursor.execute("ALTER TABLE trades ADD COLUMN macd_hist REAL")
-                self.conn.commit()
-                print("✅ Migration 'analytics' complete")
-
         except Exception as e:
             print(f"⚠️ Migration warning: {e}")
         finally:
@@ -191,12 +168,6 @@ class TradesDatabase:
                     broker: str = "mstock",
                     source: str = "BOT",
                     rsi: float = 0.0,
-                    market_trend: float = 0.0,
-                    atr: float = 0.0,
-                    adx: float = 0.0,
-                    macd_val: float = 0.0,
-                    macd_signal: float = 0.0,
-                    macd_hist: float = 0.0,
                     fee_breakdown: Optional[Dict] = None,
                     fallback_entry_price: float = 0.0) -> int:
         """
@@ -256,15 +227,13 @@ class TradesDatabase:
                     gross_amount, brokerage_fee, stt_fee, exchange_fee,
                     gst_fee, sebi_fee, stamp_duty_fee, total_fees, net_amount,
                     strategy, reason, broker, source, rsi,
-                    market_trend, atr, adx, macd_val, macd_signal, macd_hist,
                     pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 timestamp, symbol, exchange, action, quantity, price,
                 gross_amount, brokerage, stt, exchange_fee,
                 gst, sebi, stamp, total_fees, net_amount,
                 strategy, reason, broker, source, rsi,
-                market_trend, atr, adx, macd_val, macd_signal, macd_hist,
                 pnl_gross, pnl_net, pnl_pct_gross, pnl_pct_net
             ))
             
@@ -426,87 +395,6 @@ class TradesDatabase:
         """
         self.conn.close()
         print("✅ Database connection closed")
-
-    def export_trades_csv(self, start_date: str, end_date: str, output_dir: str = "exports") -> str:
-        """
-        Export trades to CSV for a specific date range.
-        
-        Args:
-            start_date: Start date string (YYYY-MM-DD)
-            end_date: End date string (YYYY-MM-DD)
-            output_dir: Directory to save the CSV file
-            
-        Returns:
-            str: Path to the created CSV file
-        """
-        # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Calculate next day for end_date to include the full end date
-        # (Since timestamp includes time, and we compare against YYYY-MM-DD 00:00:00)
-        try:
-             # Just simple string comparison works for ISO dates, but to be precise with times:
-             # We want >= start_date 00:00:00 and <= end_date 23:59:59
-             # Simplest SQLite way: date(timestamp) BETWEEN start AND end
-             pass
-        except:
-             pass
-
-        query = """
-            SELECT 
-                timestamp, symbol, exchange, action, quantity, price,
-                gross_amount, total_fees, net_amount,
-                brokerage_fee, stt_fee, exchange_fee, gst_fee, sebi_fee, stamp_duty_fee,
-                strategy, reason, broker, source, rsi,
-                market_trend, atr, adx, macd_val, macd_signal, macd_hist,
-                pnl_gross, pnl_net, pnl_pct_net
-            FROM trades
-            WHERE DATE(timestamp) >= DATE(?) AND DATE(timestamp) <= DATE(?)
-            ORDER BY timestamp ASC
-        """
-        
-        try:
-            df = pd.read_sql_query(query, self.conn, params=[start_date, end_date])
-            
-            if df.empty:
-                return None
-                
-            filename = f"trades_{start_date}_to_{end_date}.csv"
-            filepath = os.path.join(output_dir, filename)
-            
-            df.to_csv(filepath, index=False)
-            print(f"✅ Trades exported to {filepath}")
-            return filepath
-            
-        except Exception as e:
-            print(f"❌ Failed to export trades: {e}")
-            raise
-            
-    def close_position_external(self, symbol: str, exchange: str, quantity: int, price: float, reason: str = "External/Manual Exit") -> int:
-        """
-        Close a position that was closed externally (outside the bot).
-        Logs a SELL trade with 0 fees to balance the books.
-        """
-        # Calculate P&L for records, but fees are likely 0 since we didn't execute it
-        # (Or we could estimate fees if we knew it was a real trade, but for reconciliation safest is 0)
-        
-        # We assume price is the price at which it was closed, or current LTP if unknown.
-        gross = quantity * price
-        
-        return self.insert_trade(
-            symbol=symbol,
-            exchange=exchange,
-            action="SELL",
-            quantity=quantity,
-            price=price,
-            gross_amount=gross,
-            total_fees=0,
-            net_amount=gross,
-            strategy="Reconciliation",
-            reason=reason,
-            broker="mstock",
-            source="MANUAL_SYNC"
-        )
 
 
 # Global database instance

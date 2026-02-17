@@ -10,7 +10,11 @@
       "Bash(dir /s /b \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\")",
       "Bash(dir \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\\\\BOT Scrapper\")",
       "Bash(ls:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git rm:*)",
+      "Bash(echo:*)",
+      "WebSearch",
+      "WebFetch(domain:tradingapi.mstock.com)"
     ]
   }
 }

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.3] - 2026-02-17 - Reliability & Analytics Overhaul
+
+### Fixed
+- **Offline Mode Bug** (`kickstart.py`, `sensei_v1_dashboard.py`)
+  - Fixed issue where bot would get stuck in "Offline" state after transient network failures.
+  - Implemented robust background connectivity monitor.
+  - Dashboard now correctly launches monitor on startup.
+
+### Added
+- **Enhanced Trade Analytics** (`trades_db.py`, `kickstart.py`)
+  - Added Market Context: Nifty 50 % Change captured at moment of trade.
+  - Added Technical Indicators: MACD (Value, Signal, Histogram), ATR (Volatility), ADX (Trend Strength).
+  - Updated CSV Export to include all new analytics columns automatically.
+
+## [2.5.2] - 2026-02-16 - Never Sell at Loss Hardening
+
+### Fixed
+- **Never Sell at Loss Hardening** (`kickstart.py`, `risk_manager.py`)
+  - **3-Layer Defense-in-Depth**: Added multiple safety gates to prevent selling at a loss when `never_sell_at_loss` is enabled.
+  - **Layer 1 (Hardcoded Gate)**: `kickstart.py` blocks ALL sell orders if LTP < Entry Price.
+  - **Layer 2 (Catastrophic Stop)**: `risk_manager.py` now respects `never_sell_at_loss`.
+  - **Layer 3 (Risk Execution)**: `kickstart.py` risk loop rejects negative P&L actions early.
+
+### Changed
+- **Documentation**: Updated `ERROR_LOG_AND_FIXES.md` and `AI_HANDOVER.md` with full details.
+
+---
+
+## [2.5.1] - 2026-02-16 - Security & Architecture Audit Fixes
+
+### Security
+- **Credential Removal**: Removed `settings.json` from git tracking and rotated credentials.
+- **Encryption Fix**: Fixed `save_settings()` in `settings_gui.py` to properly encrypt sensitive fields.
+- **Secret Logging**: Stopped logging TOTP codes and API tokens in `kickstart.py`.
+
+### Fixed
+- **Operator Precedence Bug** (`kickstart.py`): Fixed logic error in exception handling (`if "TokenException" or ...`).
+- **Singleton Settings**: Enforced singleton pattern for `SettingsManager` to prevent state desync.
+- **Thread Safety**: Added locks for shared global variables in `kickstart.py`.
+- **Scanner Stop**: Fixed scanner stop propagation in `sensei_v1_dashboard.py`.
+
+---
+
 ## [2.5.0] - 2026-02-16 - Stability & UI Accuracy Update
 
 ### Added

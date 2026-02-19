@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.4] - 2026-02-19 - Managed Holdings Fix
+
+### Fixed
+- **Managed Holdings Fallback** (`kickstart.py`)
+  - Fixed logic to apply global default settings (RSI 30/70, 15m) for "Hybrid/Butler" positions that are tracked in state but missing from `settings.json`.
+  - Prevents valid held positions from being skipped with "Not in config" errors.
+
 ## [2.5.3] - 2026-02-17 - Reliability & Analytics Overhaul
 
 ### Fixed

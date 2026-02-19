@@ -1145,6 +1145,9 @@ def get_positions():
     log_ok(f"📊 Holdings API returned {len(positions)} items")
     
     for pos in positions:
+        # Robustness: Skip non-dict items
+        if not isinstance(pos, dict): continue
+        
         sym = pos.get("tradingsymbol")
         qty = pos.get("quantity", 0)
         price = pos.get("price", 0.0)
@@ -1224,6 +1227,8 @@ def get_orders_today():
     today = now_ist().date()
     executed = []
     for o in orders:
+        if not isinstance(o, dict): continue
+        
         status = (o.get("status") or "").upper()
         ts = o.get("order_timestamp") or o.get("updated_at") or o.get("created_at")
         ts_dt = None
@@ -1252,6 +1257,10 @@ def get_intraday_positions():
         pos_dict = {}
         
         for pos in positions:
+            # Robustness: Skip if pos is not a dict (e.g. string error message in list)
+            if not isinstance(pos, dict):
+                continue
+                
             sym = pos.get("tradingsymbol")
             # Net quantity for positions is usually 'netQty' or 'quantity'
             qty = int(pos.get("netQty") or pos.get("quantity", 0))
@@ -2098,8 +2107,28 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
     try:
         config_key = (symbol, exchange)
         if config_key not in config_dict:
-            log_ok(f"⚠️ Skipped {symbol}:{exchange}: Not in config or disabled")
-            return
+            # FIX: Fallback for Managed Holdings (Butler Mode) not in settings.json
+            # Instead of skipping, we use Global Default Settings
+            if settings:
+                default_buy = float(settings.get("strategies.rsi_mean_reversion.buy_rsi_threshold", 30))
+                default_sell = float(settings.get("strategies.rsi_mean_reversion.sell_rsi_threshold", 70))
+                default_tf = settings.get("strategies.rsi_mean_reversion.timeframe", "15T")
+                
+                # Create a temporary config for this session
+                config_dict[config_key] = {
+                    "instrument_token": instrument_token,
+                    "Timeframe": default_tf,
+                    "RSI_Buy_Threshold": default_buy,
+                    "RSI_Sell_Threshold": default_sell,
+                    "Ignore_RSI": False,
+                    "Quantity": 0, # Will use dynamic sizing or manual management
+                    "Profit_Target": 1.0,
+                    "Strategy": "TRADE"
+                }
+                log_ok(f"⚠️ Using Default Config for {symbol}:{exchange} (Managed/Hybrid)")
+            else:
+                log_ok(f"⚠️ Skipped {symbol}:{exchange}: Not in config and Settings not ready")
+                return
 
         sym_config = config_dict[config_key]
         buy_rsi = sym_config.get("RSI_Buy_Threshold", 30)

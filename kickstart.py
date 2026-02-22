@@ -517,6 +517,12 @@ def fetch_market_data(symbol, exchange):
             # Silently fallback to no simulation if settings access fails
             pass
 
+    # 0. Check Cycle Cache First (Optimization)
+    key = f"{exchange}:{symbol.upper()}"
+    cached = CYCLE_QUOTES.get(key)
+    if cached is not None:
+         return cached, exchange
+
     # Try Real API First
     if not is_offline():
         try:
@@ -536,6 +542,7 @@ def fetch_market_data(symbol, exchange):
                 if broker:
                     result = broker.get_quote(symbol, ex)
                     if result:
+                        CYCLE_QUOTES[key] = result # Cache it
                         return result, ex
 
         except Exception as e:
@@ -552,7 +559,7 @@ def fetch_market_data(symbol, exchange):
                  ltp = pos.get("ltp", 0.0)
                  if ltp > 0:
                      log_ok(f"ℹ️ {symbol}: Using price from holdings (₹{ltp}) as OHLC API failed.")
-                     return {
+                     res = {
                          "last_price": ltp,
                          "ohlc": {
                              "open": pos.get("price", ltp),
@@ -562,7 +569,9 @@ def fetch_market_data(symbol, exchange):
                          },
                          "change_percent": 0.0,
                          "instrument_token": "HOLDING_FALLBACK"
-                     }, exchange
+                     }
+                     CYCLE_QUOTES[key] = res
+                     return res, exchange
         except Exception as e:
             log_ok(f"ℹ️ Holdings fallback failed for {symbol}: {e}")
 
@@ -1527,8 +1536,11 @@ def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price
     If stabilized=False: Performs a standard fetch of 100 bars for calculation.
     """
     from settings_manager import settings
-    # Force OFF for testing (was True)
-    use_stabilization = False 
+    import time
+    
+    # Enable Stabilization (Phase 2 Optimization)
+    use_stabilization = True 
+    
     if not use_stabilization:
         # Standard Fetch (Non-cached, lightweight)
         df = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=None) 
@@ -1544,28 +1556,45 @@ def get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price
     cache_key = (symbol, exchange, timeframe)
     df = CANDLE_CACHE.get(cache_key)
     
+    # Initialize Global Throttling Map
+    if 'RSI_FETCH_TIMES' not in globals():
+        global RSI_FETCH_TIMES
+        RSI_FETCH_TIMES = {}
+
     if df is None:
         log_ok(f"🌡️ Seeding 200+ bar RSI buffer for {symbol}:{exchange} ({timeframe})...")
         df = fetch_historical_data(symbol, exchange, timeframe, instrument_token)
         if df is not None and not df.empty:
             CANDLE_CACHE[cache_key] = df
+            RSI_FETCH_TIMES[cache_key] = time.time()
         else:
             return None, None
     else:
-        # Phase B: Incremental Update (Smart Polling)
-        try:
-            new_data = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=2)
-            if new_data is not None and not new_data.empty:
-                combined = pd.concat([df, new_data])
-                combined = combined[~combined.index.duplicated(keep='last')]
-                combined.sort_index(inplace=True)
-                
-                if len(combined) > 400:
-                    combined = combined.tail(400)
-                
-                CANDLE_CACHE[cache_key] = combined
-        except Exception as e:
-            log_ok(f"⚠️ Failed incremental update for {symbol}: {e}")
+        # Phase B: Incremental Update (Smart Polling with Throttling)
+        last_fetch = RSI_FETCH_TIMES.get(cache_key, 0)
+        now = time.time()
+        
+        # Throttle: Only fetch if > 60 seconds passed (approx 1 candle)
+        # Exception: If last data is stale by > 2 candles? No, simple throttle is safer.
+        should_fetch = (now - last_fetch) > 60
+        
+        if should_fetch:
+            try:
+                new_data = fetch_historical_data(symbol, exchange, timeframe, instrument_token, days=2)
+                if new_data is not None and not new_data.empty:
+                    combined = pd.concat([df, new_data])
+                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined.sort_index(inplace=True)
+                    
+                    if len(combined) > 400:
+                        combined = combined.tail(400)
+                    
+                    CANDLE_CACHE[cache_key] = combined
+                    RSI_FETCH_TIMES[cache_key] = now
+            except Exception as e:
+                log_ok(f"⚠️ Failed incremental update for {symbol}: {e}")
+        # else:
+            # log_ok(f"⏳ Throttled RSI fetch for {symbol} (Last: {int(now-last_fetch)}s ago)")
 
     # Final Calculation from Cache
     current_df = CANDLE_CACHE.get(cache_key)
@@ -1767,7 +1796,7 @@ def wait_for_market_open():
     finally:
         LOG_SUPPRESS = False
 
-def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, rsi=0.0):
+def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, price=0, use_amo=False, rsi=0.0, orders_cache=None):
     if not is_market_open_now_ist():
         log_ok(f"⏸️ Market closed: skip {side} {symbol}")
         return False
@@ -1797,7 +1826,7 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
                             pass
                     return False
 
-    if check_existing_orders(symbol, exchange, qty, side):
+    if check_existing_orders(symbol, exchange, qty, side, orders_cache=orders_cache):
         # Determine if it was blocked by RMS Cooldown or a real order
         if (symbol, exchange) in RMS_FAILURES:
              log_ok(f"🛡️ Skipping {side} for {symbol}:{exchange}: RMS Cooldown active (Recent insufficient quantity rejection)", force=True)
@@ -2031,7 +2060,29 @@ def fetch_historical_data(symbol, exchange, tf, instrument_token, days=None):
 
 # ---------------- Strategy ----------------
 
-def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bool:
+def fetch_all_open_orders():
+    """
+    Fetch all orders once per cycle to prevent N+1 API calls.
+    Returns a list of order dictionaries.
+    """
+    if is_offline():
+        return []
+
+    url = "https://api.mstock.trade/openapi/typea/orders"
+    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
+    
+    try:
+        response = safe_request("GET", url, headers=headers)
+        if response is None or response.status_code != 200:
+            return []
+        
+        data = response.json() or {}
+        return data.get("data", []) or []
+    except Exception as e:
+        log_ok(f"⚠️ Failed to cache orders: {e}")
+        return []
+
+def check_existing_orders(symbol: str, exchange: str, qty: int, side: str, orders_cache=None) -> bool:
     if is_offline():
         return False
         
@@ -2046,12 +2097,12 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
             # Cooldown expired
             RMS_FAILURES.pop((symbol, exchange), None)
 
-    url = "https://api.mstock.trade/openapi/typea/orders"
-    headers = {"Authorization": f"token {API_KEY}:{ACCESS_TOKEN}", "X-Mirae-Version": "1"}
-    response = safe_request("GET", url, headers=headers)
-    if response is None or response.status_code != 200:
-        return False
-    orders = (response.json() or {}).get("data", []) or []
+    # OPTIMIZATION: Use cache if available, else fetch
+    if orders_cache is not None:
+        orders = orders_cache
+    else:
+        # Legacy/Fallback behavior: Fetch fresh
+        orders = fetch_all_open_orders()
     
     # Define blocking statuses (v2: added ACCEPTED, SUBMITTED logic)
     blocking = {"OPEN", "PENDING", "TRIGGERED", "ACCEPTED", "SUBMITTED"}
@@ -2100,7 +2151,7 @@ def check_existing_orders(symbol: str, exchange: str, qty: int, side: str) -> bo
                     return True
     return False
     
-def process_market_data(symbol, exchange, market_data, tf, instrument_token, live_positions_cache=None):
+def process_market_data(symbol, exchange, market_data, tf, instrument_token, live_positions_cache=None, orders_cache=None):
     if SYMBOL_LOCKS.get(symbol, False):
         return
     SYMBOL_LOCKS[symbol] = True
@@ -2261,9 +2312,9 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
                 
                 if should_buy and is_market_open_now_ist():
                     # Check if we already bought today to avoid duplicates
-                    if not check_existing_orders(symbol, exchange, qty, "BUY"):
+                    if not check_existing_orders(symbol, exchange, qty, "BUY", orders_cache=orders_cache):
                         log_ok(f"🎯 SIP TRIGGER: {reason} for {symbol}", force=True)
-                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0, rsi=0.0)
+                        safe_place_order_when_open(symbol, exchange, qty, "BUY", instrument_token, 0, rsi=0.0, orders_cache=orders_cache)
                         
                         # Notify user
                         if notifier:
@@ -2311,7 +2362,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
                 if sell_qty > 0:
                     pos["last_action_ts"] = current_close
                     log_ok(f"⏳ Attempting sell for {symbol}: {sell_reason}")
-                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, rsi=last_rsi)
+                    safe_place_order_when_open(symbol, exchange, sell_qty, "SELL", instrument_token, 0, rsi=last_rsi, orders_cache=orders_cache)
                 return
 
         if has_existing_position:
@@ -2323,7 +2374,7 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
         if ignore_rsi:
              log_ok(f"🔍 DEBUG: {symbol} Ignore_RSI is ON. RSI={last_rsi:.1f}, Buy={buy_rsi}. MarketOpen={is_market_open_now_ist()}")
 
-        if (ignore_rsi or last_rsi <= buy_rsi) and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY"):
+        if (ignore_rsi or last_rsi <= buy_rsi) and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY", orders_cache=orders_cache):
             need_qty = qty - max(0, available_qty)
             if need_qty > 0:
                 required_funds = need_qty * current_close
@@ -2345,9 +2396,9 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
                     log_ok(f"🛡️ Trade Skipped for {symbol}: Risk Limit Hit (Trade ₹{required_funds:,.2f} > {per_trade_pct}% of portfolio ₹{portfolio_risk_limit:,.2f})")
                 else:
                     log_ok(f"⏳ Attempting buy entry/top-up for {symbol}: RSI={last_rsi:.2f}")
-                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0, rsi=last_rsi)
+                    safe_place_order_when_open(symbol, exchange, need_qty, "BUY", instrument_token, 0, rsi=last_rsi, orders_cache=orders_cache)
         elif ignore_rsi:
-             log_ok(f"⚠️ DEBUG: {symbol} Buy Logic Skipped. Reasons: MarketOpen={is_market_open_now_ist()}, ExistingOrder={check_existing_orders(symbol, exchange, qty, 'BUY')}")
+             log_ok(f"⚠️ DEBUG: {symbol} Buy Logic Skipped. Reasons: MarketOpen={is_market_open_now_ist()}, ExistingOrder={check_existing_orders(symbol, exchange, qty, 'BUY', orders_cache=orders_cache)}")
     finally:
         SYMBOL_LOCKS[symbol] = False
 
@@ -2688,6 +2739,9 @@ def run_cycle():
     if is_offline():
         return
         
+    # Reset Cache at Start of Cycle (Phase 2 Optimization)
+    reset_cycle_quotes()
+
     # Market Hours Check
     if not is_market_open_now_ist():
        # Ensure explicit visibility in UI so user knows why nothing is happening
@@ -2695,6 +2749,14 @@ def run_cycle():
        wait_for_market_open()
        return # Ensure we return if waiting
     
+    # CRITICAL OPTIMIZATION: Fetch Open Orders ONCE for the entire cycle
+    # Must be done BEFORE Risk Manager checks
+    try:
+        orders_snapshot = fetch_all_open_orders()
+    except Exception as e:
+        log_ok(f"⚠️ Failed to fetch orders snapshot: {e}")
+        orders_snapshot = []
+
     # ---------------- Risk Manager Checks (Phase 0A) ----------------
     if risk_mgr and db:
         try:
@@ -2723,14 +2785,15 @@ def run_cycle():
 
                 if instrument_token:
                     # Prevent redundant sells if an order is already open
-                    if action['action'] == "SELL" and check_existing_orders(symbol, exchange, qty, "SELL"):
+                    if action['action'] == "SELL" and check_existing_orders(symbol, exchange, qty, "SELL", orders_cache=orders_snapshot):
                         log_ok(f"⏭️ Risk SELL already in progress for {symbol}, skipping duplicate trigger.")
                         continue
 
                     # Trigger sell order (also protected by hardcoded gate in safe_place_order_when_open)
                     safe_place_order_when_open(
                         symbol, exchange, qty, action['action'],
-                        instrument_token, price=0, use_amo=False
+                        instrument_token, price=0, use_amo=False,
+                        orders_cache=orders_snapshot
                     )
 
                     # 🔔 Notify user (MVP1 Feature)
@@ -2765,7 +2828,7 @@ def run_cycle():
         except Exception as e:
             log_ok(f"⚠️ Risk check failed: {e}", force=True)
     
-    reset_cycle_quotes()
+    # reset_cycle_quotes() # MOVED TO START
     log_ok(f"---------------------------------------------------------------------------------------------------------------{datetime.now()}")
     processed = set()
     nifty_only = settings.get("app_settings.nifty_50_only", False) if settings else False
@@ -2777,6 +2840,10 @@ def run_cycle():
     except Exception as e:
         log_ok(f"⚠️ Failed to fetch positions snapshot, using empty default: {e}")
         positions_snapshot = {}
+
+    # CRITICAL OPTIMIZATION: Fetch Open Orders ONCE for the entire cycle
+    # (Moved to top of function)
+
 
     for symbol, ex in SYMBOLS_TO_TRACK:
         if STOP_REQUESTED:
@@ -2804,7 +2871,7 @@ def run_cycle():
             if is_offline():
                 return
             # Pass cached positions to avoid API call
-            process_market_data(symbol, ex, market_data, tf, instrument_token, live_positions_cache=positions_snapshot)
+            process_market_data(symbol, ex, market_data, tf, instrument_token, live_positions_cache=positions_snapshot, orders_cache=orders_snapshot)
         except Exception as e:
             if not is_offline():
                 log_ok(f"❌ Cycle error for {symbol}:{ex}: {e}")
@@ -2893,10 +2960,10 @@ def run_cycle():
                     instrument_token = market_data.get("instrument_token")
                     if instrument_token:
                         # Pass cached positions here too
-                        process_market_data(symbol, ex, market_data, tf, instrument_token, live_positions_cache=positions_snapshot)
+                        process_market_data(symbol, ex, market_data, tf, instrument_token, live_positions_cache=positions_snapshot, orders_cache=orders_snapshot)
                     elif (symbol, ex) in positions_snapshot:
                          # Still process if we have the price, even if token is missing (for monitoring)
-                         process_market_data(symbol, ex, market_data, tf, None, live_positions_cache=positions_snapshot)
+                         process_market_data(symbol, ex, market_data, tf, None, live_positions_cache=positions_snapshot, orders_cache=orders_snapshot)
 
             except Exception as e:
                 log_ok(f"⚠️ Error processing managed holding {key_str}: {e}")

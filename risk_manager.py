@@ -36,11 +36,13 @@ class RiskManager:
         
         logging.info(f"✅ RiskManager initialized: SL={self.stop_loss_pct}%, PT={self.profit_target_pct}%")
     
-    def check_all_positions(self) -> List[Dict]:
+    def check_all_positions(self, market_data_cache=None) -> List[Dict]:
         """
-        Check all open positions for stop-loss or profit target hits
+        Check all open positions for risk triggers.
         
-        Returns list of actions to take: [{'symbol': 'HDFC', 'action': 'SELL', 'reason': 'Stop Loss Hit'}]
+        Args:
+            market_data_cache: Optional dict of {(symbol, exchange): market_data_dict}
+                             Avoids redundant API calls if data was already fetched.
         """
         actions = []
         
@@ -102,8 +104,13 @@ class RiskManager:
             entry_price = position['avg_entry_price']
             quantity = position['net_quantity']
             
-            # Fetch current price
-            market_data = self.fetch_market_data(symbol, exchange)
+            # Fetch current price (use cache if available)
+            market_data = None
+            if market_data_cache:
+                market_data = market_data_cache.get((symbol, exchange))
+            
+            if not market_data:
+                market_data = self.fetch_market_data(symbol, exchange)
             
             if not market_data:
                 logging.warning(f"⚠️ Could not fetch price for {symbol}, skipping risk check")

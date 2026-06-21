@@ -25,7 +25,9 @@
       "Bash(ls -lh database/trades.db)",
       "Bash(pip install *)",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(pip list *)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }

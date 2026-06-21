@@ -63,6 +63,104 @@ try:
 except ImportError:
     NIFTY_50 = set()
 
+# ---------------- Secure Credential Manager (Phase 1) ----------------
+try:
+    from security.credential_manager import CredentialManager
+    CREDENTIAL_MANAGER_AVAILABLE = True
+except ImportError:
+    CredentialManager = None
+    CREDENTIAL_MANAGER_AVAILABLE = False
+
+try:
+    from brokers.factory import get_broker as _get_broker_factory
+    get_broker = _get_broker_factory
+    BROKER_FACTORY_AVAILABLE = True
+except ImportError:
+    get_broker = None
+    BROKER_FACTORY_AVAILABLE = False
+
+# Module-level credential manager and broker registry (populated by initialize_credentials())
+CREDENTIAL_MANAGER = None
+BROKERS: dict = {}
+
+
+def initialize_credentials(
+    env: str = "development",
+    env_file: str = ".env",
+    encrypted_file: str = None,
+    encryption_key: bytes = None,
+) -> None:
+    """
+    Initialize the CredentialManager and populate the BROKERS registry.
+
+    This is the single point of credential loading for the trading engine.
+    All broker objects are built here — raw credential globals are NOT used
+    for broker construction after this call.
+
+    Parameters
+    ----------
+    env:             "development" (reads .env file) or "production" (Fernet file)
+    env_file:        Path to .env file (development mode only)
+    encrypted_file:  Path to Fernet-encrypted credentials file (production mode)
+    encryption_key:  Fernet key bytes (production mode)
+
+    Raises
+    ------
+    KeyError   — required credential missing from .env
+    ValueError — bad env argument or production mode missing file/key
+    Exception  — CredentialManager or broker factory failure (propagated)
+    """
+    global CREDENTIAL_MANAGER, BROKERS
+
+    if CredentialManager is None:
+        raise ImportError("security.credential_manager not available — cannot initialize credentials")
+
+    if env == "production":
+        cm = CredentialManager(
+            env=env,
+            encrypted_file=encrypted_file,
+            encryption_key=encryption_key,
+        )
+    else:
+        cm = CredentialManager(
+            env=env,
+            env_file=env_file,
+        )
+
+    mstock_config = cm.get_mstock_config()
+    ibkr_config = cm.get_ibkr_config()
+
+    new_brokers: dict = {}
+    new_brokers["IN"] = get_broker("IN", **mstock_config)
+    new_brokers["US"] = get_broker("US", **ibkr_config)
+
+    # Atomic update — replace both CM and broker registry together using globals()
+    globals()['CREDENTIAL_MANAGER'] = cm
+    globals()['BROKERS'] = new_brokers
+
+    log_ok("Credentials loaded and brokers initialized (values redacted)")
+
+
+def cleanup() -> None:
+    """
+    Clear credentials from memory on shutdown.
+
+    Registered with atexit so it runs automatically when the process exits.
+    Safe to call multiple times — idempotent.
+    """
+    global CREDENTIAL_MANAGER
+    if CREDENTIAL_MANAGER is not None:
+        try:
+            CREDENTIAL_MANAGER.__del__()
+        except Exception:
+            pass
+        CREDENTIAL_MANAGER = None
+    log_ok("Credentials cleared on shutdown")
+
+
+import atexit as _atexit
+_atexit.register(cleanup)
+
 # ---------------- New Module Imports (Phase 0A) ----------------
 try:
     from settings_manager import SettingsManager
@@ -1051,10 +1149,16 @@ def auto_login_callback():
     return None, None
 
 try:
-    from broker_api import BrokerAPI
+    from brokers.factory import get_broker
     if all([API_KEY, ACCESS_TOKEN, CLIENT_CODE]):
-         broker = BrokerAPI(API_KEY, ACCESS_TOKEN, CLIENT_CODE, login_callback=auto_login_callback)
-         # log_ok("✅ Broker API initialized with auto-login support")
+        broker = get_broker(
+            "IN",  # Phase 0: India market only; US added in Phase 2
+            api_key=API_KEY,
+            access_token=ACCESS_TOKEN,
+            client_code=CLIENT_CODE,
+            login_callback=auto_login_callback,
+        )
+        # log_ok("✅ Broker API initialized with auto-login support")
 except Exception as e:
     log_ok(f"⚠️ Broker API Init Failed: {e}")
 

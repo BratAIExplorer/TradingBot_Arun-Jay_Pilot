@@ -217,7 +217,7 @@ class SettingsGUI:
         broker_menu = ctk.CTkOptionMenu(
             tab,
             variable=self.broker_var,
-            values=["mstock", "zerodha", "other"],
+            values=["mstock", "ibkr", "zerodha", "other"],
             width=200
         )
         broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)

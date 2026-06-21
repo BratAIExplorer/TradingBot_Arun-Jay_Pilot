@@ -14,6 +14,13 @@ import sys
 import os
 import atexit
 import tempfile
+from pathlib import Path
+
+# Ensure project root is in path
+_PROJECT_ROOT = Path(__file__).parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 try:
     import psutil
 except ImportError:
@@ -26,6 +33,7 @@ try:
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
     from state_manager import state as state_mgr
+    from ui.market_selector import MarketSelector, MARKETS
     
     # Reload config to ensure fresh access token from settings.json
     reload_config()
@@ -76,7 +84,7 @@ class DashboardV2:
     def __init__(self, root):
         # 1. Setup Window (Root passed from main)
         self.root = root
-        self.root.title("ARUN TITAN V2 - Release v2.0.2 (Light Mode)")
+        self.root.title("ORBIT TRADING V2 - Release v2.0.2 (Light Mode)")
         self.root.geometry("1450x900") # Expanded slightly for larger fonts
         self.root.configure(fg_color=COLOR_BG)
         
@@ -100,6 +108,20 @@ class DashboardV2:
         self.scanner_results = []
         self.last_scan_total = 0
         self.scanner_thread = None
+
+        # Market selector state
+        self.current_market = "IN"
+        self.current_market_config = MARKETS["IN"]
+        self.market_settings = self.settings_mgr.get_market_settings("IN") if hasattr(self.settings_mgr, "get_market_settings") else {}
+        self.rsi_threshold_buy = self.market_settings.get("rsi_threshold_buy", 30)
+        self.rsi_threshold_sell = self.market_settings.get("rsi_threshold_sell", 70)
+
+        # Create market selector widget early (available even if build_header is patched in tests)
+        self.market_selector = MarketSelector(
+            self.root,
+            on_market_change=self._on_market_changed,
+            current_market="IN",
+        )
 
         # Log redirection (DISABLED - Can cause GUI freeze)
         # sys.stdout.write = self.write_log
@@ -297,16 +319,24 @@ class DashboardV2:
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
 
+        # Market Selector (Right of nav, before user profile)
+        self.market_selector = MarketSelector(
+            header,
+            on_market_change=self._on_market_changed,
+            current_market="IN",
+        )
+        self.market_selector.pack(side="left", padx=10, pady=10)
+
         # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
         user_frame.pack(side="right", padx=10)
-        
+
         # Connection Status Indicator
         self.status_indicator = ctk.CTkLabel(user_frame, text="●", font=("Arial", 24), text_color="gray")
         self.status_indicator.pack(side="left", padx=5)
         self.status_tooltip = ctk.CTkLabel(user_frame, text="Backend: Connecting...", font=("Roboto", 10), text_color="gray")
         self.status_tooltip.pack(side="left", padx=(0, 10))
-        
+
         ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
 
@@ -320,6 +350,136 @@ class DashboardV2:
              self.refresh_balance()
         else:
              self.write_log("❌ Failed to reload settings.\n")
+
+    # ------------------------------------------------------------------
+    # Market Selector — integration methods
+    # ------------------------------------------------------------------
+
+    def _on_market_changed(self, market: str) -> None:
+        """
+        Handle market selection change from the MarketSelector widget.
+
+        Updates internal market state, loads per-market settings including
+        RSI thresholds, then refreshes the portfolio display.
+
+        Args:
+            market: New market code ('IN' | 'US').
+        """
+        self.current_market = market
+        self.current_market_config = MARKETS[market]
+
+        # Load market-specific settings (RSI thresholds, currency, etc.)
+        if hasattr(self.settings_mgr, "get_market_settings"):
+            self.market_settings = self.settings_mgr.get_market_settings(market)
+        else:
+            self.market_settings = {}
+
+        # Apply per-market RSI thresholds
+        self.rsi_threshold_buy = self.market_settings.get("rsi_threshold_buy", 30)
+        self.rsi_threshold_sell = self.market_settings.get("rsi_threshold_sell", 70)
+
+        # Update market context label in positions table
+        if hasattr(self, "lbl_market_context"):
+            market_name = self.current_market_config.name
+            currency_code = self.current_market_config.currency_code
+            exchange = self.current_market_config.exchange
+            self.lbl_market_context.configure(
+                text=f"📍 Market: {market_name} ({currency_code}) - {exchange}"
+            )
+
+        # Refresh portfolio for the newly selected market
+        self._refresh_portfolio_for_market(market)
+
+        self.write_log(f"Switched to {self.current_market_config.name} market "
+                       f"({self.current_market_config.currency} {self.current_market_config.currency_code})\n")
+
+    def _refresh_portfolio_for_market(self, market: str) -> None:
+        """
+        Reload portfolio trade data filtered for the given market.
+
+        Queries the database for recent trades belonging to `market` and
+        hands off to ``_update_portfolio_display()`` for rendering.
+        No-op when no database is available.
+
+        Args:
+            market: Market code to filter by ('IN' | 'US').
+        """
+        if not hasattr(self, "db") or self.db is None:
+            return
+
+        trades = self.db.get_recent_trades(limit=100, market=market)
+        self._update_portfolio_display(trades)
+
+    def _update_portfolio_display(self, trades: list) -> None:
+        """
+        Refresh the portfolio UI section with the supplied trade list.
+
+        Formats each trade's price and P&L using the active market's
+        currency symbol, then delegates to the existing holdings display
+        logic.  Safe to call with an empty list.
+
+        Args:
+            trades: List of trade dicts (keys: symbol, price, pnl_net, …).
+        """
+        currency = self.current_market_config.currency
+
+        formatted = []
+        for trade in trades:
+            symbol = trade.get("symbol", "")
+            price = trade.get("price", 0) or 0
+            pnl = trade.get("pnl_net", 0) or 0
+            formatted.append({
+                "symbol": symbol,
+                "price_str": f"{currency}{price:.2f}",
+                "pnl_str": f"{currency}{pnl:.2f}",
+                **trade,
+            })
+
+        # Delegate to the existing display method if available
+        if hasattr(self, "filter_positions_display"):
+            filter_val = (
+                self.holdings_filter_var.get()
+                if hasattr(self, "holdings_filter_var")
+                else "ALL"
+            )
+            self.filter_positions_display(filter_val)
+
+    def _format_currency(self, amount: float) -> str:
+        """
+        Format a numeric amount with the active market's currency symbol.
+
+        Args:
+            amount: Monetary value to format.
+
+        Returns:
+            String like '₹1,234.56' or '$1,234.56'.
+        """
+        currency = self.current_market_config.currency
+        return f"{currency}{amount:,.2f}"
+
+    def _start_market_status_loop(self) -> None:
+        """
+        Background thread that polls market open/closed status every 60 s.
+
+        Updates the MarketSelector status indicator for both IN and US
+        markets so the 🟢/🔴 indicator stays accurate without any
+        additional work in the widget itself.
+        """
+        from markets import is_market_open
+
+        def _update_loop() -> None:
+            while not self.stop_update_flag.is_set():
+                for market_code in ("IN", "US"):
+                    try:
+                        is_open = is_market_open(market_code)
+                        if hasattr(self, "market_selector"):
+                            self.market_selector.set_market_status(market_code, is_open)
+                    except Exception:
+                        pass
+                self.stop_update_flag.wait(timeout=60)
+
+        thread = threading.Thread(target=_update_loop, daemon=True, name="market-status")
+        thread.start()
 
     def show_view(self, view_name):
         # Hide all
@@ -556,6 +716,18 @@ class DashboardV2:
             messagebox.showerror("Export Failed", f"An error occurred:\n{str(e)}")
 
     def build_positions_table(self, parent):
+        # Market context header
+        market_header_frame = ctk.CTkFrame(parent, fg_color="transparent", height=25)
+        market_header_frame.pack(fill="x", padx=10, pady=(5, 2))
+
+        self.lbl_market_context = ctk.CTkLabel(
+            market_header_frame,
+            text="📍 Market: India (INR) - NSE",
+            font=("Roboto", 10, "bold"),
+            text_color="#479FB6"
+        )
+        self.lbl_market_context.pack(side="left", padx=(5, 10))
+
         # Filter/View Toggle
         filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
         filter_frame.pack(fill="x", padx=10, pady=(5, 0))
@@ -2841,8 +3013,17 @@ def check_single_instance():
 
 # -----------------------------------------------------------------------------
 # SMART TRADE MODAL (New Feature)
+# Note: Using tk.Toplevel for compatibility
 # -----------------------------------------------------------------------------
-class SmartTradeModal(ctk.CTkToplevel):
+try:
+    # Try to use CTkToplevel if available
+    _ToplevelBase = ctk.CTkToplevel
+except AttributeError:
+    # Fallback to tk.Toplevel
+    import tkinter as tk
+    _ToplevelBase = tk.Toplevel
+
+class SmartTradeModal(_ToplevelBase):
     def __init__(self, parent, symbol, ltp, support, resistance, settings_mgr, on_success_callback=None):
         super().__init__(parent)
         self.title(f"⚡ Smart Trade: {symbol}")

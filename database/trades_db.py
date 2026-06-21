@@ -250,6 +250,46 @@ class TradesDatabase:
                 self.conn.commit()
                 print("Migration 'safety_checks_log' complete")
 
+            # Phase 1: Add 'market' column to trades table (for dual-market support)
+            cursor.execute("PRAGMA table_info(trades)")
+            columns = [info[1] for info in cursor.fetchall()]
+            if 'market' not in columns:
+                print("Migrating database: Adding 'market' column...")
+                cursor.execute("ALTER TABLE trades ADD COLUMN market TEXT DEFAULT 'IN'")
+                self.conn.commit()
+                print("Migration 'market' complete")
+
+            # Phase 1: Create signals table for ML training (from signals_migration.py)
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='signals'")
+            if not cursor.fetchone():
+                print("Migrating database: Creating 'signals' table...")
+                cursor.execute("""
+                    CREATE TABLE signals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        symbol TEXT NOT NULL,
+                        market TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        rsi REAL,
+                        current_price REAL,
+                        features_json TEXT,
+                        execution_id TEXT UNIQUE,
+                        future_return REAL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_signals_market_source_date
+                    ON signals(market, source, timestamp DESC)
+                """)
+                cursor.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_signals_execution_id
+                    ON signals(execution_id)
+                """)
+                self.conn.commit()
+                print("Migration 'signals' complete")
+
         except Exception as e:
             print(f"Migration warning: {e}")
         finally:
@@ -744,9 +784,173 @@ class TradesDatabase:
             source="HYBRID"
         )
 
+    def insert_signal(self, signal_data: Dict) -> Optional[int]:
+        """
+        Insert a signal record for ML training (Phase 1).
 
-# Global database instance
-db = TradesDatabase()
+        Args:
+            signal_data: Dict with keys from Signal dataclass
+                timestamp, symbol, market, action, source, rsi, current_price,
+                features (dict), execution_id, [future_return]
+
+        Returns:
+            Signal ID (int) if inserted, None on failure.
+        """
+        import json
+
+        cursor = self.conn.cursor()
+
+        try:
+            features_json = json.dumps(signal_data.get("features", {}))
+
+            cursor.execute(
+                """
+                INSERT INTO signals
+                (timestamp, symbol, market, action, source, rsi, current_price,
+                 features_json, execution_id, future_return)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    signal_data.get("timestamp"),
+                    signal_data.get("symbol"),
+                    signal_data.get("market", "IN"),
+                    signal_data.get("action"),
+                    signal_data.get("source", "BOT"),
+                    signal_data.get("rsi"),
+                    signal_data.get("current_price"),
+                    features_json,
+                    signal_data.get("execution_id"),
+                    signal_data.get("future_return"),
+                ),
+            )
+            self.conn.commit()
+            signal_id = cursor.lastrowid
+            return signal_id
+
+        except sqlite3.IntegrityError:
+            # Duplicate execution_id
+            return None
+        except Exception as e:
+            print(f"Error inserting signal: {e}")
+            return None
+
+    def get_signals(
+        self,
+        market: Optional[str] = None,
+        days_back: int = 30,
+        limit: int = 10000,
+        source: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Retrieve signals for ML training (Phase 4).
+
+        Args:
+            market: Filter by market ('IN', 'US', or None for all)
+            days_back: Only signals from past N days
+            limit: Max signals to return
+            source: Filter by source ('BOT', 'MANUAL', or None for all)
+
+        Returns:
+            List of signal dicts ready for training.
+        """
+        import json
+
+        cursor = self.conn.cursor()
+
+        # Build query
+        where_clauses = []
+        params = []
+
+        # Date filter
+        cutoff = (datetime.utcnow() - timedelta(days=days_back)).isoformat()
+        where_clauses.append("timestamp > ?")
+        params.append(cutoff)
+
+        # Market filter
+        if market:
+            where_clauses.append("market = ?")
+            params.append(market.upper())
+
+        # Source filter
+        if source:
+            where_clauses.append("source = ?")
+            params.append(source.upper())
+
+        where_sql = " AND ".join(where_clauses)
+
+        try:
+            cursor.execute(
+                f"""
+                SELECT id, timestamp, symbol, market, action, source, rsi,
+                       current_price, features_json, execution_id, future_return
+                FROM signals
+                WHERE {where_sql}
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """,
+                params + [limit],
+            )
+
+            signals = []
+            for row in cursor.fetchall():
+                signal_dict = dict(row)
+                # Parse features from JSON
+                signal_dict["features"] = json.loads(row["features_json"] or "{}")
+                signals.append(signal_dict)
+
+            return signals
+
+        except Exception as e:
+            print(f"Error retrieving signals: {e}")
+            return []
+
+    def get_manual_signals(
+        self,
+        since: Optional[str] = None,
+        limit: int = 10_000,
+    ) -> List[Dict]:
+        """
+        Retrieve MANUAL signals since a cutoff timestamp.
+
+        Used by MLTrainingPipeline.collect_signals() to fetch raw human-entered
+        trades for supervised learning.
+
+        Args:
+            since:  ISO-8601 timestamp string; only signals after this time are
+                    returned.  If None, returns all signals.
+            limit:  Maximum number of rows to return.
+
+        Returns:
+            List of signal dicts (same schema as get_signals()).
+        """
+        import json
+
+        cursor = self.conn.cursor()
+        where_clauses = []
+        params: list = []
+
+        if since:
+            where_clauses.append("timestamp > ?")
+            params.append(since)
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        try:
+            cursor.execute(
+                f"SELECT * FROM signals {where_sql} ORDER BY timestamp DESC LIMIT ?",
+                params + [limit],
+            )
+            rows = cursor.fetchall()
+            signals = []
+            for row in rows:
+                row_dict = dict(row)
+                features_raw = row_dict.pop("features_json", None)
+                row_dict["features"] = json.loads(features_raw) if features_raw else {}
+                signals.append(row_dict)
+            return signals
+        except Exception as exc:
+            print(f"Error in get_manual_signals: {exc}")
+            return []
 
 
 if __name__ == "__main__":

@@ -385,6 +385,41 @@ class SettingsManager:
             'catastrophic_stop_pct': self.get('risk_controls.catastrophic_stop_pct', 20)
         }
 
+    def get_market_settings(self, market: str) -> Dict[str, Any]:
+        """
+        Get per-market trading settings including RSI thresholds.
+
+        Reads from settings.json under the 'markets.<code>' key.
+        Falls back to hard-coded sensible defaults when no market-specific
+        config is present so existing India-only deployments keep working
+        without any settings migration.
+
+        Args:
+            market: Market code ('IN' | 'US').
+
+        Returns:
+            Dict with at least rsi_threshold_buy, rsi_threshold_sell, currency.
+        """
+        _defaults: Dict[str, Dict[str, Any]] = {
+            "IN": {
+                "rsi_threshold_buy": 30,
+                "rsi_threshold_sell": 70,
+                "currency": "INR",
+                "exchange": "NSE",
+            },
+            "US": {
+                "rsi_threshold_buy": 35,
+                "rsi_threshold_sell": 65,
+                "currency": "USD",
+                "exchange": "SMART",
+            },
+        }
+        stored = self.get(f"markets.{market}", {})
+        base = _defaults.get(market, {}).copy()
+        if isinstance(stored, dict):
+            base.update(stored)
+        return base
+
 
 # Convenience instance
 settings = SettingsManager()

@@ -1,0 +1,15 @@
+v2.6.0
+ORBIT TRADING - UX & Product Experience Update
+
+Release Notes:
+- Fixed: Dashboard title (ARUN TITAN → ORBIT TRADING)
+- Fixed: Settings UI (added IBKR broker option)
+- Fixed: Market context label (shows active market in positions table)
+- Added: Trading CXO framework skill (2,200+ lines)
+- Updated: Living docs (BUG_REGISTRY, product spec)
+- All 4 principles embedded (SIMPLE SMART SECURE RESPECTFUL)
+
+Rollback: Change VERSION to v2.5.2 and restore from git tag v2.5.2
+
+Build Date: 2026-06-21
+Commit: 0241117

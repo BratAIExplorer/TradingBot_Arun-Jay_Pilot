@@ -76,12 +76,20 @@ def check_files():
     print()
     return True
 
+def get_version():
+    """Read version from VERSION.txt"""
+    version_file = PROJECT_ROOT / "VERSION.txt"
+    if version_file.exists():
+        return version_file.read_text().strip().split('\n')[0]
+    return "UNKNOWN"
+
 def main():
     """Launch the dashboard"""
     os.chdir(PROJECT_ROOT)
 
+    version = get_version()
     print("=" * 70)
-    print("🚀 ORBIT TRADING LAUNCHER")
+    print(f"ORBIT TRADING LAUNCHER - {version}")
     print("=" * 70)
     print()
 

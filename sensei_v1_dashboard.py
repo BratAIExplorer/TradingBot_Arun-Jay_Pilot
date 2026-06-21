@@ -1,5 +1,5 @@
 """
-🎨 ARUN TITAN V2 - The "Titan" UI Update
+🎨 ORBIT TRADING V2 - The "Titan" UI Update
 Matches the precise mockup: Dark Neon, Top Nav, Grid Layout.
 """
 
@@ -54,7 +54,7 @@ except ImportError as e:
     print(f"CRITICAL: Could not import core modules. ({e})")
     sys.exit(1)
 
-# --- UI CONSTANTS (ARUN TITAN LIGHT THEME) ---
+# --- UI CONSTANTS (ORBIT TRADING LIGHT THEME) ---
 # Matching mockup: Soft Cream Background, High Contrast Text, Cyan Accents
 COLOR_BG = "#EFEBE3"      # Soft Cream / Zinc-50 alternative
 COLOR_CARD = "#FFFFFF"    # Pure White Cards (Elevated)
@@ -298,7 +298,7 @@ class DashboardV2:
         logo_frame.pack(side="left", padx=20)
         ctk.CTkLabel(logo_frame, text="ARUN", font=("Roboto", 22, "bold"), text_color=COLOR_ACCENT).pack(side="left")
         ctk.CTkLabel(logo_frame, text="TITAN", font=("Roboto", 22, "bold"), text_color="#333").pack(side="left", padx=5)
-        ctk.CTkLabel(logo_frame, text="v2.0.3", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
+        ctk.CTkLabel(logo_frame, text="v2.6.0", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
 
         # Navigation (Segmented Button Style)
         self.nav_var = ctk.StringVar(value="DASHBOARD")
@@ -2881,7 +2881,7 @@ def show_disclaimer(root, on_accept):
     main_frame = ttk.Frame(root, style="Disclaimer.TFrame", padding=30)
     main_frame.pack(fill="both", expand=True)
     
-    ttk.Label(main_frame, text="⚠️ ARUN TRADING BOT", style="DTitle.TLabel").pack()
+    ttk.Label(main_frame, text="⚠️ ORBIT TRADING", style="DTitle.TLabel").pack()
     ttk.Label(main_frame, text="User Responsibility Agreement", style="DSub.TLabel").pack(pady=(5, 20))
 
     text_container = ttk.Frame(main_frame)
@@ -2900,7 +2900,7 @@ def show_disclaimer(root, on_accept):
     ⚠️ CRITICAL WARNING - READ BEFORE PROCEEDING ⚠️
 
     1. NOT FINANCIAL ADVICE
-    The ARUN Trading Bot is a SOFTWARE TOOL ONLY. It does NOT provide investment, financial, legal, or tax advice.
+    ORBIT TRADING is a SOFTWARE TOOL ONLY. It does NOT provide investment, financial, legal, or tax advice.
     
     2. HIGH RISK - POTENTIAL TOTAL LOSS
     Trading stocks and derivatives involves significant risk. You could lose SOME or ALL of your invested capital.
@@ -3239,7 +3239,7 @@ if __name__ == "__main__":
         # Initialize Root ONCE
         ctk.set_appearance_mode("dark")
         root = ctk.CTk()
-        root.title("ARUN TITAN V2 - Launcher")
+        root.title("ORBIT TRADING V2 - Launcher")
         
         def start_dashboard():
             # This runs after disclaimer accept

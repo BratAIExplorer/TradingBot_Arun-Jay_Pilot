@@ -70,7 +70,7 @@ class SettingsGUI:
             # Header (only for standalone)
             header = ctk.CTkLabel(
                 self.root,
-                text="⚙️ ARUN Trading Bot - Configuration",
+                text="⚙️ ORBIT TRADING - Configuration",
                 font=("Arial", 22, "bold"),
                 text_color=COLOR_TEXT
             )
@@ -135,7 +135,7 @@ class SettingsGUI:
         # Disclaimer Section
         disclaimer_label = ctk.CTkLabel(
             self.root,
-            text="⚠️ ARUN is a utility tool, not financial advice. You are responsible for your own investment decisions.",
+            text="⚠️ ORBIT TRADING is a utility tool, not financial advice. You are responsible for your own investment decisions.",
             font=("Arial", 10, "italic"),
             text_color="gray"
         )

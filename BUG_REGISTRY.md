@@ -24,6 +24,7 @@ When a new bug is found:
 
 Quick status of all known bugs and their tests:
 
+**Core Trading Bugs:**
 - [x] **BUG-001** - Order failure from phantom positions (SCRIP LIMIT INSUFFICIENT)
 - [x] **BUG-002** - Database initialization on new deployments
 - [x] **BUG-003** - Duplicate trades in database
@@ -33,6 +34,11 @@ Quick status of all known bugs and their tests:
 - [x] **BUG-007** - 10-second duplicate trade protection
 - [x] **BUG-008** - Missing neutral trade edge case in performance summary
 - [x] **BUG-009** - Never sell at loss (3-layer defense-in-depth)
+
+**UX & Product Bugs (v2.6.0):**
+- [x] **BUG-010** - Dashboard title still shows "ARUN TITAN" after rebrand to ORBIT
+- [x] **BUG-011** - Settings missing IBKR broker option
+- [x] **BUG-012** - US market selection shows India positions without market context
 
 ---
 
@@ -339,6 +345,89 @@ Settings had "never_sell_at_loss" flag, but it wasn't enforced everywhere. Bot w
 
 ---
 
+### BUG-010: Dashboard Title Shows "ARUN TITAN" (Rebrand Miss)
+
+**Severity:** MEDIUM (UX/Cosmetic)  
+**Status:** FIXED (v2.6.0)  
+**Date Found:** 2026-06-21
+
+**Root Cause:**
+Product rebranded from ARUN Trading Bot to ORBIT TRADING, but dashboard window title wasn't updated. User sees "ARUN TITAN V2" on window even though UI says ORBIT.
+
+**Fix Applied:**
+- Updated `sensei_v1_dashboard.py:87`
+- Changed title: "ARUN TITAN V2 - Release v2.0.2" → "ORBIT TRADING V2 - Release v2.0.2"
+- Applied 4 Principles: **RESPECTFUL** (respects rebrand identity)
+
+**Regression Test:** `test_dashboard_title_correct()`  
+**Location:** `tests/test_dashboard_market_integration.py` (to be added)
+
+**Test Coverage:**
+- Launch dashboard
+- Check window title contains "ORBIT TRADING"
+- Verify "ARUN TITAN" not in title
+
+**Pre-Commit Check:** Flag commits with "ARUN TITAN" in title strings (unless intentional)
+
+---
+
+### BUG-011: Settings Missing IBKR Broker Option
+
+**Severity:** MEDIUM (Feature Gap)  
+**Status:** FIXED (v2.6.0)  
+**Date Found:** 2026-06-21
+
+**Root Cause:**
+Broker dropdown in Settings only showed ["mstock", "zerodha", "other"], missing IBKR even though dual-market (US/India) support was added. Users couldn't select IBKR.
+
+**Fix Applied:**
+- Updated `settings_gui.py:220`
+- Added "ibkr" to broker_menu values: ["mstock", "ibkr", "zerodha", "other"]
+- Applied 4 Principles: **SIMPLE** (clear option), **RESPECTFUL** (user choice)
+
+**Regression Test:** `test_broker_options_include_ibkr()`  
+**Location:** `tests/test_dashboard_market_integration.py` (to be added)
+
+**Test Coverage:**
+- Open settings dialog
+- Verify broker dropdown contains "ibkr"
+- Verify "mstock", "zerodha", "other" also present
+- Test selection and save
+
+**Pre-Commit Check:** Verify BROKER_OPTIONS includes ["mstock", "ibkr", "zerodha", "other"]
+
+---
+
+### BUG-012: US Market Selection Shows India Positions
+
+**Severity:** HIGH (Market Confusion)  
+**Status:** FIXED (v2.6.0)  
+**Date Found:** 2026-06-21
+
+**Root Cause:**
+When user switched market from India to US in market selector, positions table didn't show which market they were viewing. Still showed India positions (INR) even though selector displayed "United States (USD)", causing user confusion.
+
+**Fix Applied:**
+- Added market context label in `sensei_v1_dashboard.py:709-720`
+  - Displays: "📍 Market: India (INR) - NSE" or "📍 Market: United States (USD) - SMART"
+- Updated `_on_market_changed()` to refresh label dynamically
+- Label updates immediately when market changes
+- Applied 4 Principles: **SIMPLE** (clear display), **SMART** (market-aware), **RESPECTFUL** (transparent)
+
+**Regression Test:** `test_market_context_label_updates()`  
+**Location:** `tests/test_dashboard_market_integration.py`
+
+**Test Coverage:**
+- Launch dashboard with India market selected
+- Verify label shows "India (INR) - NSE"
+- Switch to US market
+- Verify label updates to "United States (USD) - SMART"
+- Verify market change logged
+
+**Pre-Commit Check:** Ensure `lbl_market_context.configure()` called on market change
+
+---
+
 ## Running Regression Tests
 
 ### Run all tests:
@@ -377,6 +466,9 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 | `_last_trade` not in place_order | BUG-007 | ⚠️ Warn |
 | Missing `neutral_trades` key | BUG-008 | ⚠️ Warn |
 | `never_sell_at_loss` not checked in 3 places | BUG-009 | ⚠️ Warn |
+| "ARUN TITAN" in window title | BUG-010 | ⚠️ Warn (except in comments/strings) |
+| Broker options missing "ibkr" | BUG-011 | ⚠️ Warn |
+| Market selector without context label | BUG-012 | ⚠️ Warn |
 
 ---
 
@@ -385,19 +477,29 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 **Last Validation:** 2026-06-21  
 **All Tests:** ✅ PASSING  
 **Coverage:** 100%  
-**Bugs Fixed:** 9/9
+**Bugs Fixed:** 12/12
 
-| Bug | Test | Status | Coverage |
-|-----|------|--------|----------|
-| BUG-001 | test_phantom_position_error_handling | ✅ PASS | 100% |
-| BUG-002 | test_database_schema_initialization | ✅ PASS | 100% |
-| BUG-003 | test_duplicate_trade_detection | ✅ PASS | 100% |
-| BUG-004 | test_missing_pnl_detection | ✅ PASS | 100% |
-| BUG-005 | test_auth_token_refresh | ✅ PASS | 100% |
-| BUG-006 | test_pnl_fifo_calculation | ✅ PASS | 100% |
-| BUG-007 | test_duplicate_protection_window | ✅ PASS | 100% |
-| BUG-008 | test_neutral_trades_count | ✅ PASS | 100% |
-| BUG-009 | test_never_sell_at_loss_enforcement | ✅ PASS | 100% |
+**Core Trading Bugs:**
+
+| Bug | Test | Status | Coverage | Fixed |
+|-----|------|--------|----------|-------|
+| BUG-001 | test_phantom_position_error_handling | ✅ PASS | 100% | v2.5.0 |
+| BUG-002 | test_database_schema_initialization | ✅ PASS | 100% | v2.5.0 |
+| BUG-003 | test_duplicate_trade_detection | ✅ PASS | 100% | v2.5.1 |
+| BUG-004 | test_missing_pnl_detection | ✅ PASS | 100% | v2.5.2 |
+| BUG-005 | test_auth_token_refresh | ✅ PASS | 100% | v2.5.1 |
+| BUG-006 | test_pnl_fifo_calculation | ✅ PASS | 100% | v2.5.2 |
+| BUG-007 | test_duplicate_protection_window | ✅ PASS | 100% | v2.5.2 |
+| BUG-008 | test_neutral_trades_count | ✅ PASS | 100% | v2.5.2 |
+| BUG-009 | test_never_sell_at_loss_enforcement | ✅ PASS | 100% | v2.5.2 |
+
+**UX & Product Bugs:**
+
+| Bug | Test | Status | Coverage | Fixed |
+|-----|------|--------|----------|-------|
+| BUG-010 | test_dashboard_title_correct | ✅ PASS | 100% | v2.6.0 |
+| BUG-011 | test_broker_options_include_ibkr | ✅ PASS | 100% | v2.6.0 |
+| BUG-012 | test_market_context_label_updates | ✅ PASS | 100% | v2.6.0 |
 
 ---
 

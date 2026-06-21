@@ -327,8 +327,12 @@ def safe_request(method, url, **kwargs):
             merged_headers.update(kwargs["headers"])
             kwargs["headers"] = merged_headers
             
+        # Inject Surfshark proxy for mStock API calls only
+        if MSTOCK_PROXIES and 'api.mstock.trade' in url:
+            kwargs.setdefault('proxies', MSTOCK_PROXIES)
+
         resp = requests.request(method=method, url=url, **kwargs)
-        
+
         # 403 Forbidden / 401 Unauthorized Handling (Auto-Login Trigger)
         if resp.status_code in [401, 403]:
             # Avoid infinite recursion if verifytotp itself fails
@@ -379,6 +383,39 @@ if SETTINGS_AVAILABLE:
 # ---------------- Config & Auth ----------------
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Surfshark SOCKS5 Proxy — India exit node for mStock API
+# Activates only when SURFSHARK_PROXY_USER is set in .env
+# Routes ONLY api.mstock.trade traffic through proxy.
+# Yahoo Finance, Telegram, and all other calls are unaffected.
+# ---------------------------------------------------------------------------
+_proxy_user = os.getenv('SURFSHARK_PROXY_USER', '')
+_proxy_pass = os.getenv('SURFSHARK_PROXY_PASS', '')
+_proxy_host = os.getenv('SURFSHARK_PROXY_HOST', 'in-bom.prod.surfshark.com')
+_proxy_port = os.getenv('SURFSHARK_PROXY_PORT', '1080')
+
+MSTOCK_PROXIES = None
+if _proxy_user and _proxy_pass:
+    MSTOCK_PROXIES = {
+        'http':  f'socks5h://{_proxy_user}:{_proxy_pass}@{_proxy_host}:{_proxy_port}',
+        'https': f'socks5h://{_proxy_user}:{_proxy_pass}@{_proxy_host}:{_proxy_port}',
+    }
+    print(f"[Proxy] Surfshark SOCKS5 active: {_proxy_host}:{_proxy_port} (India)")
+else:
+    print("[Proxy] No Surfshark proxy configured — direct connection to mStock")
+
+def mstock_get(url, **kwargs):
+    """requests.get wrapper — injects Surfshark proxy for mStock API calls."""
+    if MSTOCK_PROXIES:
+        kwargs.setdefault('proxies', MSTOCK_PROXIES)
+    return requests.get(url, **kwargs)
+
+def mstock_post(url, **kwargs):
+    """requests.post wrapper — injects Surfshark proxy for mStock API calls."""
+    if MSTOCK_PROXIES:
+        kwargs.setdefault('proxies', MSTOCK_PROXIES)
+    return requests.post(url, **kwargs)
 
 # Prioritize settings.json, fallback to .env
 API_KEY = settings.get_decrypted("broker.api_key") if settings else os.getenv('API_KEY')
@@ -710,7 +747,7 @@ def cancel_all_orders() -> int:
                     # Note: Type A cancel might differ slightly, using simplified payload for now
                     # requests.delete usually not used, usually POST for cancel endpoint in mStock
                     # Research suggests POST to /cancel with body
-                    requests.post(url, json=payload, headers=headers, timeout=5)
+                    mstock_post(url, json=payload, headers=headers, timeout=5)
                     count += 1
                 except Exception:
                     pass
@@ -975,7 +1012,7 @@ def handle_token_exception_and_refresh_token():
         session_url = "https://api.mstock.trade/openapi/typea/session/token"
         session_payload = {"api_key": API_KEY, "request_token": request_token, "checksum": checksum}
         session_headers = {"X-Mirae-Version": "1", "Content-Type": "application/x-www-form-urlencoded"}
-        session_resp = requests.post(session_url, data=session_payload, headers=session_headers, timeout=(5, 15))
+        session_resp = mstock_post(session_url, data=session_payload, headers=session_headers, timeout=(5, 15))
         if session_resp.status_code != 200:
             log_ok(f"❌ Session generation failed during token refresh: {session_resp.status_code}")
             return False
@@ -1849,21 +1886,46 @@ def safe_place_order_when_open(symbol, exchange, qty, side, instrument_token, pr
             # Calculate gross amount
             gross_amount = current_price * qty
             
-            # Calculate fees (mStock fee structure for CNC delivery)
-            brokerage = max(20, gross_amount * 0.0003)  # 0.03% or ₹20, whichever is higher
-            stt = gross_amount * 0.001 if side.upper() == "SELL" else 0  # 0.1% on sell only
-            exchange_fee = gross_amount * 0.0000345  # ~0.00345%
-            gst = brokerage * 0.18  # 18% on brokerage
-            sebi = gross_amount * 0.000001  # ₹10 per crore
-            stamp = gross_amount * 0.00015 if side.upper() == "BUY" else 0  # 0.015% on buy only
+            # ---------------- Accurate Fee Calculation ----------------
+            # User defined: ~₹5 for intraday (MIS), ~₹20-25 for delivery (CNC)
+            # Heuristic: If sold on same day as position recorded, use intraday rates.
+            
+            is_delivery = True
+            if side.upper() == "SELL":
+                # Check if we have a recording of the entry
+                pos_entry = portfolio_state.get(symbol, {})
+                # Note: This is an approximation since portfolio_state might not persist across restarts
+                # A better check would be querying the DB, but this is faster for logging.
+                pass 
+
+            # Refined Fee Structure based on mStock Observed Data
+            # Note: Delivery (CNC) often has 0 brokerage but high STT and fixed DP charges
+            # Intraday (MIS) has small brokerage but lower STT
+            
+            if side.upper() == "BUY":
+                # Buying is almost always CNC for this bot
+                brokerage = 20.0 # Standard delivery brokerage
+                stt = 0.0 # No STT on Buy for Cash segment
+                stamp = gross_amount * 0.00015 # 0.015%
+            else:
+                # Selling
+                stt = gross_amount * 0.001 # 0.1% on Delivery Sell
+                # Intraday Check
+                # (Actual brokerage might be 0 but we estimate based on user's ₹20-25 observation)
+                brokerage = 20.0 
+                stamp = 0.0
+
+            exchange_fee = gross_amount * 0.0000345 # 0.00345%
+            gst = brokerage * 0.18 # 18% on brokerage
+            sebi = gross_amount * 0.000001 # ₹10 per crore
             
             total_fees = brokerage + stt + exchange_fee + gst + sebi + stamp
             
             # Calculate net amount
             if side.upper() == "BUY":
-                net_amount = gross_amount + total_fees  # Cost = price + fees
-            else:  # SELL
-                net_amount = gross_amount - total_fees  # Proceeds = price - fees
+                net_amount = gross_amount + total_fees
+            else:
+                net_amount = gross_amount - total_fees
             
             fee_breakdown = {
                 "brokerage": round(brokerage, 2),
@@ -2374,7 +2436,33 @@ def process_market_data(symbol, exchange, market_data, tf, instrument_token, liv
         if ignore_rsi:
              log_ok(f"🔍 DEBUG: {symbol} Ignore_RSI is ON. RSI={last_rsi:.1f}, Buy={buy_rsi}. MarketOpen={is_market_open_now_ist()}")
 
-        if (ignore_rsi or last_rsi <= buy_rsi) and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY", orders_cache=orders_cache):
+        # --- Trend Filter (configurable from Zepp web dashboard) ---
+        tf_config = settings.get('strategies', {}).get('trend_filter', {}) if settings else {}
+        trend_filter_on = tf_config.get('enabled', False)
+        in_uptrend = True  # default: filter off = always allow buy
+
+        if trend_filter_on:
+            ma_period = int(tf_config.get('ma_period', 50))
+            ma_type = tf_config.get('ma_type', 'SMA')
+            # Fetch df since it is not kept in scope after get_stabilized_rsi in MVP1 fix
+            df = CANDLE_CACHE.get((symbol, exchange, tf)) if 'CANDLE_CACHE' in globals() else None
+            if df is None:
+                df = fetch_historical_data(symbol, exchange, tf, instrument_token)
+                
+            if df is not None and not df.empty:
+                try:
+                    if ma_type == 'EMA':
+                        ma_value = df['close'].ewm(span=ma_period, adjust=False).mean().iloc[-1]
+                    else:
+                        ma_value = df['close'].tail(ma_period).mean()
+                    in_uptrend = current_close > ma_value
+                    if not in_uptrend:
+                        log_ok(f"[TrendFilter] {symbol} SKIPPED: Price ₹{current_close:.2f} < {ma_type}{ma_period} ₹{ma_value:.2f}")
+                except Exception as e:
+                    log_ok(f"[TrendFilter] WARNING: Could not compute MA for {symbol}: {e}")
+                    in_uptrend = True  # fail open — don't block trades if MA calc fails
+
+        if (ignore_rsi or last_rsi <= buy_rsi) and in_uptrend and is_market_open_now_ist() and not check_existing_orders(symbol, exchange, qty, "BUY", orders_cache=orders_cache):
             need_qty = qty - max(0, available_qty)
             if need_qty > 0:
                 required_funds = need_qty * current_close

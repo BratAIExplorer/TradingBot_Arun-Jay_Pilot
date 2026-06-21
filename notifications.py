@@ -1,87 +1,287 @@
 """
-Notification System - Email & Telegram Alerts
-Send real-time notifications for trading events
+Notification System - Email & Telegram Alerts + Alert Database Storage
+ARUN Trading Bot v2.6.0 - Alert System
 
-Part of Phase 0A - Enhanced Monitoring
+Manages:
+- Email & Telegram notifications (legacy)
+- Alert database persistence with deduplication
+- Severity-based routing (INFO → DB only, WARN/CRITICAL → DB + Email)
+- 10-second duplicate protection within same day
 """
 
 import smtplib
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+# Logger for notifications
+log = logging.getLogger(__name__)
+
+
+def send_email(subject: str, body: str, smtp_config: Optional[Dict] = None) -> bool:
+    """
+    Send email notification.
+
+    Args:
+        subject: Email subject
+        body: Email body
+        smtp_config: SMTP configuration dict with keys:
+            - smtp_server (default: smtp.gmail.com)
+            - smtp_port (default: 587)
+            - sender_email
+            - sender_password
+            - recipient_email
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    if not smtp_config:
+        log.warning("SMTP config missing, email not sent")
+        return False
+
+    if not smtp_config.get("sender_email") or not smtp_config.get("sender_password"):
+        log.warning("Email credentials missing, email not sent")
+        return False
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = smtp_config["sender_email"]
+        msg["To"] = smtp_config.get("recipient_email", smtp_config["sender_email"])
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        server = smtplib.SMTP(
+            smtp_config.get("smtp_server", "smtp.gmail.com"),
+            smtp_config.get("smtp_port", 587),
+        )
+        server.starttls()
+        server.login(smtp_config["sender_email"], smtp_config["sender_password"])
+        server.send_message(msg)
+        server.quit()
+
+        log.info(f"Email sent: {subject}")
+        return True
+    except Exception as e:
+        log.warning(f"Email delivery failed: {e}")
+        return False
+
 
 class NotificationManager:
-    """Manages email and Telegram notifications"""
-    
-    def __init__(self, settings: Optional[Dict] = None):
+    """Manages email and Telegram notifications + alert database persistence"""
+
+    def __init__(self, settings: Optional[Dict] = None, db=None):
         """
         Initialize notification manager
-        
+
         Args:
             settings: Settings dictionary or SettingsManager instance
+            db: TradesDatabase instance for alert storage (optional)
         """
         self.settings = settings or {}
-        
+        self.db = db
+
         # Default initialization (if settings is plain dict)
-        self.email_enabled = self.settings.get('notifications', {}).get('email', {}).get('enabled', False)
-        self.telegram_enabled = self.settings.get('notifications', {}).get('enabled', False)
-        
+        self.email_enabled = (
+            self.settings.get("notifications", {}).get("email", {}).get("enabled", False)
+        )
+        self.telegram_enabled = (
+            self.settings.get("notifications", {}).get("enabled", False)
+        )
+
         # Email config
-        self.smtp_server = self.settings.get('notifications', {}).get('email', {}).get('smtp_server', 'smtp.gmail.com')
-        self.smtp_port = self.settings.get('notifications', {}).get('email', {}).get('smtp_port', 587)
-        self.sender_email = self.settings.get('notifications', {}).get('email', {}).get('sender_email', '')
-        self.sender_password = self.settings.get('notifications', {}).get('email', {}).get('sender_password', '')
-        self.recipient_email = self.settings.get('notifications', {}).get('email', {}).get('recipient_email', '')
-        
+        self.smtp_server = (
+            self.settings.get("notifications", {})
+            .get("email", {})
+            .get("smtp_server", "smtp.gmail.com")
+        )
+        self.smtp_port = (
+            self.settings.get("notifications", {}).get("email", {}).get("smtp_port", 587)
+        )
+        self.sender_email = (
+            self.settings.get("notifications", {})
+            .get("email", {})
+            .get("sender_email", "")
+        )
+        self.sender_password = (
+            self.settings.get("notifications", {})
+            .get("email", {})
+            .get("sender_password", "")
+        )
+        self.recipient_email = (
+            self.settings.get("notifications", {})
+            .get("email", {})
+            .get("recipient_email", "")
+        )
+
         # Telegram config
-        self.telegram_token = self.settings.get('notifications', {}).get('telegram_bot_token', '')
-        self.telegram_chat_id = self.settings.get('notifications', {}).get('telegram_chat_id', '')
-        
+        self.telegram_token = (
+            self.settings.get("notifications", {}).get("telegram_bot_token", "")
+        )
+        self.telegram_chat_id = (
+            self.settings.get("notifications", {}).get("telegram_chat_id", "")
+        )
+
         # If settings is a SettingsManager instance, use its decryption
-        from settings_manager import SettingsManager
-        if isinstance(self.settings, SettingsManager):
-            self._mgr = self.settings
-            self.telegram_enabled = self._mgr.get('notifications.enabled', False)
-            self.telegram_token = self._mgr.get_decrypted('notifications.telegram_bot_token', '')
-            self.telegram_chat_id = self._mgr.get('notifications.telegram_chat_id', '')
-            
-            self.email_enabled = self._mgr.get('notifications.email.enabled', False)
-            self.sender_email = self._mgr.get('notifications.email.sender_email', '')
-            self.sender_password = self._mgr.get_decrypted('notifications.email.sender_password', '')
-            self.recipient_email = self._mgr.get('notifications.email.recipient_email', '')
-    
+        try:
+            from settings_manager import SettingsManager
+
+            if isinstance(self.settings, SettingsManager):
+                self._mgr = self.settings
+                self.telegram_enabled = self._mgr.get("notifications.enabled", False)
+                self.telegram_token = self._mgr.get_decrypted(
+                    "notifications.telegram_bot_token", ""
+                )
+                self.telegram_chat_id = self._mgr.get("notifications.telegram_chat_id", "")
+
+                self.email_enabled = self._mgr.get("notifications.email.enabled", False)
+                self.sender_email = self._mgr.get("notifications.email.sender_email", "")
+                self.sender_password = self._mgr.get_decrypted(
+                    "notifications.email.sender_password", ""
+                )
+                self.recipient_email = self._mgr.get(
+                    "notifications.email.recipient_email", ""
+                )
+        except ImportError:
+            pass
+
+    def send_alert(
+        self,
+        event_type: str,
+        severity: str,
+        message: str,
+        symbol: Optional[str] = None,
+        value: Optional[float] = None,
+    ) -> bool:
+        """
+        Send alert to database and optionally email.
+
+        Args:
+            event_type: Type of event (e.g., TRADE_EXECUTED, STOP_LOSS_HIT)
+            severity: Severity level (INFO, WARN, CRITICAL)
+            message: Human-readable message
+            symbol: Stock symbol (optional)
+            value: Numeric value for deduplication (optional)
+
+        Returns:
+            True if alert was inserted (not duplicate), False if ignored
+        """
+        if not self.db:
+            log.warning("Database not available, alert not stored")
+            return False
+
+        # Generate dedup key: event_type:symbol:rounded_value
+        dedup_parts = [event_type]
+        if symbol:
+            dedup_parts.append(symbol)
+        if value is not None:
+            dedup_parts.append(str(round(value, 2)))
+        dedup_key = ":".join(dedup_parts)
+
+        # Try to insert alert with dedup protection
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO alerts (timestamp, event_type, severity, symbol, message, dedup_key)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    datetime.now().isoformat(),
+                    event_type,
+                    severity,
+                    symbol,
+                    message,
+                    dedup_key,
+                ),
+            )
+            self.db.conn.commit()
+
+            inserted = cursor.rowcount == 1
+            cursor.close()
+
+            # Send email only if:
+            # 1. Alert was inserted (not duplicate)
+            # 2. Severity is WARN or CRITICAL
+            if inserted and severity in ["WARN", "CRITICAL"]:
+                self._send_alert_email(event_type, severity, message, symbol)
+
+            return inserted
+        except Exception as e:
+            log.error(f"Failed to insert alert: {e}")
+            return False
+
+    def _send_alert_email(
+        self,
+        event_type: str,
+        severity: str,
+        message: str,
+        symbol: Optional[str] = None,
+    ) -> bool:
+        """Send email for WARN/CRITICAL alerts"""
+        if not self.email_enabled:
+            return False
+
+        severity_emoji = "⚠️" if severity == "WARN" else "🚨"
+        subject = f"{severity_emoji} ARUN Alert [{severity}] - {event_type}"
+        if symbol:
+            subject += f" ({symbol})"
+
+        body = f"""
+ALERT NOTIFICATION:
+Event: {event_type}
+Severity: {severity}
+Symbol: {symbol if symbol else 'N/A'}
+
+Message:
+{message}
+
+---
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+ARUN Trading Bot v2.6.0
+        """
+
+        smtp_config = {
+            "smtp_server": self.smtp_server,
+            "smtp_port": self.smtp_port,
+            "sender_email": self.sender_email,
+            "sender_password": self.sender_password,
+            "recipient_email": self.recipient_email,
+        }
+
+        return send_email(subject, body, smtp_config)
+
     def send_trade_alert(self, trade_data: Dict[str, Any]):
         """Send notification when trade is executed"""
         if self.email_enabled:
             self._send_email_trade(trade_data)
-        
+
         if self.telegram_enabled:
             self._send_telegram_trade(trade_data)
-    
+
     def send_stop_loss_alert(self, position: Dict[str, Any]):
         """Send notification when stop-loss is hit"""
         if self.email_enabled:
             self._send_email_stop_loss(position)
-        
+
         if self.telegram_enabled:
             self._send_telegram_stop_loss(position)
-    
+
     def send_profit_target_alert(self, position: Dict[str, Any]):
         """Send notification when profit target is hit"""
         if self.email_enabled:
             self._send_email_profit_target(position)
-        
+
         if self.telegram_enabled:
             self._send_telegram_profit_target(position)
-    
+
     def send_auth_alert(self, details: Dict[str, Any] = None):
         """Send notification when authentication (token refresh) is required"""
         if self.email_enabled:
             self._send_email_auth(details)
-        
+
         if self.telegram_enabled:
             self._send_telegram_auth(details)
 
@@ -89,20 +289,21 @@ class NotificationManager:
         """Send notification when circuit breaker is triggered"""
         if self.email_enabled:
             self._send_email_circuit_breaker(details)
-        
+
         if self.telegram_enabled:
             self._send_telegram_circuit_breaker(details)
 
     def send_heartbeat(self, details: Dict[str, Any]):
         """Send periodic status update to Telegram"""
-        if not self.telegram_enabled: return
-        
-        status = details.get('status', 'RUNNING')
-        pnl = details.get('total_pnl', 0)
-        positions = details.get('positions_count', 0)
-        
+        if not self.telegram_enabled:
+            return
+
+        status = details.get("status", "RUNNING")
+        pnl = details.get("total_pnl", 0)
+        positions = details.get("positions_count", 0)
+
         heart_emoji = "💙" if status == "RUNNING" else "⏳"
-        
+
         message = f"""
 {heart_emoji} <b>ARUN HEARTBEAT</b>
 Status: {status}
@@ -114,8 +315,9 @@ Time: {datetime.now().strftime('%H:%M')}
 
     def send_sos(self, error_msg: str):
         """Send emergency alert if engine crashes"""
-        if not self.telegram_enabled: return
-        
+        if not self.telegram_enabled:
+            return
+
         message = f"""
 🚨 <b>ARUN ENGINE ALERT (SOS)</b>
 The trading engine has encountered a critical error or manual stop.
@@ -127,112 +329,14 @@ Please check the Desktop GUI for details.
         """
         self._send_telegram(message)
 
-    def send_engine_started(self, details: Dict[str, Any] = None):
-        """Send notification when trading engine starts"""
-        if not self.telegram_enabled: return
-        
-        details = details or {}
-        stocks_count = details.get('stocks_count', 0)
-        capital = details.get('capital', 0)
-        mode = details.get('mode', 'LIVE')
-        
-        mode_emoji = "🧪" if mode == "PAPER" else "🚀"
-        
-        message = f"""
-{mode_emoji} <b>ARUN ENGINE STARTED</b>
-
-Mode: {mode} Trading
-Monitoring: {stocks_count} stocks
-Capital Limit: ₹{capital:,.2f}
-Time: {datetime.now().strftime('%H:%M:%S')}
-
-Your bot is now active and watching the markets.
-        """
-        self._send_telegram(message)
-
-    def send_engine_stopped(self, details: Dict[str, Any] = None):
-        """Send notification when trading engine stops"""
-        if not self.telegram_enabled: return
-        
-        details = details or {}
-        reason = details.get('reason', 'Manual stop')
-        pnl = details.get('total_pnl', 0)
-        trades = details.get('trades_today', 0)
-        
-        pnl_emoji = "📈" if pnl >= 0 else "📉"
-        
-        message = f"""
-🛑 <b>ARUN ENGINE STOPPED</b>
-
-Reason: {reason}
-{pnl_emoji} Today's P&L: ₹{pnl:,.2f}
-Trades Today: {trades}
-Time: {datetime.now().strftime('%H:%M:%S')}
-
-Your positions remain open. Bot is no longer monitoring.
-        """
-        self._send_telegram(message)
-
-    def send_daily_summary(self, details: Dict[str, Any]):
-        """Send end-of-day trading summary (call at market close 3:30 PM IST)"""
-        if not self.telegram_enabled: return
-        
-        pnl = details.get('total_pnl', 0)
-        trades = details.get('trades_today', 0)
-        wins = details.get('wins', 0)
-        losses = details.get('losses', 0)
-        positions = details.get('open_positions', 0)
-        portfolio_value = details.get('portfolio_value', 0)
-        
-        pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-        win_rate = (wins / trades * 100) if trades > 0 else 0
-        
-        message = f"""
-📊 <b>ARUN DAILY SUMMARY</b>
-
-{pnl_emoji} <b>Today's P&L: ₹{pnl:,.2f}</b>
-
-Trades: {trades} ({wins} wins, {losses} losses)
-Win Rate: {win_rate:.0f}%
-Open Positions: {positions}
-Portfolio Value: ₹{portfolio_value:,.2f}
-
-Market is now closed. See you tomorrow!
-        """
-        self._send_telegram(message)
-        
-        # Also send email if enabled
-        if self.email_enabled:
-            self._send_email(
-                f"📊 ARUN Daily Summary - {'Profit' if pnl >= 0 else 'Loss'}: ₹{pnl:,.2f}",
-                f"""
-DAILY TRADING SUMMARY
-=====================
-
-Today's P&L: ₹{pnl:,.2f}
-
-Trades Executed: {trades}
-- Wins: {wins}
-- Losses: {losses}
-- Win Rate: {win_rate:.1f}%
-
-Open Positions: {positions}
-Portfolio Value: ₹{portfolio_value:,.2f}
-
----
-ARUN Trading Bot
-Generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                """
-            )
-
     def _send_email_trade(self, trade: Dict[str, Any]):
         """Send email notification for trade"""
         if not self.sender_email or not self.sender_password:
             return
-        
-        action_emoji = "🟢" if trade['action'] == "BUY" else "🔴"
+
+        action_emoji = "🟢" if trade["action"] == "BUY" else "🔴"
         subject = f"{action_emoji} ARUN Bot - {trade['action']} {trade['symbol']}"
-        
+
         body = f"""
 TRADE EXECUTED:
 Symbol: {trade['symbol']} ({trade['exchange']})
@@ -254,13 +358,13 @@ TIMESTAMP: {trade.get('timestamp', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 ---
 ARUN Trading Bot
         """
-        
+
         self._send_email(subject, body)
-    
+
     def _send_email_stop_loss(self, position: Dict[str, Any]):
         """Send email notification for stop-loss hit"""
         subject = f"🛑 STOP-LOSS HIT - {position['symbol']}"
-        
+
         body = f"""
 STOP-LOSS TRIGGERED:
 Symbol: {position['symbol']}
@@ -275,13 +379,13 @@ TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ---
 ARUN Trading Bot
         """
-        
+
         self._send_email(subject, body)
-    
+
     def _send_email_profit_target(self, position: Dict[str, Any]):
         """Send email notification for profit target hit"""
         subject = f"🎯 PROFIT TARGET HIT - {position['symbol']}"
-        
+
         body = f"""
 PROFIT TARGET ACHIEVED:
 Symbol: {position['symbol']}
@@ -296,16 +400,16 @@ TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ---
 ARUN Trading Bot
         """
-        
+
         self._send_email(subject, body)
-    
+
     def _send_email_auth(self, details: Dict[str, Any] = None):
         """Send email notification for authentication required"""
         subject = "🔑 ACTION REQUIRED: ARUN Bot Token Refresh"
-        
+
         body = f"""
 AUTHENTICATION REQUIRED:
-The mStock API session has expired or is missing. 
+The mStock API session has expired or is missing.
 
 Please open the ARUN Trading Bot and follow the prompts to:
 1. Refresh your session
@@ -323,7 +427,7 @@ ARUN Trading Bot
     def _send_email_circuit_breaker(self, details: Dict[str, Any]):
         """Send email notification for circuit breaker"""
         subject = "🚨 CIRCUIT BREAKER ACTIVATED - Trading Halted"
-        
+
         body = f"""
 CIRCUIT BREAKER TRIGGERED:
 
@@ -341,32 +445,32 @@ TIMESTAMP: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ---
 ARUN Trading Bot
         """
-        
+
         self._send_email(subject, body)
-    
+
     def _send_email(self, subject: str, body: str):
         """Send email using SMTP"""
         try:
             msg = MIMEMultipart()
-            msg['From'] = self.sender_email
-            msg['To'] = self.recipient_email
-            msg['Subject'] = subject
-            msg.attach(MIMEText(body, 'plain'))
-            
+            msg["From"] = self.sender_email
+            msg["To"] = self.recipient_email
+            msg["Subject"] = subject
+            msg.attach(MIMEText(body, "plain"))
+
             server = smtplib.SMTP(self.smtp_server, self.smtp_port)
             server.starttls()
             server.login(self.sender_email, self.sender_password)
             server.send_message(msg)
             server.quit()
-            
-            print(f"✅ Email sent: {subject}")
+
+            log.info(f"Email sent: {subject}")
         except Exception as e:
-            print(f"❌ Email failed: {e}")
-    
+            log.warning(f"Email failed: {e}")
+
     def _send_telegram_trade(self, trade: Dict[str, Any]):
         """Send Telegram notification for trade"""
-        action_emoji = "🟢" if trade['action'] == "BUY" else "🔴"
-        
+        action_emoji = "🟢" if trade["action"] == "BUY" else "🔴"
+
         message = f"""
 {action_emoji} <b>{trade['action']}: {trade['symbol']}</b>
 
@@ -377,9 +481,9 @@ Net: ₹{trade.get('net_amount', 0):,.2f}
 Strategy: {trade.get('strategy', 'N/A')}
 Time: {trade.get('timestamp', datetime.now().strftime('%H:%M:%S'))}
         """
-        
+
         self._send_telegram(message)
-    
+
     def _send_telegram_stop_loss(self, position: Dict[str, Any]):
         """Send Telegram notification for stop-loss"""
         message = f"""
@@ -390,9 +494,9 @@ Loss: ₹{position.get('loss_amount', 0):,.2f} ({position.get('loss_pct', 0):.2f
 
 Position closed automatically.
         """
-        
+
         self._send_telegram(message)
-    
+
     def _send_telegram_profit_target(self, position: Dict[str, Any]):
         """Send Telegram notification for profit target"""
         message = f"""
@@ -403,15 +507,15 @@ Profit: ₹{position.get('profit_amount', 0):,.2f} (+{position.get('profit_pct',
 
 Great job! Position closed at target.
         """
-        
+
         self._send_telegram(message)
-    
+
     def _send_telegram_auth(self, details: Dict[str, Any] = None):
         """Send Telegram notification for authentication required"""
         message = f"""
 🔑 <b>ACTION REQUIRED: TOKEN REFRESH</b>
 
-Your mStock session has expired. 
+Your mStock session has expired.
 
 Please check your registered phone for an OTP and enter it in the bot window to resume trading.
 
@@ -429,53 +533,55 @@ Portfolio: ₹{details.get('portfolio_value', 0):,.2f}
 
 <b>Trading halted for the day.</b>
         """
-        
+
         self._send_telegram(message)
-    
+
     def _send_telegram(self, message: str):
         """Send message via Telegram Bot API"""
         if not self.telegram_token or not self.telegram_chat_id:
             return
-        
+
         try:
             url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
             payload = {
-                'chat_id': self.telegram_chat_id,
-                'text': message,
-                'parse_mode': 'HTML'
+                "chat_id": self.telegram_chat_id,
+                "text": message,
+                "parse_mode": "HTML",
             }
-            
+
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 200:
-                print(f"✅ Telegram sent")
+                log.info("Telegram sent")
             else:
-                print(f"❌ Telegram failed: {response.text}")
+                log.warning(f"Telegram failed: {response.text}")
         except Exception as e:
-            print(f"❌ Telegram error: {e}")
-    
+            log.warning(f"Telegram error: {e}")
+
     def test_email(self) -> bool:
         """Test email configuration"""
         try:
             self._send_email(
                 "ARUN Bot - Test Email",
-                "This is a test email from ARUN Trading Bot.\n\nIf you received this, email notifications are working correctly!"
+                "This is a test email from ARUN Trading Bot.\n\nIf you received this, email notifications are working correctly!",
             )
             return True
         except Exception as e:
-            print(f"❌ Email test failed: {e}")
+            log.error(f"Email test failed: {e}")
             return False
-    
+
     def test_telegram(self) -> bool:
         """Test Telegram configuration"""
         try:
-            self._send_telegram("<b>ARUN Bot - Test Message</b>\n\nIf you received this, Telegram notifications are working correctly!")
+            self._send_telegram(
+                "<b>ARUN Bot - Test Message</b>\n\nIf you received this, Telegram notifications are working correctly!"
+            )
             return True
         except Exception as e:
-            print(f"❌ Telegram test failed: {e}")
+            log.error(f"Telegram test failed: {e}")
             return False
 
 
-# Convenience function for quick notifications
+# Convenience functions
 def notify_trade(trade_data: Dict, settings: Dict):
     """Send trade notification"""
     notifier = NotificationManager(settings)
@@ -508,53 +614,53 @@ def notify_circuit_breaker(details: Dict, settings: Dict):
 
 if __name__ == "__main__":
     # Test notification system
-    print("🧪 Testing Notification System...\n")
-    
+    print("Testing Notification System...\n")
+
     # Mock settings (replace with real credentials to test)
     mock_settings = {
-        'notifications': {
-            'email': {
-                'enabled': False,  # Set to True and add credentials to test
-                'smtp_server': 'smtp.gmail.com',
-                'smtp_port': 587,
-                'sender_email': 'your_email@gmail.com',
-                'sender_password': 'your_app_password',
-                'recipient_email': 'your_email@gmail.com'
+        "notifications": {
+            "email": {
+                "enabled": False,
+                "smtp_server": "smtp.gmail.com",
+                "smtp_port": 587,
+                "sender_email": "your_email@gmail.com",
+                "sender_password": "your_app_password",
+                "recipient_email": "your_email@gmail.com",
             },
-            'telegram': {
-                'enabled': False,  # Set to True and add credentials to test
-                'bot_token': 'YOUR_BOT_TOKEN',
-                'chat_id': 'YOUR_CHAT_ID'
-            }
+            "telegram": {
+                "enabled": False,
+                "bot_token": "YOUR_BOT_TOKEN",
+                "chat_id": "YOUR_CHAT_ID",
+            },
         }
     }
-    
+
     notifier = NotificationManager(mock_settings)
-    
+
     # Mock trade data
     mock_trade = {
-        'symbol': 'MICEL',
-        'exchange': 'BSE',
-        'action': 'BUY',
-        'quantity': 10,
-        'price': 245.50,
-        'gross_amount': 2455.00,
-        'total_fees': 26.51,
-        'net_amount': 2481.51,
-        'strategy': 'RSI',
-        'reason': 'RSI below 35',
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        "symbol": "MICEL",
+        "exchange": "BSE",
+        "action": "BUY",
+        "quantity": 10,
+        "price": 245.50,
+        "gross_amount": 2455.00,
+        "total_fees": 26.51,
+        "net_amount": 2481.51,
+        "strategy": "RSI",
+        "reason": "RSI below 35",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-    
-    print("📧 Email Enabled:", notifier.email_enabled)
-    print("📱 Telegram Enabled:", notifier.telegram_enabled)
-    
+
+    print("Email Enabled:", notifier.email_enabled)
+    print("Telegram Enabled:", notifier.telegram_enabled)
+
     if notifier.email_enabled:
-        print("\n✉️ Testing email...")
+        print("\nTesting email...")
         notifier.test_email()
-    
+
     if notifier.telegram_enabled:
-        print("\n📲 Testing Telegram...")
+        print("\nTesting Telegram...")
         notifier.test_telegram()
-    
-    print("\n✅ Notification system ready (configure credentials in settings.json to enable)")
+
+    print("\nNotification system ready (configure credentials in settings.json to enable)")

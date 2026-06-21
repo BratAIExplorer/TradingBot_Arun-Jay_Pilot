@@ -14,7 +14,18 @@
       "Bash(git rm:*)",
       "Bash(echo:*)",
       "WebSearch",
-      "WebFetch(domain:tradingapi.mstock.com)"
+      "WebFetch(domain:tradingapi.mstock.com)",
+      "Bash(test:*)",
+      "Bash(python3)",
+      "Bash(.venv\\\\Scripts\\\\python.exe)",
+      "Bash(awk '{print $9, \"\\(\" $5 \"\\)\"}')",
+      "Bash(cd \"/c/Antigravity/TradingBots-Aruns Project\" && find . -type f -name \"*.py\" | head -20)",
+      "Bash(dir \"C:\\\\Antigravity\\\\TradingBots-Aruns Project\\\\database\")",
+      "Bash(sqlite3 database/trades.db \"SELECT COUNT\\(*\\) as total_trades FROM trades; SELECT * FROM trades LIMIT 5;\")",
+      "Bash(ls -lh database/trades.db)",
+      "Bash(pip install *)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
     ]
   }
 }

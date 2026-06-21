@@ -258,6 +258,33 @@ class SettingsManager:
         is_valid = len(errors) == 0
         return is_valid, errors
     
+    def get_stock_rule(self, symbol: str, exchange: str, key: str, default=None):
+        """
+        Get per-stock rule with fallback to default.
+
+        Priority:
+        1. If stock exists and key is present: return stock value (even if None)
+        2. If stock exists but key missing: return default
+        3. If stock not found: return default
+
+        Example:
+            mgr.get_stock_rule("HDFCBANK", "NSE", "risk_tier", default="moderate")
+            # Returns "aggressive" if set per-stock, else "moderate"
+        """
+        stocks = self.get_stock_configs()
+
+        # Find matching stock by symbol and exchange
+        for stock in stocks:
+            if stock.get("symbol") == symbol and stock.get("exchange") == exchange:
+                # Stock found: return key value if it exists (even if None)
+                if key in stock:
+                    return stock[key]
+                # Key not in stock config: return default
+                return default
+
+        # Stock not found: return default
+        return default
+
     def get_stock_configs(self) -> list:
         """
         Get stock configurations from settings.json
@@ -266,7 +293,7 @@ class SettingsManager:
         # Auto-migrate if stocks not in settings but CSV exists
         if 'stocks' not in self.settings and os.path.exists('config_table.csv'):
             self.migrate_stock_configs()
-            
+
         return self.settings.get('stocks', [])
 
     def migrate_stock_configs(self):

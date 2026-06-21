@@ -653,18 +653,12 @@ class DashboardV2:
         self.entry_start_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
         self.entry_start_date.pack(side="left", padx=5)
         self.entry_start_date.insert(0, start_def)
-        # Bind for reactive refresh
-        self.entry_start_date.bind("<Return>", lambda e: self.refresh_trades_history())
-        self.entry_start_date.bind("<FocusOut>", lambda e: self.refresh_trades_history())
         
         ctk.CTkLabel(export_frame, text="to", text_color="#666").pack(side="left", padx=5)
         
         self.entry_end_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
         self.entry_end_date.pack(side="left", padx=5)
         self.entry_end_date.insert(0, end_def)
-        # Bind for reactive refresh
-        self.entry_end_date.bind("<Return>", lambda e: self.refresh_trades_history())
-        self.entry_end_date.bind("<FocusOut>", lambda e: self.refresh_trades_history())
         
         ctk.CTkButton(
             export_frame, 
@@ -715,11 +709,6 @@ class DashboardV2:
         self.trades_table.column("STRATEGY", width=150)
         
         self.trades_table.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Configure tags for colors and headers
-        self.trades_table.tag_configure("header", background="#F3F4F6", font=("Roboto", 11, "bold"))
-        self.trades_table.tag_configure("green", foreground=COLOR_SUCCESS)
-        self.trades_table.tag_configure("red", foreground=COLOR_DANGER)
 
     def build_stocks_view(self):
         """Promoted Top-Level Stocks Configuration View"""
@@ -805,127 +794,59 @@ class DashboardV2:
             self.settings_gui_instance.update_status = diverted_update
 
     def refresh_trades_history(self):
-        """Fetch recent trades from DB and populate table with temporal grouping"""
+        """Fetch recent trades from DB and populate table"""
         if not DATABASE_AVAILABLE or not db:
             return
             
         try:
-            # 1. Get date range from UI
-            start_val = self.entry_start_date.get()
-            end_val = self.entry_end_date.get()
-            
             # Clear table
             for item in self.trades_table.get_children():
                 self.trades_table.delete(item)
-            
-            # Use specialized export-style query if dates are provided, or fallback to generic recent
-            # For the live view, we'll try to get all trades in the range
-            query = """
-                SELECT * FROM trades 
-                WHERE DATE(timestamp) >= DATE(?) AND DATE(timestamp) <= DATE(?)
-                ORDER BY timestamp DESC
-            """
-            cursor = db.conn.cursor()
-            cursor.execute(query, (start_val, end_val))
-            trades = [dict(row) for row in cursor.fetchall()]
-            cursor.close()
                 
+            trades = db.get_recent_trades(limit=50) # Use DB method
+            
             pnl_wins = 0
             pnl_loss = 0
             
-            now = datetime.now()
-            today_str = now.strftime("%Y-%m-%d")
-            yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-            
-            buckets = {
-                "TODAY": [],
-                "YESTERDAY": [],
-                "LAST WEEK": [],
-                "OLDER": []
-            }
-            
-            last_week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-            
             for t in trades:
-                ts_raw = t.get('timestamp', '')
-                t_date = ts_raw[:10]
+                ts = t.get('timestamp', '').replace('T', ' ')[:19]
+                sym = t.get('symbol')
+                action = t.get('action')
+                qty = t.get('quantity')
+                price = t.get('price')
+                try:
+                    rsi_raw = t.get('rsi')
+                    rsi = float(rsi_raw) if rsi_raw is not None else 0.0
+                except: rsi = 0.0
                 
-                if t_date == today_str:
-                    buckets["TODAY"].append(t)
-                elif t_date == yesterday_str:
-                    buckets["YESTERDAY"].append(t)
-                elif t_date >= last_week_start:
-                    buckets["LAST WEEK"].append(t)
-                else:
-                    buckets["OLDER"].append(t)
+                rsi_str = f"{rsi:.1f}" if rsi > 0 else "-"
+                
+                try:
+                    pnl_raw = t.get('pnl_net')
+                    pnl = float(pnl_raw) if pnl_raw is not None else 0.0
+                except: pnl = 0.0
 
-            for bucket_name, bucket_trades in buckets.items():
-                if not bucket_trades:
-                    continue
+                strat = t.get('strategy', 'Manual')
                 
-                # Insert Header Row
-                self.trades_table.insert("", END, values=(f"📅 {bucket_name}", "", "", "", "", "", "", ""), tags=("header",))
+                if pnl > 0: pnl_wins += 1
+                elif pnl < 0: pnl_loss += 1
                 
-                for t in bucket_trades:
-                    ts = t.get('timestamp', '').replace('T', ' ')[:19]
-                    relative_time = self._get_relative_time(t.get('timestamp', ''))
-                    
-                    # We'll use the relative time in the TIME column or as a suffix
-                    display_time = f"{ts[11:16]} ({relative_time})" if bucket_name == "TODAY" else ts
-                    
-                    sym = t.get('symbol')
-                    action = t.get('action')
-                    qty = t.get('quantity')
-                    price = t.get('price')
-                    try:
-                        rsi_raw = t.get('rsi')
-                        rsi = float(rsi_raw) if rsi_raw is not None else 0.0
-                    except: rsi = 0.0
-                    
-                    rsi_str = f"{rsi:.1f}" if rsi > 0 else "-"
-                    
-                    try:
-                        pnl_raw = t.get('pnl_net')
-                        pnl = float(pnl_raw) if pnl_raw is not None else 0.0
-                    except: pnl = 0.0
-
-                    strat = t.get('strategy', 'Manual')
-                    
-                    if pnl > 0: pnl_wins += 1
-                    elif pnl < 0: pnl_loss += 1
-                    
-                    pnl_str = f"₹{pnl:.2f}" if pnl != 0 else "-"
-                    tag = "green" if pnl > 0 else ("red" if pnl < 0 else "")
-                    
-                    self.trades_table.insert("", END, values=(display_time, sym, action, qty, f"₹{price:.2f}", rsi_str, pnl_str, strat), tags=(tag,))
+                pnl_str = f"₹{pnl:.2f}" if pnl != 0 else "-"
+                tag = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+                
+                self.trades_table.insert("", END, values=(ts, sym, action, qty, f"₹{price:.2f}", rsi_str, pnl_str, strat), tags=(tag,))
             
             # Update counters
             self.lbl_trades_attempts.configure(text=str(len(trades)))
             self.lbl_trades_success.configure(text=str(pnl_wins))
             self.lbl_trades_failed.configure(text=str(pnl_loss))
             
+            # Configure tags
+            self.trades_table.tag_configure("green", foreground=COLOR_SUCCESS)
+            self.trades_table.tag_configure("red", foreground=COLOR_DANGER)
+            
         except Exception as e:
             self.write_log(f"Error refreshing trades history: {e}\n")
-
-    def _get_relative_time(self, timestamp_str):
-        """Helper to return humanized relative time"""
-        try:
-            # ISO format: 2026-03-05T14:30:00.000000
-            if 'T' in timestamp_str:
-                dt = datetime.fromisoformat(timestamp_str.split('.')[0])
-            else:
-                dt = datetime.strptime(timestamp_str[:19], "%Y-%m-%d %H:%M:%S")
-            
-            diff = datetime.now() - dt
-            seconds = int(diff.total_seconds())
-            
-            if seconds < 60: return "just now"
-            if seconds < 3600: return f"{seconds // 60}m ago"
-            if seconds < 86400: return f"{seconds // 3600}h ago"
-            if seconds < 604800: return f"{seconds // 86400}d ago"
-            return dt.strftime("%d %b")
-        except:
-            return ""
 
     def build_strategies_view(self):
         """Strategies View Content - Baskets & Strategies"""
@@ -2267,7 +2188,7 @@ class DashboardV2:
                 
                 if DATABASE_AVAILABLE and db:
                     perf_data = db.get_performance_summary(days=1)
-                    recent_trades_list = db.get_recent_trades(limit=10)
+                    recent_trades_list = db.get_recent_trades(limit=5)
                     today_trades_list = db.get_today_trades()
 
                 # 3. Fetch Positions (API - Shared with engine)
@@ -2373,47 +2294,26 @@ class DashboardV2:
                     self.lbl_win_rate.configure(text=new_text, text_color="#1a1a1a")
                     self.lbl_win_rate._current_text = new_text
             
-                    # 7. Update Recent Trades (Temporal Grouping)
-                    now = datetime.now()
-                    today_str = now.strftime("%Y-%m-%d")
-                    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-                    last_week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+            # 7. Update Recent Trades (Smart Refresh)
+            if hasattr(self, 'recent_trades_frame') and recent_trades:
+                current_top_id = f"{recent_trades[0].get('symbol')}_{recent_trades[0].get('timestamp')}"
+                if getattr(self, "_prev_top_trade_id", "") != current_top_id:
+                    for widget in self.recent_trades_frame.winfo_children():
+                        widget.destroy()
                     
-                    buckets = {"TODAY": [], "YESTERDAY": [], "LAST WEEK": [], "OLDER": []}
-                    for t in recent_trades:
-                        t_date = t.get('timestamp', '')[:10]
-                        if t_date == today_str: buckets["TODAY"].append(t)
-                        elif t_date == yesterday_str: buckets["YESTERDAY"].append(t)
-                        elif t_date >= last_week_start: buckets["LAST WEEK"].append(t)
-                        else: buckets["OLDER"].append(t)
-
-                    for b_name, b_trades in buckets.items():
-                        if not b_trades: continue
+                    for trade in recent_trades:
+                        action = trade.get('action', '?').upper()
+                        symbol = trade.get('symbol', '?')
+                        qty = trade.get('quantity', 0)
+                        price = trade.get('price', 0)
                         
-                        # Header
-                        h_row = ctk.CTkFrame(self.recent_trades_frame, fg_color="#F3F4F6", corner_radius=4)
-                        h_row.pack(fill="x", pady=(2, 1))
-                        ctk.CTkLabel(h_row, text=f" {b_name}", font=("Roboto", 9, "bold"), text_color="#666").pack(side="left", padx=5)
+                        action_icon = "🟢" if action == "BUY" else "🔴"
+                        color = COLOR_SUCCESS if action == "BUY" else COLOR_DANGER
                         
-                        for t in b_trades:
-                            # Row
-                            row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
-                            row.pack(fill="x", pady=1)
-                            
-                            sym = t.get('symbol', '???')
-                            action = t.get('action', 'BUY')
-                            price = float(t.get('price', 0))
-                            
-                            # Relative Time
-                            rel_time = self._get_relative_time(t.get('timestamp', ''))
-                            
-                            # Color based on action
-                            color = "#10B981" if action == "BUY" else "#EF4444"
-                            
-                            ctk.CTkLabel(row, text=sym, font=("Roboto", 10, "bold"), width=60, anchor="w").pack(side="left", padx=5)
-                            ctk.CTkLabel(row, text=action, font=("Roboto", 9), text_color=color, width=40).pack(side="left")
-                            ctk.CTkLabel(row, text=f"₹{price:,.1f}", font=("Roboto", 10), anchor="e", width=60).pack(side="left", padx=5)
-                            ctk.CTkLabel(row, text=rel_time, font=("Roboto", 9), text_color="#888", anchor="e").pack(side="right", padx=5)
+                        row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
+                        row.pack(fill="x", pady=1)
+                        ctk.CTkLabel(row, text=f"{action_icon} {action}", font=("Roboto", 10, "bold"), text_color=color).pack(side="left")
+                        ctk.CTkLabel(row, text=f" {symbol} {qty} @ ₹{price:.1f}", font=("Roboto", 11, "bold"), text_color="#1a1a1a").pack(side="left")
                     
                     self._prev_top_trade_id = current_top_id
 

@@ -33,3 +33,19 @@ The bot has a built-in safety mechanism for this specific error:
 1.  **Verify Holdings**: Check your mStock app. Do you actually hold HINDCOPPER (60) and TATASTEEL (5)?
 2.  **If Sold Manually**: The bot's database is out of sync. You may need to manually mark these trades as closed in the database or ignore the alerts until the position clears from the bot's memory (if based on T+1 logic).
 3.  **Code Enhancement (Planned)**: Update the bot to automatically "Right-Size" or "invalidate" positions in its local database when this specific error occurs, efficiently syncing with the broker's reality.
+
+---
+
+## Incident: 2026-03-07 - Database Initialization Error on VPS
+
+**Timestamp:** 2026-03-07 01:00:00
+
+**Error Message:**
+> sqlite3.OperationalError: no such table: system_control
+
+**Root Cause Analysis:**
+When copying the Bot to a new server (like the VPS), the new database file is empty if `trades.db` is not copied over manually. The FastAPI server (`web_api.py`) expects all tables, including analytics and system_control, to be fully present before it can function and serve API endpoints.
+
+**Current Behavior & Fix:**
+Manually ran the `trades_db.py` initialization logic on the VPS to ensure the SQLite schema was fully created.
+`python -c "from database.trades_db import TradesDatabase; db = TradesDatabase('database/trades.db')"`

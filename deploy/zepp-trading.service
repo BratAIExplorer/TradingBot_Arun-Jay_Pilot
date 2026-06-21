@@ -1,0 +1,18 @@
+[Unit]
+Description=Zepp Trading Engine — ARUN Bot kickstart.py
+After=network.target zepp-web.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/zepp
+EnvironmentFile=/opt/zepp/.env
+ExecStart=/opt/zepp/venv/bin/python kickstart.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/zepp/logs/trading.log
+StandardError=append:/opt/zepp/logs/trading.log
+
+[Install]
+WantedBy=multi-user.target

@@ -712,7 +712,7 @@ class SettingsGUI:
                 stock.get('sell_rsi', 70),
                 "Yes" if stock.get('Ignore_RSI', False) else "No",
                 stock.get('quantity', 0),
-                stock.get('profit_target_pct', 1.0),
+                f"{stock.get('profit_target_pct', 10.0)}%", # Persisted Target %
                 price_disp, # PERSISTED PRICE
                 status_disp # PERSISTED STATUS
             ))
@@ -854,8 +854,10 @@ class SettingsGUI:
                 if price is not None:
                     price_text = f"₹{price:,.2f}"
                     status_text = "✅ OK"
-                    new_vals[9] = price_text
-                    new_vals[10] = status_text
+                    new_vals.append("") # padding if needed
+                    new_vals.append("")
+                    new_vals[10] = price_text # Price Column
+                    new_vals[11] = status_text # Status Column
                     success_count += 1
                     
                     # UPDATE CACHE
@@ -867,8 +869,10 @@ class SettingsGUI:
                     }
                     
                 else:
-                    new_vals[9] = "-"
-                    new_vals[10] = "❌ No Data"
+                    new_vals.append("")
+                    new_vals.append("")
+                    new_vals[10] = "-"
+                    new_vals[11] = "❌ No Data"
                     error_count += 1
                     # Show error in status bar briefly
                     self.update_status(f"Error {symbol}: {last_error[:40]}", "red")

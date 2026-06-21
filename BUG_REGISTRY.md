@@ -39,6 +39,8 @@ Quick status of all known bugs and their tests:
 - [x] **BUG-010** - Dashboard title still shows "ARUN TITAN" after rebrand to ORBIT
 - [x] **BUG-011** - Settings missing IBKR broker option
 - [x] **BUG-012** - US market selection shows India positions without market context
+- [ ] **BUG-013** - Broker credential fields hardcoded for mStock (IBKR needs different fields)
+- [ ] **BUG-014** - Market filter not working (USD market still shows India stock positions)
 
 ---
 
@@ -428,6 +430,118 @@ When user switched market from India to US in market selector, positions table d
 
 ---
 
+### BUG-013: Broker Credential Fields Hardcoded for mStock
+
+**Severity:** HIGH (Feature Gap)  
+**Status:** OPEN (v2.6.0)  
+**Date Found:** 2026-06-21
+
+**Root Cause:**
+Settings GUI has hardcoded credential fields for mStock:
+- API Key, API Secret, Client Code, Password, TOTP Secret, Access Token
+
+When user selects IBKR broker, same fields are shown. But IBKR needs:
+- Account ID, Username, Password, Trading Permission token
+
+This creates confusion and prevents proper IBKR integration.
+
+**Expected Behavior:**
+```
+User selects broker from dropdown
+↓
+Form fields should change based on broker:
+  mStock:  [API Key] [API Secret] [Client Code] [Password] [TOTP] [Token]
+  IBKR:    [Account ID] [Username] [Password] [Auth Token] [Trading Perm]
+  Zerodha: [API Key] [API Secret] [Client ID]
+  Other:   [Generic fields]
+```
+
+**Impact:**
+- Users can't properly configure IBKR
+- Wrong credentials attempted
+- Connection failures
+
+**To Fix:**
+- Create broker-specific credential schemas
+- Implement dynamic form field generation
+- Show only relevant fields for selected broker
+
+**Regression Test:** `test_broker_fields_dynamic()`  
+**Pre-Commit Check:** Verify broker fields match selected broker type
+
+---
+
+### BUG-014: Market Filter Not Working (USD Shows India Stocks)
+
+**Severity:** HIGH (Critical UX Issue)  
+**Status:** OPEN (v2.6.0)  
+**Date Found:** 2026-06-21
+
+**Root Cause:**
+Market selector switches between India (INR) and US (USD) markets, but:
+1. ✅ Dashboard title updates ("Market: India" vs "Market: US")
+2. ❌ Positions table NOT filtered by market
+3. ❌ Shows same India stocks regardless of market selection
+
+Problem: `safe_get_live_positions_merged()` returns ALL broker positions, but:
+- Broker account is singular (same account for both markets)
+- No market association with positions
+- No filtering logic when market changes
+
+**Expected Behavior:**
+```
+User selects market: United States
+↓
+Positions table should:
+  - Filter to only US stock positions
+  - Show symbols in $ USD
+  - Hide India (₹) symbols
+  - Show "Portfolio: 0 positions (no US holdings yet)"
+```
+
+**Current Behavior:**
+```
+User selects market: United States
+↓
+Positions table shows:
+  - MOSCHIP (India stock) ✗
+  - GOLDBEES (India stock) ✗
+  - All in ₹ INR despite USD selector
+```
+
+**Root Cause Analysis:**
+- `positions_worker()` calls `safe_get_live_positions_merged()` 
+- This returns ALL positions from broker account
+- No market filtering applied when switching markets
+- Settings have per-market stocks, but live positions don't
+
+**Solution:**
+- Store market association with each position
+- Filter positions by market when displaying
+- Check if symbol is in current market's configured stocks
+- Show explanatory message if no positions for selected market
+
+**Regression Test:** `test_market_filter_positions()`  
+**Test Scenario:**
+```python
+def test_market_filter_positions():
+    dashboard.positions = {
+        'MOSCHIP': {..., 'market': 'IN'},
+        'AAPL': {..., 'market': 'US'}
+    }
+    
+    # Select US market
+    dashboard.switch_to_market('US')
+    
+    # Should show only AAPL
+    assert 'AAPL' in dashboard.filtered_positions
+    assert 'MOSCHIP' not in dashboard.filtered_positions
+```
+
+**Pre-Commit Check:** Verify market filter logic in `_on_market_changed()`
+
+---
+
 ## Running Regression Tests
 
 ### Run all tests:
@@ -469,17 +583,19 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 | "ARUN TITAN" in window title | BUG-010 | ⚠️ Warn (except in comments/strings) |
 | Broker options missing "ibkr" | BUG-011 | ⚠️ Warn |
 | Market selector without context label | BUG-012 | ⚠️ Warn |
+| Broker fields hardcoded (not dynamic) | BUG-013 | ⚠️ Warn |
+| Market filter not checking symbol market | BUG-014 | ⚠️ Warn |
 
 ---
 
 ## Validation Dashboard
 
 **Last Validation:** 2026-06-21  
-**All Tests:** ✅ PASSING  
-**Coverage:** 100%  
-**Bugs Fixed:** 12/12
+**Status:** 12 FIXED + 2 OPEN  
+**Fixed Bugs:** 12/14  
+**Coverage:** 85.7%
 
-**Core Trading Bugs:**
+**Core Trading Bugs (FIXED):**
 
 | Bug | Test | Status | Coverage | Fixed |
 |-----|------|--------|----------|-------|
@@ -493,13 +609,20 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 | BUG-008 | test_neutral_trades_count | ✅ PASS | 100% | v2.5.2 |
 | BUG-009 | test_never_sell_at_loss_enforcement | ✅ PASS | 100% | v2.5.2 |
 
-**UX & Product Bugs:**
+**UX & Product Bugs (FIXED):**
 
 | Bug | Test | Status | Coverage | Fixed |
 |-----|------|--------|----------|-------|
 | BUG-010 | test_dashboard_title_correct | ✅ PASS | 100% | v2.6.0 |
 | BUG-011 | test_broker_options_include_ibkr | ✅ PASS | 100% | v2.6.0 |
 | BUG-012 | test_market_context_label_updates | ✅ PASS | 100% | v2.6.0 |
+
+**Critical Issues (OPEN - v2.6.1 Priority):**
+
+| Bug | Test | Status | Severity | Issue |
+|-----|------|--------|----------|-------|
+| BUG-013 | test_broker_fields_dynamic | ⏳ TODO | HIGH | Broker credential fields hardcoded for mStock |
+| BUG-014 | test_market_filter_positions | ⏳ TODO | HIGH | USD market still shows India stock positions |
 
 ---
 

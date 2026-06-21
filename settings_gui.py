@@ -7,7 +7,7 @@ import customtkinter as ctk
 from tkinter import messagebox, ttk
 from settings_manager import SettingsManager
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 # import pandas as pd # Removed dependency
 import os
 import time
@@ -22,6 +22,36 @@ COLOR_BG = "#EFEBE3"     # Soft Cream
 COLOR_TEXT = "#1a1a1a"   # High Contrast Dark Gray
 COLOR_DANGER = "#EF4444"  # Red-500
 COLOR_SUCCESS = "#10B981" # Emerald-500
+
+# BROKER-SPECIFIC CREDENTIAL SCHEMAS (BUG-013: Dynamic broker fields)
+BROKER_CREDENTIAL_FIELDS: Dict[str, List[Tuple[str, str, str]]] = {
+    'mstock': [
+        ('api_key', 'API Key', 'Enter API Key'),
+        ('api_secret', 'API Secret', 'Enter API Secret'),
+        ('client_code', 'Client Code (Broker)', 'Enter Client Code'),
+        ('password', 'Password (Broker)', 'Enter Password'),
+        ('totp_secret', 'TOTP Secret (Auto-Login)', 'Enter TOTP Secret'),
+        ('access_token', 'Access Token (Manual)', 'Enter Access Token'),
+    ],
+    'ibkr': [
+        ('account_id', 'Account ID', 'Enter Account ID (e.g., DU12345)'),
+        ('username', 'Username (Email)', 'Enter your IBKR email'),
+        ('password', 'Password', 'Enter your IBKR password'),
+        ('auth_token', 'Auth Token', 'Enter IBKR Auth Token'),
+        ('trading_perm_token', 'Trading Permission Token', 'Enter Trading Token'),
+    ],
+    'zerodha': [
+        ('api_key', 'API Key', 'Enter Kite Connect API Key'),
+        ('api_secret', 'API Secret', 'Enter Kite Connect API Secret'),
+        ('client_id', 'Client ID', 'Enter your Zerodha Client ID'),
+        ('password', 'Password', 'Enter your Zerodha password'),
+    ],
+    'other': [
+        ('api_key', 'API Key', 'Enter API Key'),
+        ('api_secret', 'API Secret', 'Enter API Secret'),
+        ('password', 'Password', 'Enter your password'),
+    ],
+}
 
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
@@ -150,12 +180,11 @@ class SettingsGUI:
             pass
 
     def build_broker_tab(self):
-        """Broker credentials configuration"""
+        """Broker credentials configuration with dynamic fields per broker type"""
         tab = self.tabview.tab("Broker")
-        
-        # Get broker settings
+        self.broker_tab = tab
         broker = self.settings_mgr.get("broker", {})
-        
+
         # Paper Trading Mode Toggle
         paper_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
         paper_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
@@ -170,21 +199,13 @@ class SettingsGUI:
         )
         paper_check.pack(side="left", padx=(15, 5), pady=10)
 
-        # Help button for Paper Mode (Manual pack)
         help_btn_1 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
+            paper_frame,  text="?", width=20, height=20, fg_color="transparent", border_width=1,
+            text_color="gray", hover_color="#333333",
+            command=lambda: messagebox.showinfo("Paper Trading", "When enabled, trades are simulated. No real money used. Recommended for testing.")
         )
         help_btn_1.pack(side="left", padx=(0, 15), pady=10)
 
-        # Nifty 50 Filter Toggle
         self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
         nifty_check = ctk.CTkCheckBox(
             paper_frame,
@@ -194,26 +215,21 @@ class SettingsGUI:
             text_color="#27AE60"
         )
         nifty_check.pack(side="left", padx=(15, 5), pady=10)
-        
-        # Help button for Nifty Filter (Manual pack)
+
         help_btn_2 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
+            paper_frame, text="?", width=20, height=20, fg_color="transparent", border_width=1,
+            text_color="gray", hover_color="#333333",
+            command=lambda: messagebox.showinfo("Nifty 50 Filter", "ONLY trade Nifty 50 stocks. Blocks risky penny stocks automatically.")
         )
         help_btn_2.pack(side="left", padx=(0, 15), pady=10)
 
-        # Broker selection
+        # Broker selection with dynamic callback
         broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 16, "bold"), text_color=COLOR_TEXT)
         broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
-        
+
         self.broker_var = ctk.StringVar(value=broker.get("name", "mstock"))
+        self.broker_var.trace("w", lambda *args: self._on_broker_changed())
+
         broker_menu = ctk.CTkOptionMenu(
             tab,
             variable=self.broker_var,
@@ -221,79 +237,16 @@ class SettingsGUI:
             width=200
         )
         broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)
-        
-        # API Key
-        api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 14), text_color=COLOR_TEXT)
-        api_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
-        self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
-        self.api_key_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
-        # Help button for API Key
-        self.add_help_button(tab, 2, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
-        
-        # API Secret
-        secret_label = ctk.CTkLabel(tab, text="API Secret:", font=("Arial", 12))
-        secret_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
-        self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
-        self.api_secret_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        # Credential fields container (will be recreated dynamically)
+        self.broker_fields_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        self.broker_fields_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=20, pady=10)
 
-        # Help button for API Secret
-        self.add_help_button(tab, 3, "API Secret: Companion to API Key, found in the same API portal.")
-        
-        # Client Code
-        ctk.CTkLabel(tab, text="Client Code (Broker):", font=("Arial", 12)).grid(row=4, column=0, sticky="w", padx=20, pady=10)
-        
-        self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
-        self.client_code_entry.insert(0, broker.get("client_code", ""))
-        self.client_code_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
+        # Store for dynamic field entries
+        self.broker_field_entries: Dict[str, ctk.CTkEntry] = {}
 
-        # Help button for Client Code
-        self.add_help_button(tab, 4, "Client Code: Your unique login ID provided by the broker.")
-        
-        # Password
-        ctk.CTkLabel(tab, text="Password (Broker):", font=("Arial", 12)).grid(row=5, column=0, sticky="w", padx=20, pady=10)
-        
-        self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
-        self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
-        self.password_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
-
-        # Help button for Password
-        self.add_help_button(tab, 5, "Password: Your login password for the broker portal.")
-
-        # TOTP Secret (For Auto-Login)
-        ctk.CTkLabel(tab, text="TOTP Secret (Auto-Login):", font=("Arial", 12)).grid(row=6, column=0, sticky="w", padx=20, pady=10)
-        
-        self.totp_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter TOTP Secret (e.g., JBSWY3DPEHPK3PXP)", show="*")
-        self.totp_entry.insert(0, self.settings_mgr.get_decrypted("broker.totp_secret", ""))
-        self.totp_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
-        
-        # Validation Button
-        validate_totp_btn = ctk.CTkButton(
-            tab,
-            text="Validate",
-            width=60,
-            command=self.validate_totp_secret,
-            fg_color="#E67E22",
-            hover_color="#D35400"
-        )
-        validate_totp_btn.grid(row=6, column=3, sticky="w", padx=5)
-
-        self.add_help_button(tab, 6, "TOTP Secret: Found in mStock 'Trading APIs' > 'Enable TOTP'. Setting this enables 100% automated daily login!")
-
-        # Access Token
-        token_label = ctk.CTkLabel(tab, text="Access Token (Manual):", font=("Arial", 12))
-        token_label.grid(row=7, column=0, sticky="w", padx=20, pady=10)
-        
-        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token (if TOTP not used)", show="*")
-        self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
-        self.access_token_entry.grid(row=7, column=1, sticky="w", padx=10, pady=10)
-        
-        # Help button for Token
-        self.add_help_button(tab, 7, "Access Token: \n- Manual Override if Auto-Login fails.\n- Generated via login flow every day.")
+        # Build initial fields for selected broker
+        self._rebuild_broker_fields()
 
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
@@ -303,8 +256,8 @@ class SettingsGUI:
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
-        show_pass_check.grid(row=8, column=1, sticky="w", padx=10, pady=5)
-        
+        show_pass_check.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
         # Info label
         info = ctk.CTkLabel(
             tab,
@@ -312,7 +265,7 @@ class SettingsGUI:
             font=("Arial", 10),
             text_color="gray"
         )
-        info.grid(row=9, column=0, columnspan=2, padx=20, pady=5)
+        info.grid(row=4, column=0, columnspan=3, padx=20, pady=5)
 
         # Test Connection Button
         test_btn = ctk.CTkButton(
@@ -324,7 +277,87 @@ class SettingsGUI:
             fg_color="#8E44AD",
             hover_color="#732D91"
         )
-        test_btn.grid(row=10, column=0, columnspan=3, pady=20)
+        test_btn.grid(row=5, column=0, columnspan=3, pady=20)
+
+    def _on_broker_changed(self) -> None:
+        """BUG-013 Fix: Handle broker selection change and rebuild fields dynamically"""
+        self._rebuild_broker_fields()
+
+    def _rebuild_broker_fields(self) -> None:
+        """BUG-013 Fix: Rebuild credential form fields based on selected broker type"""
+        # Clear existing fields
+        for widget in self.broker_fields_frame.winfo_children():
+            widget.destroy()
+        self.broker_field_entries.clear()
+
+        broker_name = self.broker_var.get()
+        fields = BROKER_CREDENTIAL_FIELDS.get(broker_name, BROKER_CREDENTIAL_FIELDS['mstock'])
+        broker_data = self.settings_mgr.get("broker", {})
+
+        # Build fields for selected broker
+        for idx, (field_name, field_label, placeholder) in enumerate(fields):
+            # Label
+            label = ctk.CTkLabel(
+                self.broker_fields_frame,
+                text=f"{field_label}:",
+                font=("Arial", 12),
+                text_color=COLOR_TEXT
+            )
+            label.grid(row=idx, column=0, sticky="w", padx=(20, 0), pady=10)
+
+            # Entry field
+            is_password = 'password' in field_name.lower() or 'token' in field_name.lower() or 'secret' in field_name.lower()
+            entry = ctk.CTkEntry(
+                self.broker_fields_frame,
+                width=300,
+                placeholder_text=placeholder,
+                show="*" if is_password else ""
+            )
+
+            # Load existing value
+            existing_value = self.settings_mgr.get_decrypted(f"broker.{field_name}", "")
+            if existing_value:
+                entry.insert(0, existing_value)
+
+            entry.grid(row=idx, column=1, sticky="w", padx=10, pady=10)
+            self.broker_field_entries[field_name] = entry
+
+            # Help button
+            help_text = self._get_broker_field_help(broker_name, field_name)
+            if help_text:
+                self.add_help_button(self.broker_fields_frame, idx, help_text)
+
+    def _get_broker_field_help(self, broker: str, field: str) -> str:
+        """Get help text for broker credential fields"""
+        help_map = {
+            'mstock': {
+                'api_key': 'Get from mStock Developer Console > API Settings',
+                'api_secret': 'Pair with API Key from Developer Console',
+                'client_code': 'Your mStock Client ID (e.g., MA8224736)',
+                'password': 'Your mStock login password',
+                'totp_secret': 'Enable in mStock Trading APIs > TOTP for auto-login',
+                'access_token': 'Generated via login flow daily',
+            },
+            'ibkr': {
+                'account_id': 'Your IBKR Account ID (e.g., DU12345)',
+                'username': 'Your IBKR email address',
+                'password': 'Your IBKR password',
+                'auth_token': 'Get from IBKR API settings',
+                'trading_perm_token': 'Enable trading permissions in IBKR',
+            },
+            'zerodha': {
+                'api_key': 'Get from Zerodha API Console > API Keys',
+                'api_secret': 'Pair with API Key from Kite Connect',
+                'client_id': 'Your Zerodha Client ID',
+                'password': 'Your Zerodha password',
+            },
+            'other': {
+                'api_key': 'Your broker API Key',
+                'api_secret': 'Your broker API Secret',
+                'password': 'Your broker password',
+            }
+        }
+        return help_map.get(broker, {}).get(field, "")
     
     def build_capital_tab(self):
         """Capital management configuration"""

@@ -1821,7 +1821,7 @@ class DashboardV2:
     # Note: Holdings filter & positions table are built in build_dashboard_view() (line ~490)
 
     def filter_positions_display(self, filter_value=None):
-        """Filter positions table by source (ALL/BOT/MANUAL)"""
+        """BUG-014 Fix: Filter positions by source (ALL/BOT/MANUAL) AND by market"""
         try:
             # Hide Loading Indicator if it exists
             if hasattr(self, 'lbl_pos_loading') and self.lbl_pos_loading.winfo_exists():
@@ -1833,19 +1833,31 @@ class DashboardV2:
             for item in self.pos_table.get_children():
                 self.pos_table.delete(item)
 
+            # Get configured stocks for current market (BUG-014: market filtering)
+            market_configs = self.settings_mgr.get_stock_configs(market=self.current_market) if hasattr(self.settings_mgr, 'get_stock_configs') else []
+            market_symbols = {cfg.get('symbol', '').upper() for cfg in market_configs} if market_configs else set()
+
             # Re-populate based on filter
             total_pnl = 0
             bot_count = 0
             manual_count = 0
+            market_filtered_count = 0
 
             for sym, pos in self.all_positions_data.items():
+                symbol_str = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
+
+                # BUG-014: Filter by market - only show positions configured for this market
+                if market_symbols and symbol_str.upper() not in market_symbols:
+                    market_filtered_count += 1
+                    continue
+
                 source = str(pos.get("source", "BOT")).upper()
 
                 # Determine if this is a Bot position (includes SETTLING)
                 is_bot = "BOT" in source
                 is_manual = not is_bot
 
-                # Apply filter
+                # Apply source filter
                 if filter_val == "BOT" and not is_bot:
                     continue
                 if filter_val == "MANUAL" and not is_manual:
@@ -1857,7 +1869,6 @@ class DashboardV2:
                 else:
                     manual_count += 1
 
-                s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
                 pnl = pos.get("pnl", 0)
                 qty = pos.get("qty", 0)
                 avg = pos.get("price", 0)
@@ -1870,20 +1881,22 @@ class DashboardV2:
                 total_pnl += pnl
                 tag = "green" if pnl >= 0 else "red"
                 # Icon prefix for source
-                source_icon = "🤖" if is_bot else "👤"
+                source_icon = "[BOT]" if is_bot else "[MANUAL]"
                 source_tag = "bot" if is_bot else "manual"
 
                 self.pos_table.insert(
                     "", END,
-                    values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
+                    values=(symbol_str, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
                     tags=(tag, source_tag)
                 )
 
-            # Update stats
+            # Update stats with market info (BUG-014)
             total_positions = bot_count + manual_count
-            self.lbl_position_stats.configure(
-                text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
-            )
+            market_name = self.current_market_config.name if hasattr(self, 'current_market_config') else self.current_market
+            stats_text = f"[{market_name}] Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
+            if market_filtered_count > 0:
+                stats_text += f" (Hidden from other markets: {market_filtered_count})"
+            self.lbl_position_stats.configure(text=stats_text)
         except Exception as e:
             print(f"Filter error: {e}")
 

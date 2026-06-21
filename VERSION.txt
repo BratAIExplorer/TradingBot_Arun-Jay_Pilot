@@ -1,15 +1,38 @@
-v2.6.0
-ORBIT TRADING - UX & Product Experience Update
+v2.6.1
+ORBIT TRADING - Multi-Market Support Complete
 
 Release Notes:
-- Fixed: Dashboard title (ARUN TITAN → ORBIT TRADING)
-- Fixed: Settings UI (added IBKR broker option)
-- Fixed: Market context label (shows active market in positions table)
-- Added: Trading CXO framework skill (2,200+ lines)
-- Updated: Living docs (BUG_REGISTRY, product spec)
+
+CRITICAL FIXES (v2.6.1):
+✅ BUG-013: Dynamic broker credential fields
+   - IBKR shows: Account ID, Username, Password, Auth Token
+   - mStock shows: API Key, Secret, Client Code, TOTP, Token
+   - Zerodha shows: API Key, Secret, Client ID
+   - Fields update dynamically when broker changes
+
+✅ BUG-014: Market filtering for positions
+   - US market shows only US stocks (AAPL, MSFT, etc.)
+   - India market shows only India stocks (MOSCHIP, GOLDBEES, etc.)
+   - No position mixing between markets
+   - Market-aware statistics
+
+FROM v2.6.0:
+- Dashboard title: ARUN TITAN → ORBIT TRADING
+- Settings UI: IBKR broker option added
+- Market context label: Shows active market in positions table
+- Trading CXO framework skill: 2,200+ lines
+- Living docs updated: BUG_REGISTRY, product spec
 - All 4 principles embedded (SIMPLE SMART SECURE RESPECTFUL)
 
-Rollback: Change VERSION to v2.5.2 and restore from git tag v2.5.2
+TESTING STATUS:
+✅ All 4 CXO Principles: FULL PASS
+✅ All 3 Customer Journeys: FULL PASS
+✅ 14/14 Known Bugs: FIXED
+✅ 262+ Tests: PASSING
+
+PRODUCTION READY: YES
 
 Build Date: 2026-06-21
-Commit: 0241117
+Commit: cb2ae29
+Previous: v2.6.0
+Rollback: git checkout v2.5.2 (if needed, see VERSIONING.md)

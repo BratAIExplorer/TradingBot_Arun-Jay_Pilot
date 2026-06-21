@@ -35,12 +35,12 @@ Quick status of all known bugs and their tests:
 - [x] **BUG-008** - Missing neutral trade edge case in performance summary
 - [x] **BUG-009** - Never sell at loss (3-layer defense-in-depth)
 
-**UX & Product Bugs (v2.6.0):**
-- [x] **BUG-010** - Dashboard title still shows "ARUN TITAN" after rebrand to ORBIT
-- [x] **BUG-011** - Settings missing IBKR broker option
-- [x] **BUG-012** - US market selection shows India positions without market context
-- [ ] **BUG-013** - Broker credential fields hardcoded for mStock (IBKR needs different fields)
-- [ ] **BUG-014** - Market filter not working (USD market still shows India stock positions)
+**UX & Product Bugs:**
+- [x] **BUG-010** - Dashboard title still shows "ARUN TITAN" after rebrand to ORBIT (FIXED v2.6.0)
+- [x] **BUG-011** - Settings missing IBKR broker option (FIXED v2.6.0)
+- [x] **BUG-012** - US market selection shows India positions without market context (FIXED v2.6.0)
+- [x] **BUG-013** - Broker credential fields hardcoded for mStock (FIXED v2.6.1)
+- [x] **BUG-014** - Market filter not working (FIXED v2.6.1)
 
 ---
 
@@ -591,9 +591,9 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 ## Validation Dashboard
 
 **Last Validation:** 2026-06-21  
-**Status:** 12 FIXED + 2 OPEN  
-**Fixed Bugs:** 12/14  
-**Coverage:** 85.7%
+**Status:** 14/14 FIXED  
+**Coverage:** 100%  
+**All Principles:** ✅ SIMPLE, ✅ RESPECTFUL, ✅ SECURE, ✅ SMART
 
 **Core Trading Bugs (FIXED):**
 
@@ -617,12 +617,12 @@ The pre-commit hook checks for these patterns to prevent reintroduction of bugs:
 | BUG-011 | test_broker_options_include_ibkr | ✅ PASS | 100% | v2.6.0 |
 | BUG-012 | test_market_context_label_updates | ✅ PASS | 100% | v2.6.0 |
 
-**Critical Issues (OPEN - v2.6.1 Priority):**
+**Critical Issues (ALL FIXED - v2.6.1):**
 
-| Bug | Test | Status | Severity | Issue |
+| Bug | Test | Status | Severity | Fixed |
 |-----|------|--------|----------|-------|
-| BUG-013 | test_broker_fields_dynamic | ⏳ TODO | HIGH | Broker credential fields hardcoded for mStock |
-| BUG-014 | test_market_filter_positions | ⏳ TODO | HIGH | USD market still shows India stock positions |
+| BUG-013 | test_broker_fields_dynamic | ✅ FIXED | HIGH | v2.6.1 |
+| BUG-014 | test_market_filter_positions | ✅ FIXED | HIGH | v2.6.1 |
 
 ---
 

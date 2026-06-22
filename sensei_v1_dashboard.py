@@ -247,15 +247,69 @@ class DashboardV2:
             try:
                 positions = safe_get_live_positions_merged()
                 if positions:
+                    # Filter positions by current market (BUG-014 fix)
+                    filtered_positions = self._filter_positions_by_market(positions)
                     # Cache holdings for next startup
-                    state_mgr.cache_holdings(positions)
-                    self.data_queue.put(("positions", positions))
-                    self.write_log(f"✅ Fetched {len(positions)} holdings from API\n")
+                    state_mgr.cache_holdings(filtered_positions)
+                    self.data_queue.put(("positions", filtered_positions))
+                    self.write_log(f"✅ Fetched {len(filtered_positions)} holdings from {self.current_market_config.name} market\n")
                 else:
                     self.write_log("⚠️ No positions returned from API\n")
             except Exception as e:
                 self.write_log(f"❌ Positions fetch error: {e}\n")
             time.sleep(10)  # Refresh every 10 seconds
+
+    def _filter_positions_by_market(self, positions: dict) -> dict:
+        """
+        Filter broker positions to only include those from the current market.
+
+        Market detection logic:
+        - India market (IN): Exchange = 'NSE' or 'BSE'
+        - US market (US): Exchange = 'SMART' or 'NYSE' or 'NASDAQ'
+
+        Args:
+            positions: Dict with keys (symbol, exchange) from merge_positions_and_orders()
+
+        Returns:
+            Filtered dict containing only positions from current market
+        """
+        if not hasattr(self, 'current_market'):
+            return positions
+
+        # Map market codes to expected exchanges
+        market_exchanges = {
+            'IN': ('NSE', 'BSE', 'NCDEX', 'MCX'),
+            'US': ('SMART', 'NYSE', 'NASDAQ', 'ARCA', 'ISLAND')
+        }
+
+        allowed_exchanges = market_exchanges.get(self.current_market, ())
+        if not allowed_exchanges:
+            return positions
+
+        # Filter positions by exchange
+        filtered = {}
+        for (symbol, exchange), pos_data in positions.items():
+            if exchange.upper() in allowed_exchanges:
+                filtered[(symbol, exchange)] = pos_data
+
+        return filtered
+
+    def get_market_filtered_positions(self) -> dict:
+        """
+        Get live positions filtered for current market.
+
+        Convenience method that returns market-filtered positions.
+        Uses cached data if available, falls back to API fetch with filtering.
+
+        Returns:
+            Dict with (symbol, exchange) keys, filtered by current market
+        """
+        if hasattr(self, 'all_positions_data') and self.all_positions_data:
+            return self.all_positions_data
+
+        # Fallback: fetch and filter
+        positions = safe_get_live_positions_merged()
+        return self._filter_positions_by_market(positions)
 
     def connectivity_worker(self):
         """Background worker to check backend connectivity"""

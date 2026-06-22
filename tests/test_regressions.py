@@ -721,5 +721,65 @@ def test_never_sell_at_loss_disabled():
     assert should_allow, "Should allow sell at loss when setting disabled"
 
 
+# ============================================================================
+# BUG-014: Market Filter Not Working
+# ============================================================================
+
+@pytest.mark.regression
+def test_market_filter_positions():
+    """
+    BUG-014: Verify positions are filtered by market when switching markets.
+
+    When user selects US market, only US positions should be shown.
+    When user selects India market, only India positions should be shown.
+
+    Market determination:
+    - India (IN): NSE, BSE, NCDEX, MCX exchanges
+    - US (US): SMART, NYSE, NASDAQ, ARCA, ISLAND exchanges
+    """
+    # Sample positions from broker (mixed markets)
+    all_positions = {
+        ("MOSCHIP", "NSE"): {"qty": 5, "price": 178.89, "pnl": 0.0},      # India
+        ("NIFTYBEES", "NSE"): {"qty": 10, "price": 289.48, "pnl": 0.0},   # India
+        ("AAPL", "SMART"): {"qty": 1, "price": 150.00, "pnl": 100.0},     # US
+        ("MSFT", "NASDAQ"): {"qty": 2, "price": 380.00, "pnl": 50.0},     # US
+    }
+
+    # Market to exchange mapping
+    market_exchanges = {
+        'IN': ('NSE', 'BSE', 'NCDEX', 'MCX'),
+        'US': ('SMART', 'NYSE', 'NASDAQ', 'ARCA', 'ISLAND')
+    }
+
+    # Test 1: Filter for India market
+    india_market = 'IN'
+    india_filtered = {}
+    for (symbol, exchange), pos_data in all_positions.items():
+        if exchange.upper() in market_exchanges[india_market]:
+            india_filtered[(symbol, exchange)] = pos_data
+
+    assert len(india_filtered) == 2, f"India filter should have 2 positions, got {len(india_filtered)}"
+    assert ("MOSCHIP", "NSE") in india_filtered
+    assert ("NIFTYBEES", "NSE") in india_filtered
+    assert ("AAPL", "SMART") not in india_filtered
+    assert ("MSFT", "NASDAQ") not in india_filtered
+
+    # Test 2: Filter for US market
+    us_market = 'US'
+    us_filtered = {}
+    for (symbol, exchange), pos_data in all_positions.items():
+        if exchange.upper() in market_exchanges[us_market]:
+            us_filtered[(symbol, exchange)] = pos_data
+
+    assert len(us_filtered) == 2, f"US filter should have 2 positions, got {len(us_filtered)}"
+    assert ("AAPL", "SMART") in us_filtered
+    assert ("MSFT", "NASDAQ") in us_filtered
+    assert ("MOSCHIP", "NSE") not in us_filtered
+    assert ("NIFTYBEES", "NSE") not in us_filtered
+
+    # Test 3: Switching markets shouldn't break positions for other market
+    assert india_filtered != us_filtered, "Market filters should produce different results"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

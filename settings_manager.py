@@ -285,16 +285,30 @@ class SettingsManager:
         # Stock not found: return default
         return default
 
-    def get_stock_configs(self) -> list:
+    def get_stock_configs(self, market: str = None) -> list:
         """
         Get stock configurations from settings.json
+        Optionally filter by market (IN or US)
         Migrates from CSV if necessary
         """
         # Auto-migrate if stocks not in settings but CSV exists
         if 'stocks' not in self.settings and os.path.exists('config_table.csv'):
             self.migrate_stock_configs()
 
-        return self.settings.get('stocks', [])
+        stocks = self.settings.get('stocks', [])
+
+        # Filter by market if specified (BUG-014: market filtering)
+        if market:
+            market_exchanges = {
+                'IN': ('NSE', 'BSE', 'NCDEX', 'MCX'),
+                'US': ('SMART', 'NYSE', 'NASDAQ', 'ARCA', 'ISLAND')
+            }
+
+            if market in market_exchanges:
+                valid_exchanges = market_exchanges[market]
+                stocks = [s for s in stocks if s.get('exchange', '').upper() in valid_exchanges]
+
+        return stocks
 
     def migrate_stock_configs(self):
         """

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small-Cap Strategy — Review &amp; UX (Customer = Dad)</title>
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#fff; --ink:#1a1a1a; --muted:#5c5c5c; --line:#e2ded6;
+    --accent:#479FB6; --good:#0a7f4f; --warn:#b45309; --bad:#b91c1c; --codebg:#f0eee9;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#161513; --panel:#1f1e1c; --ink:#ececec; --muted:#a3a3a3; --line:#332f2a;
+      --accent:#5cb8cf; --good:#3ec77f; --warn:#e0a04a; --bad:#f0736b; --codebg:#26241f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:940px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-size:28px;margin:0 0 6px;line-height:1.25}
+  .sub{color:var(--muted);margin:0 0 26px}
+  h2{font-size:20px;margin:38px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+  h3{font-size:15px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:6px 0}
+  code{background:var(--codebg);padding:1px 5px;border-radius:4px;
+    font:13px/1.4 "SF Mono",Consolas,monospace}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .accent{border-left:4px solid var(--accent)}
+  .good{border-left:4px solid var(--good)}
+  .warn{border-left:4px solid var(--warn)}
+  .bad{border-left:4px solid var(--bad)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--codebg);font-weight:600}
+  .sev{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;color:#fff;text-transform:uppercase}
+  .s-done{background:var(--good)} .s-block{background:var(--bad)} .s-open{background:var(--warn)} .s-note{background:var(--muted)}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;font-size:14px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .foot{margin-top:50px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Small-Cap Strategy — Review &amp; UX</h1>
+<p class="sub">Consolidated review · ARUN Trading Bot · updated 2026-09-09 · <strong>reviewer role: LEAD</strong>
+· read through the lens of the real customer — B's father, a senior citizen — because a UI that's clever
+but that he can't read at a glance is a failed product.</p>
+
+<div class="card accent">
+<strong>Headline:</strong> the strategy framework is built and honest. <strong>79 tests pass</strong>
+(verified by running <code>python -m pytest strategies/tests -q</code>). Every P0/P1/P2 from the
+earlier draft of this review is now fixed in code — see §1. What remains is <strong>not</strong> a bug
+list: it is the last three build steps (broker → runner → dashboard), and each is gated on a
+<strong>human decision that carries money risk</strong> (§3). Nothing past this line can be built
+autonomously.
+</div>
+
+<h2>1. Verified — earlier findings now closed</h2>
+<p>Ran the suite (79 passed) and cross-read the code against the plan
+(<code>~/.claude/plans/lets-discuss-the-exact-curious-bentley.md</code>) and
+<code>SMALL_CAP_DRYRUN.html</code>. The prior draft of this review was written at 53 tests and is
+superseded by the table below.</p>
+
+<table>
+<tr><th>Prior finding</th><th>Status now</th><th>Where</th></tr>
+<tr><td>P0 — rope exit has no state path; <code>_rope_action</code> only reads</td>
+    <td><span class="sev s-done">fixed</span> <code>advance_rope()</code> is the pure next-state contract: ratchets HWM, recomputes the rope, tracks MAE from the day Low, decrements <code>exit_tranches_remaining</code>, locks <code>locked_half2_price</code>. 7 tests in <code>test_rope_state.py</code>.</td>
+    <td><code>small_cap_dryrun.py:193</code></td></tr>
+<tr><td>P1 — config loader ≠ documented schema (<code>entry</code>, <code>liquidity_gate</code>, fundamental knobs unparsed)</td>
+    <td><span class="sev s-done">fixed</span> <code>EntryConfig</code>, <code>LiquidityConfig</code>, <code>FundamentalsConfig</code> exist and are loaded from <code>entry:</code> / <code>liquidity_gate:</code> / <code>fundamentals_gate:</code>. Round-trip tested.</td>
+    <td><code>config.py:37-77,140-157</code></td></tr>
+<tr><td>P1 — entry rule is 50-MA not the documented 200-EMA</td>
+    <td><span class="sev s-done">fixed</span> <code>uptrend_200()</code> = CMP&nbsp;&gt;&nbsp;200&nbsp;EMA AND 50&nbsp;EMA&nbsp;&gt;&nbsp;200&nbsp;EMA is the entry gate; <code>fresh_cross_max_age_days</code> defaults to 1.</td>
+    <td><code>small_cap_dryrun.py:50,274-284</code></td></tr>
+<tr><td>P1 — plan vs HTML contradict on Zerodha cost</td>
+    <td><span class="sev s-done">fixed</span> both now say the free Personal plan places CNC orders; ₹500/mo Connect only adds ticks/history.</td>
+    <td>plan §Step&nbsp;0.2 · HTML §4</td></tr>
+<tr><td>P2 — "net of costs" overstates; floor is gross</td>
+    <td><span class="sev s-open">deferred, honest</span> floor is still gross and both docs now say so. The per-tranche post-cost check needs the <code>costs:</code> model, which lives in <code>broker.py</code> (build step 4).</td>
+    <td><code>small_cap_dryrun.py:148-159</code></td></tr>
+<tr><td>P2 — MAE / OHLC have no producer</td>
+    <td><span class="sev s-done">fixed</span> <code>advance_rope(..., low, ...)</code> computes <code>mae_pct</code> from the day Low each cycle; <code>store.record_ohlc</code> persists O/H/L/C.</td>
+    <td><code>small_cap_dryrun.py:209-212</code></td></tr>
+<tr><td>P3 — <code>store.py</code> docstring "four tables"</td>
+    <td><span class="sev s-done">fixed</span> reads "Five … tables".</td>
+    <td><code>store.py:4</code></td></tr>
+</table>
+
+<h2>2. What is built (framework surface, confirmed in the knowledge graph)</h2>
+<table>
+<tr><th>Module</th><th>Provides</th><th>Tests</th></tr>
+<tr><td><code>framework/base.py</code></td><td><code>Candidate</code> / <code>Position</code> (+ rope state fields) / <code>Action</code> / <code>Strategy</code> protocol</td><td>via strategy tests</td></tr>
+<tr><td><code>framework/config.py</code></td><td>JSON → frozen <code>StrategyConfig</code>; derived <code>max_names</code>, loud on zero; shared <code>MARKET_CAP_BAND_CR</code></td><td><code>test_config.py</code></td></tr>
+<tr><td><code>framework/sizing.py</code></td><td><code>plan_entry</code> — budget / % ceiling / name-count gate, one full position, no adds</td><td><code>test_sizing.py</code></td></tr>
+<tr><td><code>framework/store.py</code></td><td><code>database/strategies.db</code>: scan_results, fills, positions, daily_snapshot, position_ohlc; metrics + OHLC writers</td><td><code>test_store.py</code></td></tr>
+<tr><td><code>framework/fundamentals.py</code></td><td>curated CSV primary, yfinance fill, blank → excluded; <code>passes_gate()</code> with plain-English reasons</td><td><code>test_fundamentals.py</code></td></tr>
+<tr><td><code>framework/registry.py</code></td><td><code>name → Strategy</code>; <code>available/build/load</code> <span class="sev s-done">new 2026-09-09</span></td><td><code>test_registry.py</code></td></tr>
+<tr><td><code>small_cap_dryrun.py</code></td><td>entry rules, <code>fresh_macd_cross</code>, <code>_rope_action</code>, <code>advance_rope</code>, <code>SmallCapDryRun</code></td><td><code>test_strategy.py</code>, <code>test_rope_state.py</code>, <code>test_macd_cross.py</code>, <code>test_rules.py</code></td></tr>
+<tr><td><code>small_cap_universe.py</code></td><td><code>SmallCapScanner</code> with an injectable candle <code>fetch</code> seam (offline-testable)</td><td><code>test_universe_offline.py</code></td></tr>
+</table>
+
+<h2>3. Gaps — the remaining build steps, and why each is blocked</h2>
+
+<h3 class="bad">Blocked on B — money-risk decisions (Step 0 of the plan)</h3>
+<div class="card bad">
+<ol>
+<li><strong>Which of the two Zerodha accounts</strong> is this strategy's? Needed before <code>broker.py</code>
+can name an account or a token file. Still unanswered.</li>
+<li><strong>Kite Connect API key + secret</strong> for that account (the app is created on the free
+Personal plan; keys not yet handed over). Without them <code>broker.py</code>'s
+<code>validate_session</code> cannot be tested against the real account.</li>
+<li><strong><code>per_stock_amount</code> and <code>total_budget</code></strong> for run 1. These set
+<code>max_names</code> and every rupee figure. No real
+<code>strategies/configs/small_cap_dryrun.json</code> exists until these are given.</li>
+<li><strong>First <code>fundamentals.csv</code></strong> — a quarterly human export (screener.in per-company)
+or one run of <code>python -m strategies.framework.fundamentals</code> (network, yfinance, partial
+coverage). The gate code is done; it has no data to read.</li>
+</ol>
+</div>
+
+<h3 class="warn">Not started — steps 4–8 (need the four answers above first)</h3>
+<table>
+<tr><th>#</th><th>Deliverable</th><th>Note</th></tr>
+<tr><td>4</td><td><code>framework/broker.py</code></td><td>Port <code>zerodha_client.py</code> near-verbatim + cost model + <code>orders_enabled</code> log-only flag. Gate for the net-of-cost floor.</td></tr>
+<tr><td>5</td><td><code>framework/runner.py</code> + <code>LAUNCH_SMALLCAP.bat</code> + <code>status.txt</code></td><td>The loop that calls <code>scan</code> → <code>plan_entry</code> → <code>decide</code> → <code>advance_rope</code> → persists → (log-only) places orders, and logs live-ARUN holdings each cycle for the overlap check.</td></tr>
+<tr><td>6</td><td><code>backend/strategy_routes.py</code> + <code>backend/static/strategy.html</code></td><td>The dad-facing page. §4/§5 below are its acceptance criteria. One <code>include_router</code> line in <code>backend/main.py</code> is the only edit to existing backend code.</td></tr>
+<tr><td>8</td><td><code>strategies/small_cap_compare.py</code></td><td>Day-14 diagnostic: replay logged trades with a 5/8/10% hard stop. Needs logged data, so it comes last.</td></tr>
+</table>
+
+<h3 class="accent">Wiring gaps inside the built code (cheap, but need a caller)</h3>
+<div class="card accent">
+<ul>
+<li><code>SmallCapDryRun.decide()</code> does <strong>not</strong> call <code>fundamentals.passes_gate()</code> —
+by design the gate is "applied by the caller". That caller is <code>runner.py</code> (step 5), which does
+not exist yet. Until then the fundamentals gate is built but unenforced.</li>
+<li><code>LiquidityConfig.min_avg_daily_value_cr</code> is loaded but applied nowhere (its own docstring
+says "not wired to a sell yet"). Wire it in the runner's entry path.</li>
+<li><code>scan()</code>'s per-candidate <code>reason</code> string still describes the old
+20/50-MA + RSI confluence, not the 200-EMA entry rule. Cosmetic, but it feeds the dashboard "why"
+column — fix when step 6 is built.</li>
+<li><code>exit.scale_out_tranches</code> in the JSON is not read; the scale-out is hard-coded to 2 halves.
+Leave as-is unless a strategy ever needs N≠2 — the whole rope math assumes halves.</li>
+</ul>
+</div>
+
+<h2>4. Customer experience — the page dad actually reads</h2>
+
+<div class="card warn">
+<strong>The single biggest UX risk is not readability — it's JARGON.</strong> The plan is written for B.
+The page is for B's father. Any term that leaks from the config file onto the screen is a failure: the page
+must never render <code>per_stock_amount</code>, <code>max_names_cap</code>, <code>trail_giveback_pct</code>,
+<code>tranche</code>, <code>knob</code>, or <code>diagnostic</code>. Those become, in his world:
+</div>
+
+<table>
+<tr><th>Config term (never on screen)</th><th>What dad reads</th></tr>
+<tr><td><code>per_stock_amount</code> · <code>total_budget</code></td><td>"Money in this plan" / "per stock"</td></tr>
+<tr><td><code>trail_giveback_pct</code></td><td>"The safety line is 2% below the best price."</td></tr>
+<tr><td><code>scale_out_step</code> (sell 2 halves)</td><td>"Sells half now, the rest a bit lower."</td></tr>
+<tr><td><code>min_profit_floor_pct</code></td><td>"Will not sell for less than +2%."</td></tr>
+<tr><td><code>STRANDED HALF</code></td><td>"⚠ One half is stuck. You may need to sell it yourself."</td></tr>
+<tr><td><code>DEAD NAME</code></td><td>"⚠ This stock has stopped trading. Please look."</td></tr>
+<tr><td><code>score = "why"</code></td><td>"Why the bot picked it" — one plain sentence.</td></tr>
+</table>
+
+<h3>4.1 Size &amp; contrast (non-negotiable for 60+)</h3>
+<div class="kv card">
+  <div>Base font</div><div>No smaller than <strong>18px</strong> body, <strong>22px+</strong> for the money numbers (entry / price / P&amp;L). Use <code>rem</code>, never <code>px</code>, so the OS large-text/zoom setting works.</div>
+  <div>Contrast</div><div>Body text ≥ <strong>7:1</strong> (WCAG AAA). Currency and status numbers should be near-black on the panel.</div>
+  <div>Color is never the only cue</div><div>Profit/loss can't be green-vs-red alone. Always add a <code>+</code>/<code>−</code> sign and the words "+ profit" / "− loss".</div>
+  <div>Dark mode</div><div>Manual, default to <strong>light</strong>. Provide an obvious "A / A−" text-size toggle.</div>
+  <div>Money format</div><div>Indian groups, <strong>round to whole ₹</strong> (₹10,000). Market cap in <strong>crore</strong> (₹500cr).</div>
+</div>
+
+<h3>4.2 Layout — fewer things, bigger things</h3>
+<div class="kv card">
+  <div>One stock = one card</div><div>A card per stock: big price, big P&amp;L (+/−), a plain one-line status, a clear action if needed. 2–3 cards max per screen.</div>
+  <div>Top headline line</div><div>First thing on the page: one sentence, e.g. "You have 3 stocks. 1 needs your attention."</div>
+  <div>Navigation</div><div>Few tabs, big buttons (≥ 44px tall), named in words: "Today's picks", "My stocks", "How it works". No hover-only tooltips.</div>
+  <div>Status / warnings</div><div><code>STRANDED</code>, <code>DEAD NAME</code>, "rope inactive" = a coloured banner at the top in plain words, never a table cell.</div>
+  <div>Kill switch</div><div>Huge, red, unambiguous ("STOP the bot"). Not a toggle.</div>
+</div>
+
+<h3>4.3 Reassurance, not alarms</h3>
+<div class="card good">
+Frame honest caveats as <em>reassurance</em>. Where the strategy says "it can gap through the rope,"
+the page adds one calm line: <em>"This computer follows fixed rules. It never guesses. It can still be
+caught by a sudden fall — that's the cost of never selling at a loss."</em>
+<strong>Language: English (confirmed by B).</strong> Short sentences, active voice, no investment shorthand.
+</div>
+
+<h3>4.4 Empty states &amp; the honesty rail</h3>
+<div class="card">
+<strong>No candidates today</strong> → "No picks today. That's fine — the bot is picky and waits for a
+good setup. It will check again tomorrow."<br>
+<strong>Scoreboard</strong> → no confident %; show the count and <em>"This is still a small sample. Not
+enough trades to judge yet."</em> (matches the ≥30-trade honesty rail.)
+</div>
+
+<h2>5. UX acceptance criteria for step 6 (build in, don't retrofit)</h2>
+<ol>
+<li>No config variable, code key, or investment-jargon term ever renders on the page.</li>
+<li>Body text ≥ 18px / 7:1 contrast; all sizes in <code>rem</code>; a visible text-size toggle.</li>
+<li>Profit/loss always shown with sign + the words profit/loss, never colour alone.</li>
+<li>One stock = one card; ≤ 3 cards per screen; top line states the one thing he must know.</li>
+<li><code>STRANDED</code> / <code>DEAD NAME</code> / "profit too thin" are top-of-page banners in plain words.</li>
+<li>Numeric money uses Indian grouping, whole ₹; market cap in crore.</li>
+<li>Kill switch is a large red "STOP" button, not a toggle.</li>
+<li>Every empty state has a plain, non-alarming explanation.</li>
+</ol>
+<p><strong>Language: English (settled).</strong> No translation layer, no toggle.</p>
+
+<h2>6. Bottom line</h2>
+<p>The framework is done and the tests are real. There are no open code defects — the earlier P0/P1/P2
+are fixed. The build is now blocked, not broken: it needs the <strong>four Step-0 answers</strong>
+(which Zerodha account · Kite keys · budget numbers · first fundamentals.csv) before
+<code>broker.py</code> → <code>runner.py</code> → the dashboard can be built. Recommended order once
+unblocked: broker (log-only) → runner (one clean log-only day + overlap check) → the dad page against
+real DB data, so the UI shows honest rope state from day one.</p>
+
+<div class="foot">
+ARUN Trading Bot · <code>C:\Antigravity\TradingBot</code> ·
+plan: <code>~/.claude/plans/lets-discuss-the-exact-curious-bentley.md</code> ·
+design: <code>Documentation/SMALL_CAP_DRYRUN.html</code> ·
+graph: <code>graphify-out/graph.html</code> (refreshed 2026-09-09).
+</div>
+
+</div>
+</body>
+</html>

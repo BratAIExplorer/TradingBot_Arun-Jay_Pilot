@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small-Cap Bot — Dad's Dashboard (MOCK)</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#111418; --muted:#3d4652; --line:#d9dee4;
+    --good:#0a6b3c; --bad:#a01722; --warn:#8a4b00; --accentbg:#e7f1f4; --accent:#0b6b82;
+    --scale:1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:calc(1.15rem * var(--scale))/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:780px;margin:0 auto;padding:1.2rem 1rem 5rem}
+  header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.4rem}
+  h1{font-size:calc(1.5rem * var(--scale));margin:.2rem 0}
+  h2{font-size:calc(1.25rem * var(--scale));margin:1.8rem 0 .6rem;border-bottom:3px solid var(--line);padding-bottom:.3rem}
+  .headline{background:var(--accentbg);border:2px solid var(--accent);border-radius:12px;
+    padding:1rem 1.1rem;font-size:calc(1.3rem * var(--scale));font-weight:600}
+  .sizebtns button{font:inherit;font-weight:700;border:2px solid var(--muted);background:var(--panel);
+    color:var(--ink);border-radius:8px;padding:.35rem .7rem;cursor:pointer}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.15rem;margin:.85rem 0}
+  .stock{border-left:8px solid var(--line)}
+  .stock.profit{border-left-color:var(--good)}
+  .stock.loss{border-left-color:var(--bad)}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap}
+  .name{font-size:calc(1.35rem * var(--scale));font-weight:700}
+  .price{font-size:calc(1.7rem * var(--scale));font-weight:800;font-variant-numeric:tabular-nums}
+  .pl{font-size:calc(1.4rem * var(--scale));font-weight:800}
+  .pl.up{color:var(--good)} .pl.down{color:var(--bad)}
+  .status{margin:.55rem 0 0;font-size:calc(1.15rem * var(--scale))}
+  .facts{margin:.7rem 0 0;padding:.7rem .9rem;background:#f0f3f6;border-radius:8px;
+    display:grid;grid-template-columns:1fr 1fr;gap:.35rem .9rem;font-size:calc(1.02rem * var(--scale))}
+  .facts b{font-variant-numeric:tabular-nums}
+  .banner{border-radius:12px;padding:1rem 1.1rem;margin:.85rem 0;font-weight:700;font-size:calc(1.2rem * var(--scale))}
+  .banner.warn{background:#fff3e0;border:2px solid var(--warn);color:var(--warn)}
+  .banner.bad{background:#fdECEC;border:2px solid var(--bad);color:var(--bad)}
+  ul.feed{list-style:none;padding:0;margin:0}
+  ul.feed li{padding:.6rem 0;border-bottom:1px solid var(--line)}
+  ul.feed li:last-child{border-bottom:0}
+  .when{color:var(--muted);font-size:calc(.95rem * var(--scale))}
+  .how{white-space:pre-line}
+  .stop{position:fixed;left:0;right:0;bottom:0;background:var(--bad);color:#fff;border:0;
+    width:100%;padding:1.1rem;font:inherit;font-size:calc(1.4rem * var(--scale));font-weight:800;cursor:pointer}
+  .mocknote{background:#111;color:#fff;text-align:center;font-size:.9rem;padding:.4rem}
+  @media(max-width:520px){.facts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="mocknote">MOCK — sample numbers, nothing is live. This is the page layout for review.</div>
+<div class="wrap">
+
+<header>
+  <h1>Your Small-Cap Bot</h1>
+  <div class="sizebtns">
+    <button onclick="document.documentElement.style.setProperty('--scale', 1)">A</button>
+    <button onclick="document.documentElement.style.setProperty('--scale', 1.25)">A+</button>
+    <button onclick="document.documentElement.style.setProperty('--scale', 1.5)">A++</button>
+  </div>
+</header>
+
+<div class="headline">You own 3 stocks. <span style="color:var(--warn)">1 needs you to look.</span> The bot is running normally.</div>
+
+<h2>My stocks</h2>
+
+<div class="card stock loss">
+  <div class="row"><span class="name">Kirloskar Ferrous</span><span class="price">₹ 682</span></div>
+  <div class="row"><span>Bought at ₹ 640 · 12 days ago</span><span class="pl down">− ₹ 420 loss (−1.4%)</span></div>
+  <p class="status">Holding. The safety line is <b>₹ 720</b> (2% below the best price of ₹ 735). Nothing sells until price falls to that line <em>and</em> the sale still beats +2%.</p>
+  <div class="facts">
+    <span>Best price seen since buying</span><b>₹ 735</b>
+    <span>Worst dip since buying</span><b>−6.1%</b>
+    <span>Days in the red</span><b>4 of 12</b>
+    <span>Money in this stock</span><b>₹ 9,600</b>
+  </div>
+</div>
+
+<div class="card stock profit">
+  <div class="row"><span class="name">Ador Welding</span><span class="price">₹ 1,190</span></div>
+  <div class="row"><span>Bought at ₹ 1,010 · 26 days ago</span><span class="pl up">+ ₹ 1,440 profit (+17.8%)</span></div>
+  <p class="status">Holding — profit is protected. Safety line is <b>₹ 1,166</b>. If price closes at or below it, the bot sells <b>half</b>; the rest sells if price drops another 3%.</p>
+  <div class="facts">
+    <span>Best price seen since buying</span><b>₹ 1,190</b>
+    <span>Worst dip since buying</span><b>−2.0%</b>
+    <span>Days in the red</span><b>1 of 26</b>
+    <span>Money in this stock</span><b>₹ 8,080</b>
+  </div>
+</div>
+
+<div class="banner warn">⚠ Solara Active Pharma — one half is stuck. The second half can only sell below +2%, so the bot will not sell it. <b>You may want to sell this half yourself in Zerodha.</b></div>
+
+<div class="card stock profit">
+  <div class="row"><span class="name">Solara Active Pharma</span><span class="price">₹ 505</span></div>
+  <div class="row"><span>Bought at ₹ 470 · 34 days ago · half already sold at +9%</span><span class="pl up">+ ₹ 175 profit (+7.4%) on the half left</span></div>
+  <p class="status">First half sold on 28-Aug for +9%. The remaining half is flagged above.</p>
+  <div class="facts">
+    <span>Best price seen since buying</span><b>₹ 552</b>
+    <span>Worst dip since buying</span><b>−3.8%</b>
+    <span>Days in the red</span><b>7 of 34</b>
+    <span>Money still in this stock</span><b>₹ 2,350</b>
+  </div>
+</div>
+
+<h2>Today's picks (not bought yet)</h2>
+
+<div class="card">
+  <div class="row"><span class="name">GHCL Ltd</span><span class="price">₹ 610</span></div>
+  <p class="status"><b>Why the bot likes it:</b> price is above its long-term trend line, the medium trend just crossed above the long trend, and a fresh buy signal printed yesterday.</p>
+  <div class="facts">
+    <span>Return on equity</span><b>18.4%</b>
+    <span>Debt vs equity</span><b>0.32 (low)</b>
+    <span>Company earning money?</span><b>Yes</b>
+    <span>Company size</span><b>₹ 3,900 cr</b>
+  </div>
+</div>
+
+<div class="card">
+  <div class="row"><span class="name">Andhra Sugars</span><span class="price">₹ 118</span></div>
+  <p class="status"><b>Why the bot likes it:</b> fresh buy signal today, trend is up, and it clears the health check below.</p>
+  <div class="facts">
+    <span>Return on equity</span><b>14.1%</b>
+    <span>Debt vs equity</span><b>0.10 (low)</b>
+    <span>Company earning money?</span><b>Yes</b>
+    <span>Company size</span><b>₹ 1,600 cr</b>
+  </div>
+</div>
+
+<h2>What the bot did lately</h2>
+<div class="card">
+<ul class="feed">
+  <li>Sold half of Solara Active Pharma at ₹ 512 for +9%. <div class="when">28 Aug, 3:15 pm</div></li>
+  <li>Bought Kirloskar Ferrous — 15 shares at ₹ 640. <div class="when">25 Aug, 9:45 am</div></li>
+  <li>Skipped a buy signal on Deepak Nitrite — no free money today (all 3 slots used). <div class="when">22 Aug, 10:02 am</div></li>
+  <li>Skipped Tanla — health check failed: debt too high. <div class="when">21 Aug, 9:50 am</div></li>
+</ul>
+</div>
+
+<h2>How this bot works</h2>
+<div class="card how">This bot follows fixed rules. It never guesses.
+
+It BUYS one lot of a small company when the price is above its long-term trend, the medium trend is above the long trend, a fresh buy signal has just printed — and the company passes a health check (makes a profit, low debt, decent returns).
+
+It SELLS using a "safety line" that sits 2% below the highest price seen since buying. The line only moves up. When price closes at or below the line, it sells half; it sells the rest if price falls another 3%.
+
+It will NEVER sell a piece for less than 2% above what you paid (after charges). If the safety line is below that level, it just holds and waits.
+
+There is NO stop-loss, on purpose. A sudden fall can still catch it before it sells — that is the cost of never selling at a loss.
+
+Money: ₹ 10,000 per stock, one position per company, up to 3 companies.</div>
+
+<h2>Scoreboard</h2>
+<div class="card">
+  <p style="font-size:calc(1.25rem * var(--scale))"><b>4 trades finished so far.</b></p>
+  <p>This is still a small sample. Not enough trades to judge whether the no-stop-loss rule helps or hurts. Come back after 30 trades.</p>
+</div>
+
+</div>
+<button class="stop" onclick="alert('MOCK: this would stop the bot and cancel pending orders.')">STOP THE BOT</button>
+</body>
+</html>

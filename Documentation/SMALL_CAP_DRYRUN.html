@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small-Cap Momentum Strategy — Design & Build Doc</title>
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#fff; --ink:#1a1a1a; --muted:#5c5c5c; --line:#e2ded6;
+    --accent:#479FB6; --good:#0a7f4f; --warn:#b45309; --bad:#b91c1c; --codebg:#f0eee9;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#161513; --panel:#1f1e1c; --ink:#ececec; --muted:#a3a3a3; --line:#332f2a;
+      --accent:#5cb8cf; --good:#3ec77f; --warn:#e0a04a; --bad:#f0736b; --codebg:#26241f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:940px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-size:28px;margin:0 0 6px;line-height:1.25}
+  .sub{color:var(--muted);margin:0 0 26px}
+  h2{font-size:20px;margin:38px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+  h3{font-size:15px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{background:var(--codebg);padding:1px 5px;border-radius:4px;
+    font:13px/1.4 "SF Mono",Consolas,monospace}
+  pre{background:var(--codebg);padding:14px 16px;border-radius:8px;overflow-x:auto;font-size:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .accent{border-left:4px solid var(--accent)}
+  .good{border-left:4px solid var(--good)}
+  .warn{border-left:4px solid var(--warn)}
+  .bad{border-left:4px solid var(--bad)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--codebg);font-weight:600}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase}
+  .t-done{background:var(--good);color:#fff}
+  .t-todo{background:var(--codebg);color:var(--muted);border:1px solid var(--line)}
+  .t-rework{background:var(--warn);color:#fff}
+  .kv{display:grid;grid-template-columns:200px 1fr;gap:6px 14px;font-size:14px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .foot{margin-top:50px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Small-Cap Momentum Strategy</h1>
+<p class="sub">Design &amp; build doc · ARUN Trading Bot · updated 2026-09-09 · status: <strong>framework built (79 tests green): steps 1–3, rope exit + <code>advance_rope</code> state contract, 200-EMA entry, fundamentals gate, registry. Blocked on the four Step-0 answers (Zerodha account · Kite keys · run-1 budget · first fundamentals.csv), then broker.py / runner.py / dashboard</strong> · review: <a href="REVIEW.html">REVIEW.html</a> (lead + dad-UX findings; the gross-vs-net floor is the one open item and is deferred to broker.py by design)</p>
+
+<div class="card accent">
+<strong>One line:</strong> scan small-caps → keep only fundamentally-good names →
+rank → buy the top few (₹10,000 each) on Zerodha delivery → trail a <strong>2%
+profit rope</strong> and sell in two pieces on the way down → <strong>never sell a
+piece for less than +2%</strong>; otherwise hold.
+<br><span class="sub" style="margin:0">The +2% floor is <strong>gross</strong> until the
+<code>costs:</code> model lands in <code>broker.py</code> (build step 4) — the real
+per-tranche +2% <em>net</em>-of-costs check is step 4, not now.</span>
+</div>
+
+<h2>1. What this is (and what it isn't)</h2>
+<p>A <strong>reusable strategy framework</strong> — new strategies plug in as one
+file each — running this small-cap momentum strategy as strategy&nbsp;#1, with a
+browser page B's father can read.</p>
+<p>It started as an experiment ("does a stop-loss help?"). It is now a
+<strong>production strategy with a small risk budget</strong>: the exit rule <em>is</em>
+a soft stop (the trailing rope), and the "buy only good companies" rule is a hard
+requirement, not a variable. The old stop-loss comparison survives only as a
+dashboard diagnostic (§9).</p>
+
+<h2>2. Money &amp; risk — plain terms</h2>
+<div class="kv card">
+  <div>How many stocks</div><div><code>total_budget ÷ per_stock_amount</code>, capped. ₹30,000 ÷ ₹10,000 = <strong>3 names</strong>. Raise <code>total_budget</code> to ₹100,000 → 10 names. Hard cap <code>max_names_cap</code> can never be exceeded.</div>
+  <div>Per stock</div><div>₹10,000 full position. Optional extra ceiling: <code>pct_of_account_cap</code> (2% of the account).</div>
+  <div>Selling — the rope</div><div>Once a stock is up, a "rope" sits 2% below its highest price so far and only ever moves <strong>up</strong>. When price falls back and touches the rope, the bot sells <strong>half now</strong>. The <strong>second half's sell price is locked the instant the first half fires</strong> — at (fill price of half 1 − 3%) — and does <strong>not</strong> follow the rope after that. It's a fixed resting target, not a moving one.</div>
+  <div>The +2% floor</div><div>The bot will <strong>not</strong> sell a piece for less than the buy price + 2% (after costs). If the rope is below that floor, the bot just holds and waits.</div>
+  <div>Stranded half</div><div>If the second piece's sell price would be below the +2% floor, that half is <strong>not sold</strong> — it's held indefinitely. The dashboard flags <code>STRANDED HALF — manual sell?</code> so dad can sell it by hand.</div>
+  <div>Stop-loss</div><div><strong>None.</strong> <code>hard_stop_pct</code> exists but is OFF. <code>never_sell_at_loss</code> is ON.</div>
+  <div>Honest caveat</div><div>"Never sell at a loss" is an <em>intention</em>. A small-cap can gap straight through the rope and the floor overnight (circuit-locked, no buyer). Then you hold at a loss with no exit rule left. The rope works on daily closes — it is best-effort, not a guarantee.</div>
+  <div>Order type</div><div>CNC delivery only. No leverage, no intraday auto-square-off.</div>
+</div>
+
+<h2>3. Isolation from the live bot</h2>
+<div class="card good">
+Live ARUN RSI bot stays on <strong>mStock</strong>. This strategy runs on a
+<strong>dedicated Zerodha account</strong> (B holds 2 Zerodha + 1 mStock on
+purpose). They share <strong>nothing</strong> — not the database, not the broker,
+not the login token.
+</div>
+<p>Own DB <code>database/strategies.db</code>. Never writes to <code>trades.db</code>.
+Zero edits and zero imports of <code>kickstart.py</code> / <code>risk_manager.py</code> /
+<code>trades_db.py</code> (the live risk sweep auto-sells any position it sees in
+<code>trades.db</code>, ignoring the strategy tag — so this strategy must stay out of that file entirely).</p>
+
+<h2>4. Broker reality — Zerodha</h2>
+<div class="card warn">
+<strong>Not fully headless.</strong> Zerodha's access token dies ~6am daily. One
+<strong>manual tap + paste per trading day</strong>: the bot shows an "Authorize"
+link, someone opens it, pastes the redirected URL back; the token then lasts the
+day and survives restarts. Someone has to do this each morning.
+</div>
+<h3>Step 0 — decide before build step 4</h3>
+<ol>
+<li><strong>Which Zerodha account</strong> is this strategy's? Named in config; the other account stays untouched.</li>
+<li><strong>Kite Connect app created</strong> on it. Order placement is on the <strong>free Personal plan</strong> — you do <em>not</em> need the paid tier to place, modify or cancel CNC orders. The ₹500/month <strong>Connect</strong> plan only adds real-time WebSocket ticks and historical candle downloads; skip it until the strategy proves it needs intraday reaction (a once-a-day bot doesn't). Historical candles for the one-off backtest come free from NSE bhavcopy / nselib.</li>
+<li><strong>IP whitelisting</strong> — the run machine's public IPv4 <em>and</em> IPv6 registered in the Kite Developer portal, or orders are rejected.</li>
+<li><strong>Morning-login owner</strong> — who does the tap+paste.</li>
+</ol>
+<h3>Reuse from B's brother's project</h3>
+<p><code>C:\Antigravity\Equity_The-Final-chapter_Arun\Equity_The-Final-chapter\zerodha_client.py</code>
+is a working Kite Connect client (official <code>kiteconnect</code> SDK):
+<code>place_order</code> (CNC market), <code>verify_request_token_and_login</code>,
+<code>validate_session</code>, <code>get_login_url</code>, plus a token-cache pattern.
+We <strong>port it near-verbatim</strong> as <code>framework/broker.py</code> and add: our
+cost model, an <code>orders_enabled</code> log-only switch, and a source-of-truth
+comment. This removes "from-scratch Kite integration" from the plan.</p>
+
+<h2>5. The rules</h2>
+<h3>Entry</h3>
+<table>
+<tr><th>Check</th><th>Condition</th></tr>
+<tr><td>Momentum</td><td>MACD bullish crossover within the last <strong>1 trading day</strong> (config: <code>fresh_cross_max_age_days</code>)</td></tr>
+<tr><td>Trend</td><td>Price above the 200-day EMA <strong>and</strong> 50 EMA above 200 EMA</td></tr>
+<tr><td>Fundamentals (gate ON)</td><td>ROE ≥ 10%, Debt/Equity ≤ 1.0, positive earnings, market cap <strong>within the universe band</strong> (₹500cr–₹5000cr — both bounds, mirrored from the one source of truth). Shown per stock on the dashboard.</td></tr>
+<tr><td>Liquidity (gate ON — entry <em>and</em> exit)</td><td>Average daily traded value above a floor. Applied to <strong>entry</strong> too, not just exit — if you can't get in cleanly you can't get out cleanly.</td></tr>
+<tr><td>Drop</td><td>MACD crosses back below its signal → remove from the candidate list</td></tr>
+</table>
+<h3>Exit — trailing rope + scale-out</h3>
+<table>
+<tr><th>Situation</th><th>What the bot does</th></tr>
+<tr><td>Rope is <strong>above</strong> the +2% floor, price touches it</td><td>Sell <strong>half</strong> now at the rope. <strong>Lock</strong> the second half's target at (half-1 fill − 3%) — a fixed price, not recomputed off the still-ratcheting rope.</td></tr>
+<tr><td>Rope is <strong>below</strong> the +2% floor</td><td><strong>Hold.</strong> Dashboard shows "rope inactive — profit too thin to protect"</td></tr>
+<tr><td>Second piece's price would be below the floor</td><td>That half is <strong>not sold</strong> — held; dashboard flags <code>STRANDED HALF</code></td></tr>
+<tr><td>Stock leaves the small-cap band / fails the scan later</td><td>Keep holding, keep running the rope off its own price</td></tr>
+<tr><td>Price collapses fast (no stop-loss)</td><td>No automatic exit below the floor. Manual decision.</td></tr>
+<tr><td>No live quote for <code>N</code> days (circuit-locked for weeks / suspended / delisted)</td><td>Bot does <strong>not</strong> silently keep holding. Dashboard flags <code>DEAD NAME — manual review</code> so dad decides. Config knob: <code>dead_name_days</code>.</td></tr>
+</table>
+<p class="sub">Rope = highest price since entry × (1 − 2%). Ratchets up only.
+Evaluated on daily closes — it can overshoot on an overnight gap.</p>
+
+<h2>6. What's built vs. to build</h2>
+<table>
+<tr><th>Piece</th><th>Role</th><th>Status</th></tr>
+<tr><td><code>framework/base.py</code></td><td>Candidate / Position / Action / Strategy shapes</td><td><span class="tag t-done">Position gained <code>high_water_mark</code>, <code>trailing_floor</code>, <code>exit_tranches_remaining</code>, <code>locked_half2_price</code>, <code>stranded</code>, <code>mae_pct</code>, <code>last_quote_date</code> (all optional, defaulted)</td></tr>
+<tr><td><code>framework/config.py</code></td><td>JSON → frozen config</td><td><span class="tag t-done"><code>TrancheConfig</code> deleted; <code>max_names</code> derived, <strong>raises loudly on 0</strong>; <code>MARKET_CAP_BAND_CR</code> shared constant + <code>min/max_market_cap_cr</code>; <code>ExitConfig</code> (rope giveback / net floor / scale-out step / hard-stop knob / never-sell-at-loss)</td></tr>
+<tr><td><code>framework/sizing.py</code></td><td>budget / ceiling / count gating</td><td><span class="tag t-done"><code>ADD</code> branch removed — any existing position is rejected "no adds"; <code>plan_entry</code> sizes exactly one full position</td></tr>
+<tr><td><code>framework/store.py</code></td><td><code>strategies.db</code> — 5 tables + <code>position_ohlc</code></td><td><span class="tag t-done">MAE / OHLC / floor / day-count / stranded columns added; <code>update_position_metrics</code> + <code>record_ohlc</code>/<code>get_ohlc</code>; fill cost columns</span></td></tr>
+<tr><td><code>framework/registry.py</code></td><td>name → strategy</td><td><span class="tag t-todo">to build</span></td></tr>
+<tr><td><code>framework/broker.py</code></td><td>ported Zerodha client + costs + log-only</td><td><span class="tag t-todo">step 4</span></td></tr>
+<tr><td><code>framework/fundamentals.py</code></td><td>curated CSV + yfinance fill</td><td><span class="tag t-todo">to build. Consider borrowing the Hidden-Gem 4-criteria score (valuation edge · institutional blind-spot · fundamental strength · momentum divergence) as a richer candidate filter than the current MACD+MA+RSI confluence score</td></tr>
+<tr><td><code>small_cap_dryrun.py</code></td><td>strategy #1 rules</td><td><span class="tag t-done"><code>decide()</code> exit is the trailing rope (<code>_rope_action</code>): ratcheting HWM, 2-half scale-out, +2% gross net-floor, stranded-half flag, optional hard stop. Entry is <code>uptrend_200()</code> (CMP&nbsp;&gt;&nbsp;200&nbsp;EMA AND 50&nbsp;EMA&nbsp;&gt;&nbsp;200&nbsp;EMA) + fresh MACD cross. <code>describe()</code> rewritten. <span class="tag t-done">P0 closed</span> <code>advance_rope(position, action, close, low, cfg_exit)</code> is the pure next-state contract the runner persists (new HWM, <code>trailing_floor</code>, <code>mae_pct</code>, remaining tranches, locked half-2) — 7 tests in <code>test_rope_state.py</code>. <span class="tag t-rework" style="font-size:10px">still to do</span> the fundamentals gate is built but <code>decide()</code> does not call it — the runner (step 5) must.</td></tr>
+<tr><td><code>small_cap_universe.py</code></td><td>small-cap list + mcap band</td><td><span class="tag t-rework">fetch seam done; band now imported from <code>config.MARKET_CAP_BAND_CR</code> (one source); <strong>still to do:</strong> curated CSV as the ticker-list source, drop the hard-coded <code>SMALLCAP_TICKERS</code></span></td></tr>
+<tr><td><code>runner.py</code> + <code>.bat</code></td><td>the daily loop, log-only first</td><td><span class="tag t-todo">step 5</span></td></tr>
+<tr><td>dashboard route + <code>strategy.html</code></td><td>the 6 views for dad</td><td><span class="tag t-todo">step 6</span></td></tr>
+<tr><td><code>small_cap_compare.py</code></td><td>day-14 diagnostic</td><td><span class="tag t-todo">step 8</span></td></tr>
+</table>
+<p><strong>Phase A: 53 tests green.</strong> Steps 1–3 done: own
+<code>fresh_macd_cross</code> (the broken <code>scanner_engine.detect_macd_crossover</code>
+called <code>.tail()</code> on a DatetimeIndex, swallowed by a bare
+<code>except</code>); <code>SmallCapScanner(fetch=…)</code> offline scan seam;
+<code>store.py</code> schema; <code>config.py</code> (<code>TrancheConfig</code> gone,
+<code>max_names</code> derived + errors on 0, shared cap band, <code>ExitConfig</code>);
+<code>sizing.py</code> no-adds; <code>base.py</code> Position fields.
+And the <code>decide()</code> exit is now the trailing rope
+(<code>test_strategy.py</code>: rope inactive below floor, first-half at rope,
+second-half at trigger, stranded last half, hard-stop off/on).
+<strong>Still open:</strong> 200-EMA trend + fundamentals gate on entry (needs the
+first <code>fundamentals.csv</code>); <code>broker.py</code> Zerodha port (needs
+Step-0 §1 — which account); <code>registry.py</code>; the real
+<code>strategies/configs/small_cap_dryrun.json</code> (needs
+<code>per_stock_amount</code> / <code>total_budget</code> for run 1); then
+<code>runner.py</code>, dashboard, day-14 compare.</p>
+
+<h2>7. Data captured</h2>
+<h3>Every buy / sell (fill)</h3>
+<p>timestamp · ticker · exchange · side · qty · price · order value · plain-English
+reason · real-vs-logged flag · position qty after · realised P&amp;L on that piece ·
+fee estimate</p>
+<h3>Every position (refreshed each cycle)</h3>
+<p>entry date · avg entry · qty · pieces held · current price ·
+<strong>highest price since entry</strong> · current profit % ·
+<strong>MAE — worst drawdown seen</strong> (recorded live, can't be added later) · <em>produced by <code>advance_rope()</code> from the day Low each cycle; persisted via <code>store.update_position_metrics</code></em> ·
+<strong>drawdown at the moment the exit fired</strong> · current rope value ·
+<strong>locked half-2 sell price</strong> (set when half 1 fires) ·
+<strong>last date a live quote was seen</strong> ·
+days held · days red / green · status · <code>STRANDED</code> flag · <code>DEAD NAME</code> flag</p>
+<h3>Every day</h3>
+<p>account value · money deployed · money free · # green · # red ·
+# buy signals skipped because capital was full</p>
+<h3>Per held stock, per day</h3>
+<p>Open / High / Low / Close — captured live during the run, so the day-14
+diagnostic can honestly test "did it gap through the stop / was it limit-down".</p>
+
+<h2>8. Fundamentals data</h2>
+<div class="kv card">
+  <div>Primary</div><div>Curated <code>fundamentals.csv</code> — ~250 rows (ROE, debt/equity, earnings sign, market cap, avg daily value), refreshed <strong>by hand once a quarter</strong>. Fundamentals barely move between quarters. 100% coverage, nothing to break.</div>
+  <div>Single source of truth</div><div>This CSV — <strong>not</strong> a hard-coded ticker list — defines which names are in play and the market-cap band. The universe filter and the fundamentals gate both read the band from here, so they can't disagree (no more "passes the gate but the universe excludes it").</div>
+  <div>Fill-in</div><div>yfinance auto-fills any field it has.</div>
+  <div>Still blank</div><div>Stock <strong>excluded + logged</strong> ("skipped N names — couldn't verify health"). Dad sees the count.</div>
+  <div>Don't</div><div>Scrape screener.in / Tickertape — against their terms, breaks without warning, gets IP-blocked. A human doing the quarterly export is fine; a script is not.</div>
+  <div>Paid upgrade</div><div>If the quarterly CSV becomes a chore: <strong>EODHD</strong> (~$20/month, best Indian small-cap coverage, legal to automate).</div>
+</div>
+
+<h2>9. Costs &amp; the day-14 diagnostic</h2>
+<p><strong>Costs</strong> run on <strong>every simulated fill, buy and sell</strong>.
+Zerodha delivery: ₹0 brokerage, but <strong>not zero charges</strong> — the model
+includes STT 0.1%/side, <strong>stamp duty 0.015% (buy side)</strong>,
+<strong>exchange txn + SEBI + GST ≈ 0.006%/side</strong>, plus DP charges on sells.
+Small per fill, but material against a 2% floor over hundreds of fills — so
+"+2% net" is honest, not optimistic. Entry slippage ~40 bps; a
+<strong>thinning small-cap exit is modelled at ~300 bps or "no fill"</strong>, not a
+flat number. The +2% floor check runs <strong>per piece</strong> on real post-cost proceeds.</p>
+<p><strong>Day-14 comparison</strong> is now just a diagnostic panel: "how would a
+hard stop at 5% / 8% / 10% have changed this strategy's result." The scoreboard
+shows the trade count <code>n</code> and says <strong>"too small to conclude" until n ≥ 30
+AND the universe is expanded to Nifty Smallcap 250</strong>.</p>
+
+<h2>10. Dashboard (for dad)</h2>
+<p>One page served by the existing backend at
+<code>http://localhost:8000/strategy</code> — no npm, no build. Six views:</p>
+<ol>
+<li><strong>Today's scan</strong> — ranked candidates, with the score "why" (MACD, trend, RSI, recency)</li>
+<li><strong>Fundamentals</strong> — market cap, P/E, ROE, debt/equity, revenue growth, sector, 52-week range, dividend yield, promoter %, 4-quarter revenue &amp; profit trend</li>
+<li><strong>Positions</strong> — held, entry / now / P&amp;L, days held, days red, highest price, MAE, rope value, <code>STRANDED</code> flag</li>
+<li><strong>Activity</strong> — plain English: "BUY 12 XYZ @ ₹340 — MACD cross yesterday, above 200-EMA"</li>
+<li><strong>How it works</strong> — the strategy's own description, no code</li>
+<li><strong>Scoreboard</strong> + the day-14 diagnostic</li>
+</ol>
+<p>Plus a kill switch and a per-strategy on/off toggle.</p>
+
+<h2>11. What this does NOT do</h2>
+<ul>
+<li>Does not touch or import the live ARUN RSI bot or its database.</li>
+<li>Does not use leverage or intraday trading — delivery only.</li>
+<li>Does not guarantee "never at a loss" — an overnight gap can beat the rope.</li>
+<li>Does not run itself at 6am — someone taps the Zerodha login link each day.</li>
+<li>Does not scrape fundamentals sites.</li>
+<li>Does not place a real order until Phase A is fixed, the log-only days are clean, and the IP is whitelisted.</li>
+<li>Does not bring the desktop app's full feature set to the web.</li>
+</ul>
+
+<h2>12. Build order</h2>
+<ol>
+<li><strong>Step 0</strong> — Zerodha: account, Kite Connect app (free Personal plan — no paid subscription needed for orders), IP whitelist, morning-login owner.</li>
+<li>Fix the MACD crossover (own implementation).</li>
+<li>Fetch seam in the universe file (makes the strategy offline-testable).</li>
+<li>Lock the config + database shape (all knobs above). <strong>Delete the dead entry-tranche code here</strong> (config knobs + <code>sizing.plan_entry</code> ADD branch); add the new <code>Position</code> fields; mirror the market-cap band from the CSV into the gate.</li>
+<li>Port the Zerodha client → <code>broker.py</code> (+ costs, log-only switch).</li>
+<li><code>runner.py</code> in log-only mode; log the live bot's holdings each cycle to check symbol overlap.</li>
+<li>Dashboard.</li>
+<li>Flip <code>orders_enabled</code> — only after clean log-only days + overlap check.</li>
+<li>Day-14 diagnostic script.</li>
+</ol>
+
+<div class="foot">
+ARUN Trading Bot · <code>C:\Antigravity\TradingBot</code> ·
+plan: <code>~/.claude/plans/lets-discuss-the-exact-curious-bentley.md</code> ·
+supersedes <code>Documentation/SMALL_CAP_DRYRUN_HANDOFF.md</code> (stale) ·
+regenerated as pieces land.
+</div>
+
+</div>
+</body>
+</html>

@@ -29,6 +29,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scanner_engine import MACDScanner  # noqa: E402  (reused: MACD + crossover + RSI math)
 
 from strategies.framework.base import Action, Position  # noqa: E402
+from strategies.framework.costs import net_floor_price  # noqa: E402
+
+
+def _not_after(cross_date: Optional[str], ref_date: str) -> bool:
+    """True when cross_date is missing or not strictly later than ref_date.
+    Both are the '%d-%b-%Y' strings fresh_macd_cross emits; parse leniently."""
+    if not cross_date:
+        return True
+    try:
+        return pd.to_datetime(cross_date) <= pd.to_datetime(ref_date)
+    except (ValueError, TypeError):
+        return False
 
 
 def rsi_series(close: pd.Series, period: int = 14) -> pd.Series:
@@ -145,20 +157,36 @@ def fresh_macd_cross(df: pd.DataFrame, within_bars: int = 30) -> Tuple[bool, Opt
     return True, idx.strftime("%d-%b-%Y") if hasattr(idx, "strftime") else str(idx)
 
 
-def _rope_action(cfg_exit, position: Position, close: float) -> Action:
+def _frozen_lower_circuit(candles: pd.DataFrame, band_pct: float) -> bool:
     """
-    Trailing profit rope with a 2-tranche scale-out and a +N% net floor.
+    True when today's whole range sits locked at/below (prev close - band_pct%)
+    — a lower circuit with no bid, so any 'sell at the close' is a fiction.
+    Needs >= 2 rows; a synthetic 1-bar frame is treated as not-frozen.
+    """
+    if len(candles) < 2 or band_pct <= 0:
+        return False
+    prev_close = float(candles["Close"].iloc[-2])
+    hi = float(candles["High"].iloc[-1])
+    lo = float(candles["Low"].iloc[-1])
+    limit = prev_close * (1 - band_pct / 100.0)
+    return hi <= limit * (1 + 1e-6) and (hi - lo) <= prev_close * 1e-4
+
+
+def _rope_action(cfg_exit, position: Position, close: float, cfg_costs) -> Action:
+    """
+    Trailing profit rope with a 2-tranche scale-out and a +N% net-of-cost floor.
 
     Pure. `close` is today's close; `position` carries the persisted rope state
     (high_water_mark, exit_tranches_remaining, locked_half2_price). The runner
     ratchets and stores those between cycles — here we only pick today's Action.
 
-    The floor here is GROSS (entry * (1 + floor_pct)). The real per-tranche
-    post-cost proceeds check is applied by the broker layer (build step 4).
+    The floor is the price at which the tranche's post-cost proceeds clear
+    entry +min_profit_floor_pct% after `cfg_costs` (both legs). With a zero
+    CostsConfig this is exactly entry * (1 + floor_pct/100).
     """
     entry = position.avg_entry
     hwm = max(position.high_water_mark or entry, close)          # ratchet on the close
-    floor = entry * (1 + cfg_exit.min_profit_floor_pct / 100.0)
+    floor = net_floor_price(position.qty, entry, cfg_exit.min_profit_floor_pct, cfg_costs)
 
     if cfg_exit.hard_stop_pct is not None:
         stop = entry * (1 - cfg_exit.hard_stop_pct / 100.0)
@@ -180,7 +208,7 @@ def _rope_action(cfg_exit, position: Position, close: float) -> Action:
     trigger2 = position.locked_half2_price
     if trigger2 is None:
         trigger2 = rope * (1 - cfg_exit.scale_out_step_pct / 100.0)
-    if trigger2 < floor and cfg_exit.never_sell_at_loss:
+    if trigger2 < floor and cfg_exit.never_sell_at_loss and cfg_exit.strand_final_half:
         return Action("HOLD", f"STRANDED HALF — second trigger {trigger2:.2f} is below the "
                               f"net floor {floor:.2f}; manual sell?")
     if close <= trigger2:
@@ -271,7 +299,16 @@ class SmallCapDryRun:
             )
         return out
 
-    def decide(self, ticker: str, candles: pd.DataFrame, position: Optional[Position]) -> Action:
+    def decide(self, ticker: str, candles: pd.DataFrame, position: Optional[Position],
+               *, avg_daily_value_cr: Optional[float] = None, fundamentals=None,
+               last_exit_cross_date: Optional[str] = None) -> Action:
+        """
+        The keyword-only screens are enforced only when the runner supplies them
+        (a value of None = "not my job here, the caller checks"):
+          avg_daily_value_cr   -> liquidity gate  (cfg.liquidity)
+          fundamentals         -> fundamentals gate (cfg.fundamentals, via passes_gate)
+          last_exit_cross_date -> re-entry cooldown: the fresh cross must post-date it
+        """
         r = self.cfg.rules
         close = candles["Close"]
 
@@ -279,9 +316,28 @@ class SmallCapDryRun:
             en = self.cfg.entry
             fresh, cross_date = fresh_macd_cross(candles, within_bars=en.fresh_cross_max_age_days)
             trend_ok = uptrend_200(close) if en.require_200ema_uptrend else above_ma(close, r.ma_period)
-            if trend_ok and fresh:
-                return Action("BUY", f"trend ok + fresh MACD cross {cross_date}")
-            return Action("HOLD", "no entry signal")
+            if not (trend_ok and fresh):
+                return Action("HOLD", "no entry signal")
+
+            lq = self.cfg.liquidity
+            if lq.enabled and avg_daily_value_cr is not None and avg_daily_value_cr < lq.min_avg_daily_value_cr:
+                return Action("HOLD", f"skipped — traded only Rs {avg_daily_value_cr:.2f}cr/day, "
+                                      f"below the Rs {lq.min_avg_daily_value_cr:g}cr liquidity floor")
+
+            if fundamentals is not None:
+                from strategies.framework.fundamentals import passes_gate
+                ok, why = passes_gate(fundamentals, self.cfg.fundamentals,
+                                      self.cfg.min_market_cap_cr, self.cfg.max_market_cap_cr)
+                if not ok:
+                    return Action("HOLD", f"failed health check — {why}")
+
+            if last_exit_cross_date and _not_after(cross_date, last_exit_cross_date):
+                return Action("HOLD", f"waiting for a fresh signal after the last exit "
+                                      f"({cross_date} is not newer than {last_exit_cross_date})")
+
+            return Action("BUY", f"trend ok + fresh MACD cross {cross_date}")
 
         # managing an open position — the trailing rope, no adds, no stop-loss
-        return _rope_action(self.cfg.exit, position, float(close.iloc[-1]))
+        if _frozen_lower_circuit(candles, r.circuit_band_pct):
+            return Action("HOLD", "can't sell — the stock is frozen at its lower price limit today")
+        return _rope_action(self.cfg.exit, position, float(close.iloc[-1]), self.cfg.costs)

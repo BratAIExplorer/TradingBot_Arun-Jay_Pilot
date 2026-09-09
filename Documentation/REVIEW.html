@@ -52,7 +52,7 @@
 but that he can't read at a glance is a failed product.</p>
 
 <div class="card accent">
-<strong>Headline:</strong> the strategy framework is built and honest. <strong>79 tests pass</strong>
+<strong>Headline:</strong> the strategy framework is built and honest. <strong>94 tests pass</strong>
 (verified by running <code>python -m pytest strategies/tests -q</code>). Every P0/P1/P2 from the
 earlier draft of this review is now fixed in code — see §1. What remains is <strong>not</strong> a bug
 list: it is the last three build steps (broker → runner → dashboard), and each is gated on a
@@ -61,7 +61,7 @@ autonomously.
 </div>
 
 <h2>1. Verified — earlier findings now closed</h2>
-<p>Ran the suite (79 passed) and cross-read the code against the plan
+<p>Ran the suite (94 passed) and cross-read the code against the plan
 (<code>~/.claude/plans/lets-discuss-the-exact-curious-bentley.md</code>) and
 <code>SMALL_CAP_DRYRUN.html</code>. The prior draft of this review was written at 53 tests and is
 superseded by the table below.</p>
@@ -81,8 +81,8 @@ superseded by the table below.</p>
     <td><span class="sev s-done">fixed</span> both now say the free Personal plan places CNC orders; ₹500/mo Connect only adds ticks/history.</td>
     <td>plan §Step&nbsp;0.2 · HTML §4</td></tr>
 <tr><td>P2 — "net of costs" overstates; floor is gross</td>
-    <td><span class="sev s-open">deferred, honest</span> floor is still gross and both docs now say so. The per-tranche post-cost check needs the <code>costs:</code> model, which lives in <code>broker.py</code> (build step 4).</td>
-    <td><code>small_cap_dryrun.py:148-159</code></td></tr>
+    <td><span class="sev s-done">fixed</span> <code>framework/costs.py</code> — <code>net_floor_price()</code> is the +N% break-even sell price after <code>CostsConfig</code> (both legs). <code>_rope_action</code>'s floor is now that price; a zero config = the old gross number. <code>test_costs.py</code>. (Runner still feeds the live cost inputs at step 5.)</td>
+    <td><code>costs.py</code></td></tr>
 <tr><td>P2 — MAE / OHLC have no producer</td>
     <td><span class="sev s-done">fixed</span> <code>advance_rope(..., low, ...)</code> computes <code>mae_pct</code> from the day Low each cycle; <code>store.record_ohlc</code> persists O/H/L/C.</td>
     <td><code>small_cap_dryrun.py:209-212</code></td></tr>
@@ -123,6 +123,44 @@ coverage). The gate code is done; it has no data to read.</li>
 </ol>
 </div>
 
+<h3 class="good">Must-fixes — pure pieces now built &amp; tested (94 pytest); enforcement wires in at step 5</h3>
+<div class="card good">
+<ul>
+<li><strong>Cost model</strong> — <code>framework/costs.py</code>: <code>net_buy_cost</code> /
+<code>net_sell_proceeds</code> / <code>net_floor_price</code>. The rope's +2% floor is now a
+<em>net-of-cost price</em> (<code>_rope_action</code> uses it); a zero <code>CostsConfig</code>
+reduces exactly to the old gross number, a realistic one (STT 0.1, 40/300 bps slip) puts the true
+break-even sell near +5.8%. <code>test_costs.py</code>.</li>
+<li><strong>Frozen lower circuit</strong> — <code>_frozen_lower_circuit()</code>; <code>decide()</code>'s
+manage path returns HOLD "can't sell — stock is frozen at its lower price limit" instead of a phantom
+fill. Band is <code>rules.circuit_band_pct</code> (default 10). <code>test_screens.py</code>.</li>
+<li><strong>Liquidity gate</strong> — <code>decide()</code> now enforces it when the caller passes
+<code>avg_daily_value_cr</code> (below <code>liquidity.min_avg_daily_value_cr</code> → HOLD). The
+runner supplies the value. <code>test_screens.py</code>.</li>
+</ul>
+<em>All three still need the runner (step 5) as the caller that feeds real cost/OHLC/volume data —
+the logic and knobs are done.</em>
+</div>
+
+<h3 class="good">The two gaps — closed at signal level</h3>
+<div class="card good">
+<ul>
+<li><strong>Fundamentals gate wired into <code>decide()</code></strong> — pass a
+<code>FundamentalsRow</code> and it runs <code>passes_gate()</code> (weak ROE / high D/E / etc → HOLD
+with the plain reason). None = caller checks. <code>test_screens.py</code>.</li>
+<li><strong>Re-entry cooldown</strong> — <code>decide(..., last_exit_cross_date=…)</code>: the fresh
+MACD cross must post-date the last exit or the buy is held. <code>test_screens.py</code>.</li>
+</ul>
+</div>
+
+<h3 class="accent">The "one real leak" — now a setting</h3>
+<div class="card accent">
+The stranded-final-half (bot holds a half it can't sell above +2%, dad sells it manually in Zerodha) is
+governed by <code>exit.strand_final_half</code>. Default <strong>true</strong> = current behaviour.
+Set <strong>false</strong> and the bot closes the final half at its trigger anyway. B picks the trade-off
+in config; the dashboard banner states which choice is active. <code>test_screens.py</code>.
+</div>
+
 <h3 class="warn">Not started — steps 4–8 (need the four answers above first)</h3>
 <table>
 <tr><th>#</th><th>Deliverable</th><th>Note</th></tr>
@@ -132,17 +170,12 @@ coverage). The gate code is done; it has no data to read.</li>
 <tr><td>8</td><td><code>strategies/small_cap_compare.py</code></td><td>Day-14 diagnostic: replay logged trades with a 5/8/10% hard stop. Needs logged data, so it comes last.</td></tr>
 </table>
 
-<h3 class="accent">Wiring gaps inside the built code (cheap, but need a caller)</h3>
-<div class="card accent">
+<h3 class="note">Remaining cosmetics (not blockers)</h3>
+<div class="card">
 <ul>
-<li><code>SmallCapDryRun.decide()</code> does <strong>not</strong> call <code>fundamentals.passes_gate()</code> —
-by design the gate is "applied by the caller". That caller is <code>runner.py</code> (step 5), which does
-not exist yet. Until then the fundamentals gate is built but unenforced.</li>
-<li><code>LiquidityConfig.min_avg_daily_value_cr</code> is loaded but applied nowhere (its own docstring
-says "not wired to a sell yet"). Wire it in the runner's entry path.</li>
 <li><code>scan()</code>'s per-candidate <code>reason</code> string still describes the old
-20/50-MA + RSI confluence, not the 200-EMA entry rule. Cosmetic, but it feeds the dashboard "why"
-column — fix when step 6 is built.</li>
+20/50-MA + RSI confluence, not the 200-EMA entry rule. It feeds the dashboard "why" column — fix when
+step 6 is built.</li>
 <li><code>exit.scale_out_tranches</code> in the JSON is not read; the scale-out is hard-coded to 2 halves.
 Leave as-is unless a strategy ever needs N≠2 — the whole rope math assumes halves.</li>
 </ul>

@@ -89,7 +89,7 @@
   </div>
 </div>
 
-<div class="banner warn">⚠ Solara Active Pharma — one half is stuck. The second half can only sell below +2%, so the bot will not sell it. <b>You may want to sell this half yourself in Zerodha.</b></div>
+<div class="banner warn">⚠ Solara Active Pharma — one half is stuck. The second half can only sell below +2%, so — because your setting is "hold stuck halves" — the bot will not sell it. <b>You may want to sell this half yourself in Zerodha.</b> (Change the setting to "sell it anyway" if you'd rather the bot always close out.)</div>
 
 <div class="card stock profit">
   <div class="row"><span class="name">Solara Active Pharma</span><span class="price">₹ 505</span></div>
@@ -149,6 +149,31 @@ It will NEVER sell a piece for less than 2% above what you paid (after charges).
 There is NO stop-loss, on purpose. A sudden fall can still catch it before it sells — that is the cost of never selling at a loss.
 
 Money: ₹ 10,000 per stock, one position per company, up to 3 companies.</div>
+
+<h2>Settings — everything here is adjustable</h2>
+<div class="card">
+<p>Every rule the bot follows is a setting. Change a number, restart the bot, done —
+no code. (A proper on-screen form comes later; for now these live in one small
+text file, <code>strategies/configs/small_cap_dryrun.json</code>.)</p>
+<div class="facts" style="grid-template-columns:1fr">
+  <span>Money per stock</span><b>₹ 10,000</b>
+  <span>Total money in this plan</span><b>₹ 30,000</b>
+  <span>Most stocks at once</span><b>3</b>
+  <span>Never risk more than</span><b>2% of the account</b>
+  <span>Buy signal must be</span><b>1 trading day old or newer</b>
+  <span>Trend rule</span><b>price above the 200-day line, 50-day above 200-day</b>
+  <span>Health check</span><b>ON — ROE ≥ 10%, low debt, profitable, ₹500–5,000cr</b>
+  <span>Liquidity floor</span><b>₹ 1cr traded per day</b>
+  <span>Safety line sits</span><b>2% below the best price</b>
+  <span>Won't sell below</span><b>+2% after charges</b>
+  <span>Second half sells</span><b>3% below the safety line</b>
+  <span>Stuck final half</span><b>HOLD it (you sell manually) &nbsp;·&nbsp; other option: sell it anyway</b>
+  <span>Hard stop-loss</span><b>OFF (on purpose)</b>
+  <span>Frozen-stock guard</span><b>ON — 10% daily limit assumed</b>
+  <span>Charges model</span><b>realistic (0.1% tax, 40bps buy slip, 300bps thin-sell slip)</b>
+  <span>Wait after an exit</span><b>ON — needs a brand-new buy signal to re-enter</b>
+</div>
+</div>
 
 <h2>Scoreboard</h2>
 <div class="card">

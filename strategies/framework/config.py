@@ -32,6 +32,22 @@ class ExitConfig:
     scale_out_step_pct: float = 3.0      # second half triggers this far below the rope
     hard_stop_pct: float | None = None   # OFF by default; if set, sell all at entry*(1-this/100)
     never_sell_at_loss: bool = True
+    strand_final_half: bool = True       # True: hold a final half whose trigger is below the
+                                         # floor (dad sells it manually). False: sell it anyway
+                                         # at the trigger. This is the "stranded half" choice.
+
+
+@dataclass(frozen=True)
+class CostsConfig:
+    """Zerodha delivery cost model. Defaults are ZERO ('best' fill) so an
+    unconfigured strategy behaves exactly as the old gross floor. A real config
+    JSON sets the realistic numbers (stt 0.1, entry slippage 40bps, thin-book
+    exit slippage 300bps)."""
+    brokerage_flat: float = 0.0          # rupees per order (Zerodha delivery = 0)
+    stt_pct: float = 0.0                 # % of turnover, both legs
+    entry_slippage_bps: float = 0.0      # buy fills this many bps worse
+    exit_slippage_bps_thin: float = 0.0  # sell fills this many bps worse on a thin book
+    fill_assumption: str = "best"        # "best" | "realistic" (label only, for the dashboard)
 
 
 @dataclass(frozen=True)
@@ -61,6 +77,9 @@ class RulesConfig:
     rsi_period: int = 14
     divergence_lookback: int = 10
     swing_fractal_bars: int = 5
+    circuit_band_pct: float = 10.0    # heuristic daily price limit; if the whole day trades
+                                      # locked at/below entry-band, treat as a frozen lower
+                                      # circuit (no bid) and never emit a sell that day
 
 
 @dataclass(frozen=True)
@@ -75,6 +94,7 @@ class StrategyConfig:
     entry: EntryConfig = field(default_factory=EntryConfig)
     liquidity: LiquidityConfig = field(default_factory=LiquidityConfig)
     fundamentals: FundamentalsConfig = field(default_factory=FundamentalsConfig)
+    costs: CostsConfig = field(default_factory=CostsConfig)
     min_market_cap_cr: float = MARKET_CAP_BAND_CR[0]
     max_market_cap_cr: float = MARKET_CAP_BAND_CR[1]
 
@@ -109,6 +129,7 @@ def load_strategy_config(path: str) -> StrategyConfig:
     en = raw.get("entry", {})
     lq = raw.get("liquidity_gate", {})
     fg = raw.get("fundamentals_gate", {})
+    co = raw.get("costs", {})
 
     per_stock_amount = _req(b, "per_stock_amount")
     total_budget = _req(b, "total_budget")
@@ -129,6 +150,7 @@ def load_strategy_config(path: str) -> StrategyConfig:
             rsi_period=r.get("rsi_period", 14),
             divergence_lookback=r.get("divergence_lookback", 10),
             swing_fractal_bars=r.get("swing_fractal_bars", 5),
+            circuit_band_pct=r.get("circuit_band_pct", 10.0),
         ),
         exit=ExitConfig(
             trail_giveback_pct=e.get("trail_giveback_pct", 2.0),
@@ -136,6 +158,14 @@ def load_strategy_config(path: str) -> StrategyConfig:
             scale_out_step_pct=e.get("scale_out_step_pct", 3.0),
             hard_stop_pct=e.get("hard_stop_pct", None),
             never_sell_at_loss=bool(e.get("never_sell_at_loss", True)),
+            strand_final_half=bool(e.get("strand_final_half", True)),
+        ),
+        costs=CostsConfig(
+            brokerage_flat=co.get("brokerage_flat", 0.0),
+            stt_pct=co.get("stt_pct", 0.0),
+            entry_slippage_bps=co.get("entry_slippage_bps", 0.0),
+            exit_slippage_bps_thin=co.get("exit_slippage_bps_thin", 0.0),
+            fill_assumption=co.get("fill_assumption", "best"),
         ),
         entry=EntryConfig(
             fresh_cross_max_age_days=int(en.get("fresh_cross_max_age_days", 1)),

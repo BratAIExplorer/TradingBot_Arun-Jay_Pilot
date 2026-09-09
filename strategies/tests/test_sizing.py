@@ -48,6 +48,24 @@ def test_blocked_by_2pct_account_ceiling():
     assert "ceiling" in p.reason.lower()
 
 
+def test_blocked_when_the_buy_would_push_deployed_past_total_budget():
+    # account 100k, total_budget = 5000*5 = 25k. Already 22k deployed across 2 names;
+    # a 5k buy would take it to 27k > 25k. Name count (2 < 5) and the 2% ceiling
+    # (25k*... ) do not bind here — only the rupee budget should stop it.
+    cfg = _cfg(per_stock=5000, cap_pct=90.0, max_names=5)
+    p = plan_entry(account_value=100_000, price=100, position=None, cfg=cfg,
+                   open_names=2, deployed=22_000)
+    assert p.allowed is False
+    assert "budget" in p.reason.lower() and "25" in p.reason
+
+
+def test_buy_that_stays_within_total_budget_is_allowed():
+    cfg = _cfg(per_stock=5000, cap_pct=90.0, max_names=5)
+    p = plan_entry(account_value=100_000, price=100, position=None, cfg=cfg,
+                   open_names=2, deployed=15_000)
+    assert p.allowed is True                     # 15k + 5k = 20k <= 25k
+
+
 def test_blocked_when_max_names_reached():
     p = plan_entry(account_value=1_000_000, price=100, position=None, cfg=_cfg(max_names=5),
                    open_names=5, deployed=0)

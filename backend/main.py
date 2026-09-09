@@ -37,6 +37,14 @@ app.add_middleware(
 db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "database", "trades.db")
 db = TradesDatabase(db_path=db_path) if DB_AVAILABLE else None
 
+# Small-cap strategy dashboard (read-only; isolated DB, never touches trades.db)
+try:
+    from backend.strategy_routes import build_router
+    app.include_router(build_router())
+except Exception as e:  # noqa: BLE001 — the main API must still boot without it
+    print(f"Warning: small-cap strategy routes not mounted: {e}")
+
+
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "ARUN Titan Brain is Active"}

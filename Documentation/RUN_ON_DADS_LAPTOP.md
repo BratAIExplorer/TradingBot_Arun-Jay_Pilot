@@ -73,17 +73,36 @@ No password or 2FA code is ever stored — only the day's access token.
 
 ---
 
-## 4. What Dad can do *today* (offline, safe)
+## 4. What Dad can do *today* (offline / read-only, no API key)
 
 From `%USERPROFILE%\TradingBot`:
 
 ```bat
 python -m pytest strategies\tests -q
 ```
-Expect: `79 passed`. Confirms the install is good.
+Expect: `116 passed`. Confirms the install is good.
 
-The live scan, order placement, and dashboard need `broker.py` + `runner.py`
-(not built yet).
+**Run the daily scan and store the picks:**
+```bat
+set PYTHONUTF8=1
+python -m strategies.scan_and_store
+```
+Prints today's top 5 and top 10 and writes them to `database\strategies.db`.
+Add `--check-caps` to also apply the ₹500–5,000cr size filter (slower).
+
+**Open the dashboard** (read-only — shows the stored scan, settings, "how it works"):
+```bat
+set PYTHONUTF8=1
+python -m uvicorn backend.main:app --port 8000
+```
+then visit `http://localhost:8000/strategy`.
+
+> `set PYTHONUTF8=1` is required: an unrelated file (`database\trades_db.py`)
+> prints an emoji that crashes the server on a default Windows console until
+> that's set. It's the live bot's file — we don't edit it.
+
+Order placement still needs the Zerodha `.env` (section 3) and
+`orders_enabled: true` — the deliberate last step.
 
 ---
 

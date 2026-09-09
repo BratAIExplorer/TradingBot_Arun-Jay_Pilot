@@ -52,16 +52,15 @@
 but that he can't read at a glance is a failed product.</p>
 
 <div class="card accent">
-<strong>Headline:</strong> the strategy framework is built and honest. <strong>94 tests pass</strong>
+<strong>Headline:</strong> the strategy framework is built and honest. <strong>116 tests pass</strong>
 (verified by running <code>python -m pytest strategies/tests -q</code>). Every P0/P1/P2 from the
-earlier draft of this review is now fixed in code — see §1. What remains is <strong>not</strong> a bug
-list: it is the last three build steps (broker → runner → dashboard), and each is gated on a
-<strong>human decision that carries money risk</strong> (§3). Nothing past this line can be built
-autonomously.
+earlier draft of this review is now fixed in code — see §1. The scan → rank → store → log-only decide/size/rope pipeline and a live read-only
+<code>/strategy</code> dashboard are now built and verified (§ "Now built"). The only thing left is the
+deliberate last step: your Zerodha API key, account choice and flipping <code>orders_enabled</code>.
 </div>
 
 <h2>1. Verified — earlier findings now closed</h2>
-<p>Ran the suite (94 passed) and cross-read the code against the plan
+<p>Ran the suite (116 passed) and cross-read the code against the plan
 (<code>~/.claude/plans/lets-discuss-the-exact-curious-bentley.md</code>) and
 <code>SMALL_CAP_DRYRUN.html</code>. The prior draft of this review was written at 53 tests and is
 superseded by the table below.</p>
@@ -123,7 +122,7 @@ coverage). The gate code is done; it has no data to read.</li>
 </ol>
 </div>
 
-<h3 class="good">Must-fixes — pure pieces now built &amp; tested (94 pytest); enforcement wires in at step 5</h3>
+<h3 class="good">Must-fixes — pure pieces now built &amp; tested (116 pytest); enforcement wires in at step 5</h3>
 <div class="card good">
 <ul>
 <li><strong>Cost model</strong> — <code>framework/costs.py</code>: <code>net_buy_cost</code> /
@@ -161,14 +160,34 @@ Set <strong>false</strong> and the bot closes the final half at its trigger anyw
 in config; the dashboard banner states which choice is active. <code>test_screens.py</code>.
 </div>
 
-<h3 class="warn">Not started — steps 4–8 (need the four answers above first)</h3>
+<h3 class="good">Now built &amp; verified — log-only, no API key (116 pytest)</h3>
 <table>
-<tr><th>#</th><th>Deliverable</th><th>Note</th></tr>
-<tr><td>4</td><td><code>framework/broker.py</code></td><td>Port <code>zerodha_client.py</code> near-verbatim + cost model + <code>orders_enabled</code> log-only flag. Gate for the net-of-cost floor.</td></tr>
-<tr><td>5</td><td><code>framework/runner.py</code> + <code>LAUNCH_SMALLCAP.bat</code> + <code>status.txt</code></td><td>The loop that calls <code>scan</code> → <code>plan_entry</code> → <code>decide</code> → <code>advance_rope</code> → persists → (log-only) places orders, and logs live-ARUN holdings each cycle for the overlap check.</td></tr>
-<tr><td>6</td><td><code>backend/strategy_routes.py</code> + <code>backend/static/strategy.html</code></td><td>The dad-facing page. §4/§5 below are its acceptance criteria. One <code>include_router</code> line in <code>backend/main.py</code> is the only edit to existing backend code.</td></tr>
-<tr><td>8</td><td><code>strategies/small_cap_compare.py</code></td><td>Day-14 diagnostic: replay logged trades with a 5/8/10% hard stop. Needs logged data, so it comes last.</td></tr>
+<tr><th>Deliverable</th><th>State</th></tr>
+<tr><td><code>strategies/scan_and_store.py</code></td><td><span class="sev s-done">done</span> scan → rank → persist every candidate to <code>strategies.db</code>. <strong>Live-verified:</strong> ran 25 real NSE names → 12 stored, <code>get_scan(limit=5/10)</code> returns the top slice. CLI: <code>python -m strategies.scan_and_store</code>. <code>test_scan_and_store.py</code>.</td></tr>
+<tr><td>₹-budget hard cap in <code>sizing.plan_entry</code></td><td><span class="sev s-done">done</span> a buy that would push <code>deployed + cost</code> past <code>budget.total_budget</code> is refused with the rupee reason — previously only the name-count and %-ceiling bound. Answers "cap the bot at ₹30,000". <code>test_sizing.py</code>.</td></tr>
+<tr><td><code>strategies/configs/small_cap_dryrun.json</code> + <code>README.md</code> + <code>.env.example</code></td><td><span class="sev s-done">done</span> the real config (₹10k/name, ₹30k cap → 3 names, realistic costs) + a plain-English field guide for every knob + the key-in template. <code>test_config_file.py</code>.</td></tr>
+<tr><td><code>framework/broker.py</code></td><td><span class="sev s-done">done, log-only</span> Zerodha CNC shape ported; <code>orders_enabled=false</code> → simulated fill priced through <code>costs.py</code>; <code>validate_session()</code> with no creds fails cleanly. No <code>kiteconnect</code> import until keys exist. <code>test_broker.py</code>.</td></tr>
+<tr><td><code>framework/runner.py</code></td><td><span class="sev s-done">done, log-only</span> one cycle: scan → for each name <code>decide</code> (+ liquidity/fundamentals screens) → <code>plan_entry</code> → log-only BUY → fills/positions; for each holding <code>decide</code> → <code>advance_rope</code> → log-only SCALE_OUT; writes <code>status.txt</code>. <code>test_runner.py</code>.</td></tr>
+<tr><td><code>backend/strategy_routes.py</code> + <code>backend/static/strategy.html</code></td><td><span class="sev s-done">done, LIVE</span> mounted in <code>backend/main.py</code> (one line). <strong>HTTP-verified:</strong> <code>/strategy</code> serves the senior-citizen page; <code>/strategy/api/scan</code>, <code>/positions</code>, <code>/activity</code>, <code>/howitworks</code>, <code>/settings</code>, <code>/status</code>, <code>/stop</code>. Settings view lists every knob in plain English. <code>test_strategy_routes.py</code>.</td></tr>
 </table>
+
+<h3 class="warn">Still not built</h3>
+<table>
+<tr><th>#</th><th>Deliverable</th><th>Blocked on</th></tr>
+<tr><td>—</td><td>Zerodha <code>.env</code> + live session + flip <code>orders_enabled</code></td><td>your API key/secret + account choice (the deliberate last step)</td></tr>
+<tr><td>—</td><td><code>LAUNCH_SMALLCAP.bat</code> + a scheduled daily <code>run_cycle</code></td><td>nothing — trivial once you want a schedule</td></tr>
+<tr><td>—</td><td>Real Nifty Smallcap 250 universe</td><td>the curated 135-name list is in; swap for the official constituents quarterly</td></tr>
+<tr><td>8</td><td><code>strategies/small_cap_compare.py</code></td><td>needs a stretch of logged cycles first</td></tr>
+</table>
+
+<div class="card bad">
+<strong>Server blocker (pre-existing, not this work):</strong> <code>database/trades_db.py:32</code> does
+<code>print("✅ …")</code>, which crashes the whole backend on a Windows <code>cp1252</code> console
+(<code>UnicodeEncodeError</code>) — so <code>uvicorn backend.main:app</code> won't boot there today.
+Workaround: launch with <code>PYTHONUTF8=1</code> (or <code>set PYTHONIOENCODING=utf-8</code>). The
+strategy routes themselves are clean and were verified on a bare app. Not fixed here — it's the live
+bot's file (zero-edit rule).
+</div>
 
 <h3 class="note">Remaining cosmetics (not blockers)</h3>
 <div class="card">

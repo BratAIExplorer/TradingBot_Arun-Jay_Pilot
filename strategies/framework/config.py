@@ -97,6 +97,7 @@ class StrategyConfig:
     costs: CostsConfig = field(default_factory=CostsConfig)
     min_market_cap_cr: float = MARKET_CAP_BAND_CR[0]
     max_market_cap_cr: float = MARKET_CAP_BAND_CR[1]
+    orders_enabled: bool = False    # the live-money switch; log-only until True AND keys present
 
 
 def _req(d: dict, key: str):
@@ -185,4 +186,5 @@ def load_strategy_config(path: str) -> StrategyConfig:
         universe=_req(raw, "universe"),
         min_market_cap_cr=fg.get("min_market_cap_cr", MARKET_CAP_BAND_CR[0]),
         max_market_cap_cr=fg.get("max_market_cap_cr", MARKET_CAP_BAND_CR[1]),
+        orders_enabled=bool(raw.get("orders_enabled", False)),
     )

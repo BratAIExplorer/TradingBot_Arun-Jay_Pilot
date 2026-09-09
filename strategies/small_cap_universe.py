@@ -32,18 +32,47 @@ from strategies.framework.config import MARKET_CAP_BAND_CR
 DEFAULT_MIN_CR, DEFAULT_MAX_CR = MARKET_CAP_BAND_CR
 _CRORE = 1e7
 
-# --- Starter small-cap list (EXPAND ME from Nifty Smallcap 250) ----------------
+# --- Curated small-cap watch list ---------------------------------------------
+# ~130 NSE names that were small/lower-mid-cap when compiled (2026-09). This is a
+# WATCH LIST, not a guarantee of size: the ₹500-5,000cr band check
+# (apply_cap_filter=True, or scan_and_store --check-caps) is the real gate and
+# drops anything that has grown out of the band. Refresh from the official Nifty
+# Smallcap 250 constituents each quarter; format is SYMBOL.NS.
 SMALLCAP_TICKERS: List[str] = [
-    "IEX.NS", "CDSL.NS", "CAMS.NS", "ANGELONE.NS", "KFINTECH.NS",
-    "RAILTEL.NS", "IRCON.NS", "NBCC.NS", "RITES.NS", "HUDCO.NS",
+    # capital markets / financials
+    "CDSL.NS", "CAMS.NS", "ANGELONE.NS", "KFINTECH.NS", "IEX.NS", "MCX.NS",
+    "CREDITACC.NS", "APTUS.NS", "HOMEFIRST.NS", "UGROCAP.NS", "SPANDANA.NS",
+    "CSBBANK.NS", "DCBBANK.NS", "KARURVYSYA.NS", "SOUTHBANK.NS", "JMFINANCIL.NS",
+    # PSU / defence / rail / infra
+    "RAILTEL.NS", "IRCON.NS", "NBCC.NS", "RITES.NS", "HUDCO.NS", "RVNL.NS",
     "MAZDOCK.NS", "GRSE.NS", "COCHINSHIP.NS", "BEML.NS", "MIDHANI.NS",
+    "IRCTC.NS", "IREDA.NS", "HFCL.NS", "ITI.NS", "ENGINERSIN.NS", "NCC.NS",
+    "KALPATPOWR.NS", "KEC.NS", "PNCINFRA.NS", "GRINFRA.NS", "HGINFRA.NS",
+    # IT mid/small
     "DATAPATTNS.NS", "IDEAFORGE.NS", "NETWEB.NS", "MASTEK.NS", "BIRLASOFT.NS",
     "ZENSAR.NS", "SONATSOFTW.NS", "HAPPSTMNDS.NS", "TANLA.NS", "ROUTE.NS",
-    "INTELLECT.NS", "CYIENT.NS", "KPITTECH.NS", "LAURUSLABS.NS", "GRANULES.NS",
-    "NATCOPHARM.NS", "IPCALAB.NS", "SEQUENT.NS", "NEULAND.NS", "CAPLINPOINT.NS",
-    "METROPOLIS.NS", "THYROCARE.NS", "KIMS.NS", "RAINBOW.NS", "MEDPLUS.NS",
+    "INTELLECT.NS", "CYIENT.NS", "KPITTECH.NS", "NEWGEN.NS", "RATEGAIN.NS",
+    "MAPMYINDIA.NS", "LATENTVIEW.NS", "TATATECH.NS", "ZAGGLE.NS",
+    # pharma / healthcare
+    "LAURUSLABS.NS", "GRANULES.NS", "NATCOPHARM.NS", "IPCALAB.NS", "SEQUENT.NS",
+    "NEULAND.NS", "CAPLINPOINT.NS", "METROPOLIS.NS", "THYROCARE.NS", "KIMS.NS",
+    "RAINBOW.NS", "MEDPLUS.NS", "AJANTPHARM.NS", "JBCHEPHARM.NS", "BLISSGVS.NS",
+    "SUVENPHAR.NS", "GLAND.NS", "PPLPHARMA.NS", "MARKSANS.NS", "ERIS.NS",
+    # consumer / electricals / durables
     "VGUARD.NS", "CROMPTON.NS", "ORIENTELEC.NS", "AMBER.NS", "DIXON.NS",
     "KEI.NS", "FINCABLES.NS", "APARINDS.NS", "TRIVENI.NS", "ELGIEQUIP.NS",
+    "SYMPHONY.NS", "TTKPRESTIG.NS", "BAJAJELEC.NS", "CERA.NS", "KAJARIACER.NS",
+    "GREENPANEL.NS", "CENTURYPLY.NS", "VIPIND.NS", "RELAXO.NS", "SAFARI.NS",
+    # chemicals / industrials / materials
+    "NAVINFLUOR.NS", "FINEORG.NS", "GALAXYSURF.NS", "ALKYLAMINE.NS", "BALAMINES.NS",
+    "NOCIL.NS", "ROSSARI.NS", "CLEAN.NS", "TATACHEM.NS", "DEEPAKNTR.NS",
+    "GRINDWELL.NS", "TIMKEN.NS", "SKFINDIA.NS", "CARBORUNIV.NS", "KSB.NS",
+    "RATNAMANI.NS", "PRINCEPIPE.NS", "SUPREMEIND.NS", "FINPIPE.NS", "ASTRAL.NS",
+    # auto ancillary / misc
+    "ENDURANCE.NS", "SUNDRMFAST.NS", "GABRIEL.NS", "JAMNAAUTO.NS", "SUPRAJIT.NS",
+    "MINDACORP.NS", "CRAFTSMAN.NS", "SANSERA.NS", "RKFORGE.NS",
+    "GESHIP.NS", "COFORGE.NS", "PGHL.NS", "VSTIND.NS", "RADICO.NS",
+    "CCL.NS", "HERITGFOOD.NS", "DODLA.NS", "KRBL.NS",
 ]
 
 

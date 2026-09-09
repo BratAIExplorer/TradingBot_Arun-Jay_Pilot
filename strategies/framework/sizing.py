@@ -39,8 +39,16 @@ def plan_entry(
     if qty < 1:
         return EntryPlan(False, 0, "position budget too small for this price")
 
+    cost = qty * price
+    if deployed + cost > cfg.budget.total_budget:
+        return EntryPlan(
+            False, 0,
+            f"blocked by the Rs {cfg.budget.total_budget:g} total budget "
+            f"(Rs {deployed:g} already in the market + Rs {cost:g} this buy)",
+        )
+
     ceiling = account_value * cfg.budget.pct_of_account_cap / 100.0
-    if deployed + qty * price > ceiling:
+    if deployed + cost > ceiling:
         return EntryPlan(False, 0, f"blocked by {cfg.budget.pct_of_account_cap}% account ceiling")
 
     if open_names >= cfg.budget.max_names:

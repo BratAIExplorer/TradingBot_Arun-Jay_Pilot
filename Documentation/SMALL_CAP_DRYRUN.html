@@ -50,7 +50,7 @@
 <div class="wrap">
 
 <h1>Small-Cap Momentum Strategy</h1>
-<p class="sub">Design &amp; build doc · ARUN Trading Bot · updated 2026-09-09 · status: <strong>framework built (94 tests green): steps 1–3, rope exit + advance_rope state contract, 200-EMA entry, cost model (costs.py), circuit guard, liquidity/fundamentals/cooldown screens, registry. Blocked on the four Step-0 answers (Zerodha account · Kite keys · run-1 budget · first fundamentals.csv), then broker.py / runner.py / dashboard</strong> · review: <a href="REVIEW.html">REVIEW.html</a> (lead + dad-UX findings; the gross-vs-net floor is the one open item and is deferred to broker.py by design)</p>
+<p class="sub">Design &amp; build doc · ARUN Trading Bot · updated 2026-09-09 · status: <strong>framework + log-only pipeline built (116 tests green): steps 1–3, rope exit + advance_rope state contract, 200-EMA entry, cost model (costs.py), circuit guard, liquidity/fundamentals/cooldown screens, registry, scan_and_store, budget hard-cap, broker (log-only), runner (log-only), live /strategy dashboard. Blocked on the four Step-0 answers (Zerodha account · Kite keys · run-1 budget · first fundamentals.csv) to flip orders_enabled; everything up to log-only trading is built</strong> · review: <a href="REVIEW.html">REVIEW.html</a> (lead + dad-UX findings; the gross-vs-net floor is the one open item and is deferred to broker.py by design)</p>
 
 <div class="card accent">
 <strong>One line:</strong> scan small-caps → keep only fundamentally-good names →

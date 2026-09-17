@@ -43,6 +43,13 @@
     width:100%;padding:1.1rem;font:inherit;font-size:calc(1.4rem * var(--scale));font-weight:800;cursor:pointer}
   .muted{color:var(--muted)}
   @media(max-width:520px){.facts{grid-template-columns:1fr}}
+  .setrow{display:flex;justify-content:space-between;align-items:center;gap:1rem;
+    padding:.4rem 0;border-bottom:1px solid var(--line)}
+  .setrow:last-of-type{border-bottom:0}
+  #settings input,#settings select{font:inherit;padding:.3rem .45rem;border:1px solid var(--muted);
+    border-radius:6px;background:var(--panel);color:var(--ink);max-width:11rem}
+  #savebtn{margin-top:.8rem;font:inherit;font-weight:700;border:2px solid var(--accent);
+    background:var(--accentbg);color:var(--ink);border-radius:8px;padding:.5rem 1rem;cursor:pointer}
 </style>
 </head>
 <body>
@@ -58,6 +65,7 @@
 
 <div id="headline" class="headline">Loading…</div>
 <div id="stopbanner"></div>
+<div id="loaderr"></div>
 
 <h2>My stocks</h2>
 <div id="positions"><p class="muted">Loading…</p></div>
@@ -84,7 +92,7 @@ function setScale(s){ document.documentElement.style.setProperty("--scale", s);
   try{ localStorage.setItem("scbScale", s); }catch(e){} }
 try{ const s = localStorage.getItem("scbScale"); if(s) setScale(s); }catch(e){}
 
-async function j(u, opt){ const r = await fetch(u, opt); return r.json(); }
+async function j(u, opt){ const r = await fetch("/strategy/" + u, opt); return r.json(); }
 
 function plWords(pct){
   const up = pct >= 0;
@@ -92,10 +100,20 @@ function plWords(pct){
 }
 
 async function load(){
-  const [pos, scan, act, how, set, st] = await Promise.all([
-    j("api/positions"), j("api/scan?limit=10"), j("api/activity?limit=15"),
-    j("api/howitworks"), j("api/settings"), j("api/status")
-  ]);
+  const calls = { pos:"api/positions", scan:"api/scan?limit=10", act:"api/activity?limit=15",
+    how:"api/howitworks", set:"api/settings", st:"api/status" };
+  const fb = { pos:[], scan:[], act:[], how:{text:""}, set:null, st:{stopped:false} };
+  const keys = Object.keys(calls);
+  const res = await Promise.allSettled(keys.map(k => j(calls[k])));
+  const d = {}, failed = [];
+  keys.forEach((k,i) => {
+    if (res[i].status === "fulfilled") d[k] = res[i].value;
+    else { d[k] = fb[k]; failed.push(k); }
+  });
+  const { pos, scan, act, how, set, st } = d;
+  document.getElementById("loaderr").innerHTML = failed.length
+    ? `<div class="banner bad">Some parts didn't load: ${failed.join(", ")}. `
+      + `<a href="" onclick="location.reload();return false">retry</a></div>` : "";
 
   // headline
   const need = pos.filter(p => p.stranded).length;
@@ -142,27 +160,71 @@ async function load(){
   document.getElementById("how").textContent = how.text || "";
   document.getElementById("how").classList.remove("muted");
 
-  // settings
-  const rows = [
-    ["Money per stock", money(set.per_stock_amount)],
-    ["Total money the bot may use", money(set.total_budget)],
-    ["Most stocks at once", set.max_names],
-    ["Buy signal age limit", set.fresh_cross_max_age_days + " trading day(s)"],
-    ["Health check", set.fundamentals_gate ? `ON — ROE ≥ ${set.min_roe}%, D/E ≤ ${set.max_debt_equity}` : "OFF"],
-    ["Company size band", `₹${set.market_cap_band_cr[0]}–${set.market_cap_band_cr[1]} cr`],
-    ["Liquidity floor", `₹${set.min_avg_daily_value_cr} cr traded per day`],
-    ["Safety line", set.trail_giveback_pct + "% below the best price"],
-    ["Won't sell below", "+" + set.min_profit_floor_pct + "% after charges"],
-    ["Second half sells", set.scale_out_step_pct + "% below the safety line"],
-    ["Stuck final half", set.strand_final_half ? "HOLD it (you sell manually)" : "sell it anyway"],
-    ["Hard stop-loss", set.hard_stop_pct == null ? "OFF (on purpose)" : set.hard_stop_pct + "%"],
-    ["Frozen-stock guard", set.circuit_band_pct + "% daily limit assumed"],
-    ["Charges model", set.fill_assumption],
-    ["Live orders", set.orders_enabled ? "ON" : "OFF (log-only)"],
+  // settings (editable)
+  const box = document.getElementById("settings");
+  if (!set){ box.innerHTML = '<p class="muted">Settings unavailable (no config file).</p>'; return; }
+  const F = [
+    ["per_stock_amount","Money per stock (₹)","num"],
+    ["total_budget","Total money the bot may use (₹)","num"],
+    ["max_names_cap","Most stocks at once (cap)","num"],
+    ["fresh_cross_max_age_days","Buy signal age limit (trading days)","num"],
+    ["require_200ema_uptrend","Require 200-EMA uptrend","bool"],
+    ["fundamentals_gate","Health check ON","bool"],
+    ["min_roe","ROE ≥ (%)","num"],
+    ["max_debt_equity","Debt / Equity ≤","num"],
+    ["min_market_cap_cr","Company size — min (₹ cr)","num"],
+    ["max_market_cap_cr","Company size — max (₹ cr)","num"],
+    ["min_avg_daily_value_cr","Liquidity floor (₹ cr traded per day)","num"],
+    ["trail_giveback_pct","Safety line (% below best price)","num"],
+    ["min_profit_floor_pct","Won't sell below (+% after charges)","num"],
+    ["scale_out_step_pct","Second half sells (% below safety line)","num"],
+    ["hard_stop_pct","Hard stop-loss (% — blank = OFF)","nullnum"],
+    ["strand_final_half","Hold a stuck final half","bool"],
+    ["circuit_band_pct","Frozen-stock guard (% daily limit)","num"],
+    ["fill_assumption","Charges model","enum"],
   ];
-  document.getElementById("settings").innerHTML =
-    '<div class="facts" style="grid-template-columns:1fr">' +
-    rows.map(([k,v]) => `<span>${k}</span><b>${v}</b>`).join("") + "</div>";
+  const ctrl = (k,kind) => {
+    const v = set[k];
+    if (kind === "bool")
+      return `<select data-key="${k}" data-kind="bool">`
+        + `<option value="true"${v?" selected":""}>Yes</option>`
+        + `<option value="false"${!v?" selected":""}>No</option></select>`;
+    if (kind === "enum")
+      return `<select data-key="${k}" data-kind="enum">`
+        + `<option${v==="best"?" selected":""}>best</option>`
+        + `<option${v==="realistic"?" selected":""}>realistic</option></select>`;
+    return `<input data-key="${k}" data-kind="${kind}" type="number" step="any" value="${v==null?"":v}">`;
+  };
+  box.innerHTML =
+    F.map(([k,label,kind]) => `<label class="setrow"><span>${label}</span>${ctrl(k,kind)}</label>`).join("")
+    + `<div class="setrow"><span>Live orders</span><b>${set.orders_enabled?"ON":"OFF (log-only)"}`
+    + ` — change this in the JSON file, not here</b></div>`
+    + `<button id="savebtn" onclick="saveSettings()">Save settings</button> `
+    + `<span id="savemsg" class="muted"></span>`;
+}
+
+async function saveSettings(){
+  const patch = {};
+  document.querySelectorAll('#settings [data-key]').forEach(el => {
+    const kind = el.dataset.kind;
+    let v = el.value;
+    if (kind === "bool") v = (v === "true");
+    else if (kind === "enum") v = String(v);
+    else if (kind === "nullnum") v = (v.trim() === "" ? null : Number(v));
+    else v = Number(v);
+    patch[el.dataset.key] = v;
+  });
+  const msg = document.getElementById("savemsg");
+  msg.textContent = "Saving…";
+  try{
+    const r = await fetch("/strategy/api/settings", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(patch) });
+    const out = await r.json();
+    if (!r.ok){ msg.textContent = "✗ " + (out.error || "failed"); return; }
+    await load();  // re-renders #settings, so set the message afterwards
+    const m2 = document.getElementById("savemsg");
+    if (m2) m2.textContent = "✓ saved — " + (out.note || "");
+  }catch(e){ msg.textContent = "✗ " + e.message; }
 }
 
 async function toggleStop(){

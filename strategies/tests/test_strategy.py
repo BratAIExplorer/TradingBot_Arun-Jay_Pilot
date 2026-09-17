@@ -133,6 +133,16 @@ def test_manage_holds_last_half_when_its_trigger_is_below_the_floor():
     assert "strand" in act.reason.lower()
 
 
+def test_manage_stranded_last_half_auto_sells_when_price_recovers_to_the_floor():
+    # same locked trigger 101 < floor 102, but price has climbed back to 103 (>= floor)
+    # -> the final half auto-sells at a profit instead of staying stranded
+    act = SmallCapDryRun(_cfg()).decide(
+        "X.NS", _frame([103]), _pos(entry=100.0, hwm=120.0, tranches_left=1, half2=101.0),
+    )
+    assert act.kind == "SCALE_OUT"
+    assert act.fraction == 1.0
+
+
 # --- manage: hard stop (off by default, on when configured) ---------- #
 def test_manage_hard_stop_is_off_by_default():
     # deep loss, but hard_stop_pct is None -> rope/floor logic holds, no sell

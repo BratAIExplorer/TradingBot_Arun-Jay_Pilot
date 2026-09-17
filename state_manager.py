@@ -76,10 +76,17 @@ class StateManager:
                     return obj
 
             sanitized_state = sanitize(self.state)
-            
-            with open(self.state_file, 'w') as f:
+
+            # Atomic write: a concurrent reader (positions_worker, balance timer)
+            # must never see a half-written file. Write to a temp file, then
+            # os.replace() — atomic on Windows and POSIX for same directory.
+            tmp_file = f"{self.state_file}.tmp"
+            with open(tmp_file, 'w') as f:
                 json.dump(sanitized_state, f, indent=2)
-            
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, self.state_file)
+
             logging.debug(f"💾 State saved to {self.state_file}")
             
         except Exception as e:
@@ -368,6 +375,16 @@ state = StateManager()
 
 
 if __name__ == "__main__":
+    # Atomic-write check: file is always valid JSON, never torn, and no .tmp
+    # is left behind after save().
+    _chk = StateManager("_atomic_check.json")
+    _chk.update_position("AAA", {'entry_price': 1, 'quantity': 1, 'exchange': 'NSE'})
+    with open("_atomic_check.json") as _f:
+        assert json.load(_f)['positions']['AAA']['quantity'] == 1
+    assert not os.path.exists("_atomic_check.json.tmp")
+    os.remove("_atomic_check.json")
+    print("atomic-write check passed\n")
+
     # Test state manager
     print("\n=== Testing State Manager ===\n")
     

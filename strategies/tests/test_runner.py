@@ -23,7 +23,7 @@ _CFG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 
 def _strat():
-    return load(_CFG_PATH)      # the shipped config: Rs 10k/name, Rs 30k cap -> 3 names
+    return load(_CFG_PATH)      # the shipped config: Rs 10k/name, Rs 100k cap -> 10 names
 
 
 class _Scanner:
@@ -78,19 +78,20 @@ def test_a_full_cycle_buys_a_qualifying_name_log_only():
     assert os.path.exists(status)
 
 
-def test_budget_cap_stops_the_fourth_name():
-    # config caps at Rs 30,000 / Rs 10,000 = 3 names; scanner offers 4
+def test_budget_cap_stops_the_eleventh_name():
+    # config caps at Rs 100,000 / Rs 10,000 = 10 names; scanner offers 11
     strat = _strat()
     store, d = _store()
+    offered = [f"{c}.NS" for c in "ABCDEFGHIJK"]   # 11 names
     summary = run_cycle(
         strat, store, _broker(),
-        account_value=100_000,
+        account_value=200_000,
         candle_provider=lambda t: _uptrend_fresh_cross(),
-        universe_scanner=_Scanner(["A.NS", "B.NS", "C.NS", "D.NS"]),
+        universe_scanner=_Scanner(offered),
         status_path=os.path.join(d, "status.txt"),
     )
-    assert summary["bought"] == 3
-    assert len(store.open_positions("small_cap_dryrun")) == 3
+    assert summary["bought"] == 10
+    assert len(store.open_positions("small_cap_dryrun")) == 10
 
 
 def test_a_holding_that_hits_the_rope_scales_out():

@@ -7,7 +7,7 @@
 
   "budget": {
     "per_stock_amount": 10000,
-    "total_budget": 30000,
+    "total_budget": 100000,
     "max_names_cap": 10,
     "pct_of_account_cap": 100.0
   },

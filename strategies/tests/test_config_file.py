@@ -17,11 +17,11 @@ def test_the_shipped_config_builds_a_strategy():
     assert strat.name == "small_cap_dryrun"
 
 
-def test_it_caps_the_bot_at_30k_across_3_names():
+def test_it_caps_the_bot_at_100k_across_10_names():
     c = load(_CFG).cfg
-    assert c.budget.total_budget == 30000
+    assert c.budget.total_budget == 100000
     assert c.budget.per_stock_amount == 10000
-    assert c.budget.max_names == 3            # 30000 // 10000, under the cap of 10
+    assert c.budget.max_names == 10           # 100000 // 10000, at the cap of 10
 
 
 def test_realistic_costs_and_all_the_new_knobs_are_present():

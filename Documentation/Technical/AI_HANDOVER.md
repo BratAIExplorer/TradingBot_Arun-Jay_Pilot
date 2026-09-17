@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
 **Project**: ARUN Trading Bot Titan V2  
-**Last Updated**: January 26, 2026  
-**Status**: Phase 3 Complete (RSI & Stability)  
+**Last Updated**: September 10, 2026  
+**Status**: Phase 3 Complete (RSI & Stability); strategy-research track concluded — see session log  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -174,4 +174,20 @@ strategies/          → sector_map.py, trading_tips.json
 2.  Test scanner functionality (8-10 min scan of 300 stocks)
 3.  Verify no regression in existing tabs
 4.  Optional: Implement Strategy Orchestrator (Phase 2 - see architectural review)
+
+### Session: September 10, 2026 — opencode (deepseek-v4-pro)
+
+**Objective:** After the small-cap MACD/rope strategy was ruled out (21 backtests, no edge), find a "winning" strategy for US + India stocks and ETFs by testing the highest-evidence factor/rotation alternatives.
+
+**Work Completed:**
+1.  **Built two new backtest engines**, kept separate from the live small-cap strategy:
+    -   `strategies/factor_backtest.py` — monthly trend-timing (Faber) + dual-momentum (Antonacci).
+    -   `strategies/xs_momentum.py` — cross-sectional momentum (Jegadeesh-Titman) with regime filter.
+2.  **Tested on 15y clean data (2011-10 → 2026-09), both markets, net of costs.** Result: **no active strategy beat buy-and-hold.** Faber gave up ~436 pts (US) for barely better drawdown (monthly signals too slow for the 2020 crash); dual momentum trailed on Sharpe; cross-sectional momentum on Nifty 50 lost to static equal-weight buy-and-hold.
+3.  **Conclusion recorded in `strategies/BACKTEST_FINDINGS.md` (§8–§11):** the winning answer is boring — diversified, low-cost buy-and-hold. The real edge is behavioural (holding through drawdowns) + cost control, not a signal.
+4.  **Domicile decision:** confirmed Irish UCITS ETFs (CSPX/CNDX) deliver identical beta to US ETFs (SPY/QQQ) with a better tax home — no US estate tax, 15% vs 30% dividend WHT. Recommendation: NIFTYBEES (India) + Irish accumulators (CSPX/VWRA) for international.
+
+**Status:** Strategy research **concluded**. Recommendation = passive buy-and-hold; do not deploy an active stock-picking/timing strategy on the evidence gathered. The small-cap dry-run may continue log-only for forward data, but no signal tested has shown edge.
+
+**New files:** `strategies/factor_backtest.py`, `strategies/xs_momentum.py` (plus the existing `strategies/backtest_smallcap.py`, `backtest_summary.py`, `BACKTEST_FINDINGS.md` from the prior session).
 

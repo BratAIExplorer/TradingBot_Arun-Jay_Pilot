@@ -208,9 +208,22 @@ def _rope_action(cfg_exit, position: Position, close: float, cfg_costs) -> Actio
     trigger2 = position.locked_half2_price
     if trigger2 is None:
         trigger2 = rope * (1 - cfg_exit.scale_out_step_pct / 100.0)
-    if trigger2 < floor and cfg_exit.never_sell_at_loss and cfg_exit.strand_final_half:
-        return Action("HOLD", f"STRANDED HALF — second trigger {trigger2:.2f} is below the "
-                              f"net floor {floor:.2f}; manual sell?")
+
+    if trigger2 < floor:
+        # The locked downside trigger sits below the +N% net floor, so under
+        # never_sell_at_loss it can never fire — the half would be stuck forever.
+        # Give it an UPSIDE exit instead: auto-sell the moment the price climbs
+        # back to the floor (a real profit after costs). Only truly strand it —
+        # for a manual sell — while price is still below the floor.
+        if close >= floor:
+            return Action("SCALE_OUT",
+                          f"final half: no valid downside trigger; price {close:.2f} "
+                          f"reached the net floor {floor:.2f} — auto-sell at a profit",
+                          fraction=1.0)
+        if cfg_exit.never_sell_at_loss and cfg_exit.strand_final_half:
+            return Action("HOLD", f"STRANDED HALF — price {close:.2f} is below the net floor "
+                                  f"{floor:.2f}; holds until it recovers or a manual sell")
+
     if close <= trigger2:
         return Action("SCALE_OUT",
                       f"price {close:.2f} hit the second trigger {trigger2:.2f} — sell the rest",
@@ -267,7 +280,9 @@ class SmallCapDryRun:
             f"{e.scale_out_step_pct:g}% lower.\n"
             f"A half is NEVER sold for less than entry +{e.min_profit_floor_pct:g}% net of costs. "
             "If the rope is below that floor, nothing sells — the position is simply held "
-            "('rope inactive'). A stranded final half is flagged for a manual sell.\n"
+            "('rope inactive'). A stranded final half auto-sells as soon as the price "
+            "climbs back to that floor; only while it stays below the floor is it left "
+            "for a manual sell.\n"
             "There is NO stop-loss, on purpose: this run exists to measure whether a "
             "stop-loss would have helped or just locked in losses that later recovered.\n"
             f"Budget: Rs {self.cfg.budget.per_stock_amount:g} per stock, one position "

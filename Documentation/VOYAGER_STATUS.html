@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voyager Status</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#fff; --ink:#111418; --muted:#3d4652; --line:#d9dee4;
+    --good:#0a6b3c; --bad:#a01722; --warn:#8a4b00; --accentbg:#e7f1f4; --accent:#0b6b82;
+    --scale:1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:calc(1.05rem * var(--scale))/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:1.5rem 1.2rem 4rem}
+  header{border-bottom:3px solid var(--line);padding-bottom:1rem;margin-bottom:1.2rem}
+  h1{font-size:2rem;margin:.2rem 0}
+  h2{font-size:1.3rem;margin:2rem 0 .6rem;border-bottom:2px solid var(--line);padding-bottom:.3rem}
+  .sub{color:var(--muted);font-size:.95rem}
+  .banner{background:var(--accentbg);border:2px solid var(--accent);border-radius:12px;
+    padding:1rem 1.2rem;margin:1rem 0;font-weight:600}
+  .banner.warn{background:#fff6e6;border-color:var(--warn);color:#5a3800}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem 1.2rem;margin:.7rem 0}
+  .pill{display:inline-block;border-radius:999px;padding:.15rem .7rem;font-weight:700;font-size:.85rem;margin-left:.4rem}
+  .pill.live{background:var(--bad);color:#fff}
+  .pill.done{background:var(--good);color:#fff}
+  .pill.gap{background:var(--warn);color:#fff}
+  table{width:100%;border-collapse:collapse;margin:.6rem 0}
+  th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--line);font-size:.95rem}
+  th{color:var(--muted);font-weight:700;font-size:.85rem;text-transform:uppercase}
+  code{background:#f0f3f6;padding:.1rem .35rem;border-radius:4px;font-size:.9em}
+  pre{background:#111;color:#ddd;padding:1rem;border-radius:8px;overflow-x:auto;font-size:.85rem}
+  ol,ul{padding-left:1.3rem}
+  li{margin:.3rem 0}
+  .muted{color:var(--muted)}
+  footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>🧭 Voyager <span class="pill live">LIVE ACCOUNT</span></h1>
+  <div class="sub">US Markets (IBKR) module — last updated 2026-09-17</div>
+</header>
+
+<div class="banner">
+  <strong>What this is:</strong> the IBKR/US-markets module living inside <code>TradingBot</code>
+  — a separate broker and account from the existing mStock engine, sharing this codebase
+  but nothing else. Named Voyager for reaching beyond the home market. Not a separate
+  project — same repo, same money-risk rules.
+</div>
+
+<h2>1. What's actually live right now</h2>
+<div class="card">
+  <p>Real IBKR account connected and validated — account <code>U19352250</code>, currently
+  <strong>live</strong> (paper account application still pending IBKR approval).</p>
+  <table>
+    <tr><th>Symbol</th><th>Order</th><th>Fill price</th><th>GTC sell target (+15%)</th></tr>
+    <tr><td>HL</td><td>Market</td><td>$18.905</td><td>$21.74</td></tr>
+    <tr><td>PATH</td><td>Market</td><td>$13.9395</td><td>$16.03</td></tr>
+    <tr><td>FRSH</td><td>Limit</td><td>$12.788</td><td>$14.71</td></tr>
+  </table>
+  <p class="muted">All three sell targets confirmed independently resting — verified via
+  both the API and Gateway's own log, not just trusted from script output.</p>
+  <p>Pre-existing positions (from before this work started): CDE, GSAT, RSSS, AXTI, IVES, CHPY.</p>
+  <p>Web dashboard IBKR tab live at <code>/dashboard</code> → IBKR — real balance, positions,
+  live P&amp;L, market price/value, best-effort purchase date.</p>
+</div>
+
+<h2>2. Architecture</h2>
+<pre>brokers/
+  interface.py       BrokerInterface Protocol — the contract both brokers satisfy
+  factory.py          get_broker("IN"|"US") — routes to the right implementation
+  mstock_adapter.py    Wraps kickstart.py's existing functions, unchanged
+  ibkr_broker.py        Real ib_insync implementation
+  test_factory.py       Self-test: Protocol conformance, no live calls
+  check_ibkr_connection.py   Manual read-only check
+  lookup_symbol.py       Read-only: exchange/currency lookup for a ticker
+  test_live_order.py      Single-symbol order test, CONFIRM-gated
+  buy_with_target.py       Batch buy + auto GTC profit-target sells</pre>
+<p><strong>Deliberately not done:</strong> <code>kickstart.py</code> is not wired to
+<code>get_broker()</code>. The mStock engine still calls its own functions directly —
+rewiring the live engine's order path is saved for later, done once, not twice.</p>
+
+<h2>3. Connection details</h2>
+<ul>
+  <li><strong>TWS API via <code>ib_insync</code></strong>, socket to IB Gateway — not the
+    Client Portal REST API. Project Vayu hit Malaysia-region access restrictions on that
+    path; this VPS is also Malaysia-based, so this wasn't a theoretical choice.</li>
+  <li><strong>Ports</strong>: 4001 = Gateway live, 4002 = Gateway paper. Set via
+    <code>IBKR_PORT</code>, read once at import time — must be set in the environment of
+    whichever process connects, or it silently defaults to paper and fails confusingly.</li>
+  <li><strong>clientId</strong>: manual scripts use 7, the dashboard uses 9 — kept
+    different on purpose so they don't collide.</li>
+  <li><strong>Read-Only API</strong>: a Gateway setting blocking all order placement
+    server-side. Was on for validation, deliberately turned off before any real order.</li>
+</ul>
+
+<h2>4. Real bugs found and fixed</h2>
+<ol>
+  <li><strong>Event loop crash calling IBKR from a web request.</strong> ib_insync needs
+    an asyncio event loop per thread; FastAPI's worker threads don't have one by default.
+    Fixed in <code>IBKRBroker.connect()</code>.</li>
+  <li><strong>Order silently discarded after a fast disconnect.</strong> An order not yet
+    acknowledged downstream can be dropped if the connection closes too soon. Fixed by
+    waiting for a real status update first.</li>
+  <li><strong><code>IBKR_PORT</code> not reaching the dashboard's server process.</strong>
+    Silently defaulted to paper port, every call failed with "connection refused" even
+    with Gateway running. Fixed locally and in <code>deploy/setup.sh</code>.</li>
+  <li><strong>₹ shown on real USD amounts.</strong> Dashboard's money formatter was
+    hardcoded for mStock's rupees, reused blindly on the IBKR tab. Fixed with a
+    separate USD formatter.</li>
+  <li><strong>NaN crashing the Stocks API endpoint</strong> (mStock side) — blank CSV
+    cells become pandas NaN, not valid JSON. Nulled before returning.</li>
+</ol>
+
+<h2>5. Known gaps</h2>
+<div class="card">
+  <ul>
+    <li><span class="pill gap">OPEN</span> <strong>Direct-routing fee on IUIT/EQQQ</strong>
+      — real fee found: $4 smart-routed vs $6 direct-routed minimum. Unresolved.</li>
+    <li><span class="pill gap">OPEN</span> <strong>No stop-loss</strong> on the three new
+      positions — GTC sells are profit targets only, no downside protection.</li>
+    <li><span class="pill gap">OPEN</span> <strong>Purchase date is best-effort</strong> —
+      only covers today's session; older positions show "unknown." Full history needs a
+      Flex Query report, not built.</li>
+    <li><span class="pill gap">OPEN</span> <strong>Average-cost accounting</strong>, not
+      per-lot — fine for a glance, not precise enough for tax reporting.</li>
+    <li><span class="pill gap">OPEN</span> <strong>IB Gateway not running unattended
+      anywhere</strong> — everything happened with Gateway open locally. Headless VPS
+      setup (Xvfb + IBC) is separate, unstarted work.</li>
+    <li><span class="pill gap">OPEN</span> <strong>RSI / day-change / position-weight</strong>
+      not shown yet — RSI specifically needs historical bars pulled and computed ourselves.</li>
+  </ul>
+</div>
+
+<h2>6. Dashboard tabs — broker ownership</h2>
+<table>
+  <tr><th>Tab</th><th>Broker</th></tr>
+  <tr><td>mStock, Capital, Risk, Setup, Logs, Stocks, Trades</td><td>mStock only</td></tr>
+  <tr><td>IBKR</td><td>IBKR only</td></tr>
+</table>
+<p class="muted">Never actually mixed — these just hadn't been labeled clearly until the
+confusion surfaced during testing.</p>
+
+<h2>7. Suggested next steps</h2>
+<ol>
+  <li>Decide: pay the IUIT/EQQQ direct-routing fee, or find another route.</li>
+  <li>Add a stop-loss leg to the three open positions, if wanted.</li>
+  <li>IB Gateway unattended on the VPS (Xvfb + IBC).</li>
+  <li><code>kickstart.py</code> → <code>get_broker()</code> rewiring, once IBKR is
+    trusted enough to share the live engine's order path.</li>
+  <li>Flex Query integration for full purchase-history / lot tracking, if needed.</li>
+</ol>
+
+<footer>
+  Source: <code>Documentation/VOYAGER_STATUS.md</code> — this page is a rendered copy for
+  easy viewing. Update the markdown first, then this file, if either changes.
+</footer>
+
+</div>
+</body>
+</html>

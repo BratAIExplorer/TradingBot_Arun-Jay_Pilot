@@ -108,128 +108,144 @@
   "portfolio_value": 0,
   "circuit_breaker_active": false,
   "daily_start_capital": 0.0,
-  "last_update": "2026-01-28T00:10:14.232825",
+  "last_update": "2026-09-17T18:31:45.680862",
   "bot_started_at": "2026-01-15T23:17:28.409294",
   "total_trades_today": 3,
   "trade_counters": {
     "attempts": 0,
     "success": 0,
     "failed": 0,
-    "last_reset_date": "2026-01-27"
+    "last_reset_date": "2026-09-17"
   },
   "stop_requested": false,
   "token_validation": {
-    "last_validated": "2026-01-28T00:00:58.903043",
-    "validated_date": "2026-01-28"
+    "last_validated": "2026-09-06T21:12:48.287356",
+    "validated_date": "2026-09-06"
   },
   "broker_holdings": {
     "data": {
-      "BAJFINANCE:NSE": {
-        "qty": 5,
+      "APOLLO:NSE": {
+        "qty": 101,
         "used_quantity": 0,
-        "price": 970.0,
-        "ltp": 914.7,
-        "pnl": -276.5,
+        "price": 432.68,
+        "ltp": 413.2,
+        "pnl": -1967.48,
         "source": "MANUAL"
       },
-      "BIRET:NSE": {
-        "qty": 1,
+      "AVALON:NSE": {
+        "qty": 12,
         "used_quantity": 0,
-        "price": 344.8,
-        "ltp": 340.87,
-        "pnl": -3.93,
+        "price": 2321.23,
+        "ltp": 2227.0,
+        "pnl": -1130.76,
         "source": "MANUAL"
       },
       "BSE:NSE": {
-        "qty": 5,
+        "qty": 27,
         "used_quantity": 0,
-        "price": 2688.5,
-        "ltp": 2761.2,
-        "pnl": 363.5,
-        "source": "MANUAL"
-      },
-      "DIXON:NSE": {
-        "qty": 1,
-        "used_quantity": 0,
-        "price": 12105.0,
-        "ltp": 10184.0,
-        "pnl": -1921.0,
-        "source": "MANUAL"
-      },
-      "EMBASSY:NSE": {
-        "qty": 1,
-        "used_quantity": 0,
-        "price": 438.78,
-        "ltp": 431.48,
-        "pnl": -7.3,
+        "price": 3998.93,
+        "ltp": 3306.0,
+        "pnl": -18709.11,
         "source": "MANUAL"
       },
       "GOLDBEES:NSE": {
-        "qty": 5,
+        "qty": 25,
         "used_quantity": 0,
-        "price": 124.2,
-        "ltp": 131.45,
-        "pnl": 36.25,
-        "source": "BOT"
+        "price": 118.39,
+        "ltp": 126.2,
+        "pnl": 195.25,
+        "source": "MANUAL"
+      },
+      "GRSE:NSE": {
+        "qty": 12,
+        "used_quantity": 0,
+        "price": 2910.7,
+        "ltp": 2435.3,
+        "pnl": -5704.8,
+        "source": "MANUAL"
+      },
+      "HINDCOPPER:NSE": {
+        "qty": 60,
+        "used_quantity": 0,
+        "price": 727.38,
+        "ltp": 527.3,
+        "pnl": -12004.8,
+        "source": "MANUAL"
       },
       "IDEA:NSE": {
-        "qty": 4000,
+        "qty": 1,
         "used_quantity": 0,
-        "price": 10.59,
-        "ltp": 9.83,
-        "pnl": -3040.0,
+        "price": 15.32,
+        "ltp": 14.9,
+        "pnl": -0.42,
         "source": "MANUAL"
       },
-      "MICEL:NSE": {
-        "qty": 5,
+      "KERNEX:NSE": {
+        "qty": 70,
         "used_quantity": 0,
-        "price": 34.08,
-        "ltp": 35.43,
-        "pnl": 6.75,
+        "price": 2238.89,
+        "ltp": 1709.5,
+        "pnl": -37057.3,
         "source": "MANUAL"
       },
-      "MOSCHIP:NSE": {
+      "MON100:NSE": {
+        "qty": 20,
+        "used_quantity": 0,
+        "price": 231.82,
+        "ltp": 333.21,
+        "pnl": 2027.8,
+        "source": "MANUAL"
+      },
+      "MTARTECH:NSE": {
+        "qty": 8,
+        "used_quantity": 0,
+        "price": 7798.63,
+        "ltp": 7305.0,
+        "pnl": -3949.04,
+        "source": "MANUAL"
+      },
+      "NETWEB:NSE": {
+        "qty": 12,
+        "used_quantity": 0,
+        "price": 5192.71,
+        "ltp": 5013.5,
+        "pnl": -2150.52,
+        "source": "MANUAL"
+      },
+      "NIFTYBEES:NSE": {
         "qty": 10,
         "used_quantity": 0,
-        "price": 175.44,
-        "ltp": 170.3,
-        "pnl": -51.4,
-        "source": "BOT"
-      },
-      "TATSILV:NSE": {
-        "qty": 5,
-        "used_quantity": 0,
-        "price": 28.43,
-        "ltp": 32.52,
-        "pnl": 20.45,
+        "price": 289.49,
+        "ltp": 267.17,
+        "pnl": -223.2,
         "source": "MANUAL"
       },
-      "MOSCHIP:BSE": {
-        "qty": 5,
+      "TINNARUBR:NSE": {
+        "qty": 11,
         "used_quantity": 0,
-        "price": 175.5,
-        "ltp": 175.5,
-        "pnl": 0.0,
-        "source": "BOT (SETTLING)"
+        "price": 1128.64,
+        "ltp": 1023.0,
+        "pnl": -1162.04,
+        "source": "MANUAL"
       },
-      "MICEL:BSE": {
-        "qty": 10,
+      "WALCHANNAG:NSE": {
+        "qty": 71,
         "used_quantity": 0,
-        "price": 34.870000000000005,
-        "ltp": 34.870000000000005,
-        "pnl": 0.0,
-        "source": "BOT (SETTLING)"
+        "price": 273.75,
+        "ltp": 208.92,
+        "pnl": -4602.93,
+        "source": "MANUAL"
       },
-      "TATASTEEL:NSE": {
-        "qty": 5,
+      "YESBANK:NSE": {
+        "qty": 3510,
         "used_quantity": 0,
-        "price": 186.89499999999998,
-        "ltp": 186.89499999999998,
-        "pnl": 0.0,
-        "source": "BOT (SETTLING)"
+        "price": 24.81,
+        "ltp": 22.3,
+        "pnl": -8810.1,
+        "source": "MANUAL"
       }
     },
-    "fetched_at": "2026-01-28T00:10:14.232825",
+    "fetched_at": "2026-09-10T22:48:02.979993",
     "source": "mStock API"
   }
 }

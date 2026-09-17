@@ -6,7 +6,9 @@ APIRouter (no ASGI server) against a throwaway strategies.db.
 
 Run:  python -m pytest strategies/tests/test_strategy_routes.py -q
 """
+import json
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -74,11 +76,49 @@ def test_howitworks_api_is_plain_english(api):
 
 def test_settings_api_exposes_the_budget_cap(api):
     s = api.get("/api/settings")
-    assert s["total_budget"] == 30000 and s["per_stock_amount"] == 10000
-    assert s["max_names"] == 3
+    assert s["total_budget"] == 100000 and s["per_stock_amount"] == 10000
+    assert s["max_names"] == 10
 
 
 def test_stop_then_status_reports_stopped(api):
     assert api.post("/api/stop")["stopped"] is True
     assert api.get("/api/status")["stopped"] is True
     assert api.post("/api/start")["stopped"] is False
+
+
+@pytest.fixture()
+def editable_api():
+    """Router pointed at a throwaway COPY of the real config, safe to mutate."""
+    d = tempfile.mkdtemp()
+    cfg = os.path.join(d, "cfg.json")
+    shutil.copyfile(_CFG, cfg)
+    db = os.path.join(d, "strategies.db")
+    s = Store(db)
+    s._create()
+    s.close()
+    return _Router(build_router(db_path=db, cfg_path=cfg)), cfg
+
+
+def test_settings_post_writes_valid_change(editable_api):
+    api, cfg = editable_api
+    out = api.post("/api/settings", patch={"per_stock_amount": 12500, "fill_assumption": "best"})
+    assert out["saved"]["per_stock_amount"] == 12500
+    saved = json.load(open(cfg, encoding="utf-8"))
+    assert saved["budget"]["per_stock_amount"] == 12500
+    assert saved["costs"]["fill_assumption"] == "best"
+    assert api.get("/api/settings")["per_stock_amount"] == 12500
+
+
+def test_settings_post_rejects_bad_value_without_writing(editable_api):
+    api, cfg = editable_api
+    before = open(cfg, encoding="utf-8").read()
+    resp = api.post("/api/settings", patch={"per_stock_amount": -5})
+    assert resp.status_code == 400
+    assert open(cfg, encoding="utf-8").read() == before  # unchanged
+
+
+def test_settings_post_refuses_orders_enabled(editable_api):
+    api, cfg = editable_api
+    resp = api.post("/api/settings", patch={"orders_enabled": True})
+    assert resp.status_code == 403
+    assert json.load(open(cfg, encoding="utf-8"))["orders_enabled"] is False

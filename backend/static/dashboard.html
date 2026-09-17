@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARUN Titan — Bot Dashboard</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#fff; --ink:#111418; --muted:#3d4652; --line:#d9dee4;
+    --good:#0a6b3c; --bad:#a01722; --warn:#8a4b00; --accentbg:#e7f1f4; --accent:#0b6b82;
+    --scale:1;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:calc(1.15rem * var(--scale))/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:780px;margin:0 auto;padding:1.2rem 1rem 6rem}
+  header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
+  h1{font-size:calc(1.5rem * var(--scale));margin:.2rem 0}
+  h2{font-size:calc(1.25rem * var(--scale));margin:1.8rem 0 .6rem;border-bottom:3px solid var(--line);padding-bottom:.3rem}
+  .headline{background:var(--accentbg);border:2px solid var(--accent);border-radius:12px;
+    padding:1rem 1.1rem;font-size:calc(1.3rem * var(--scale));font-weight:600;margin:.6rem 0;
+    display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
+  .pill{border-radius:999px;padding:.25rem .8rem;font-weight:800;font-size:calc(.95rem * var(--scale))}
+  .pill.running{background:var(--good);color:#fff}
+  .pill.stopped{background:var(--bad);color:#fff}
+  .sizebtns button{font:inherit;font-weight:700;border:2px solid var(--muted);background:var(--panel);
+    color:var(--ink);border-radius:8px;padding:.35rem .7rem;cursor:pointer}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.15rem;margin:.85rem 0}
+  .stock{border-left:8px solid var(--line)}
+  .stock.profit{border-left-color:var(--good)} .stock.loss{border-left-color:var(--bad)}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap}
+  .name{font-size:calc(1.35rem * var(--scale));font-weight:700}
+  .price{font-size:calc(1.55rem * var(--scale));font-weight:800;font-variant-numeric:tabular-nums}
+  .pl{font-size:calc(1.2rem * var(--scale));font-weight:800}
+  .pl.up{color:var(--good)} .pl.down{color:var(--bad)}
+  .facts{margin:.5rem 0 0;padding:.6rem .8rem;background:#f0f3f6;border-radius:8px;
+    display:grid;grid-template-columns:1fr 1fr;gap:.3rem .9rem;font-size:calc(.95rem * var(--scale))}
+  .muted{color:var(--muted)}
+  ul.feed{list-style:none;padding:0;margin:0}
+  ul.feed li{padding:.55rem 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+  ul.feed li:last-child{border-bottom:0}
+  .when{color:var(--muted);font-size:calc(.9rem * var(--scale))}
+  .engine-btn{position:fixed;left:0;right:0;bottom:0;color:#fff;border:0;
+    width:100%;padding:1.1rem;font:inherit;font-size:calc(1.35rem * var(--scale));font-weight:800;cursor:pointer}
+  .engine-btn.stop{background:var(--bad)}
+  .engine-btn.start{background:var(--good)}
+  @media(max-width:520px){.facts{grid-template-columns:1fr}}
+  .error{background:#fdecec;border:2px solid var(--bad);color:var(--bad);border-radius:10px;padding:.8rem 1rem;margin:.6rem 0}
+  .tabs{display:flex;gap:.4rem;margin:1rem 0 .2rem;flex-wrap:wrap}
+  .tabs button{font:inherit;font-weight:700;border:2px solid var(--line);background:var(--panel);
+    color:var(--muted);border-radius:8px;padding:.4rem .9rem;cursor:pointer}
+  .tabs button.active{border-color:var(--accent);color:var(--accent);background:var(--accentbg)}
+  .tabpanel{display:none}
+  .tabpanel.active{display:block}
+  .check{display:flex;align-items:center;gap:.6rem;padding:.5rem 0}
+  .check .dot{width:.9rem;height:.9rem;border-radius:50%;flex:0 0 auto}
+  .check .dot.ok{background:var(--good)} .check .dot.bad{background:var(--bad)} .check .dot.unk{background:#bbb}
+  .settingsrow{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.5rem 0;border-bottom:1px solid var(--line)}
+  .settingsrow:last-of-type{border-bottom:0}
+  .settingsrow input{font:inherit;width:6rem;padding:.3rem .4rem;border:1px solid var(--muted);border-radius:6px}
+  #saveCapBtn{margin-top:.8rem;font:inherit;font-weight:700;border:2px solid var(--accent);
+    background:var(--accentbg);color:var(--ink);border-radius:8px;padding:.5rem 1rem;cursor:pointer}
+  .logbox{background:#111;color:#ddd;border-radius:10px;padding:.8rem;font:calc(.85rem * var(--scale))/1.5 Consolas,monospace;
+    white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow-y:auto}
+  .logbox .err{color:#ff8a8a}
+  .logbox .warn{color:#ffcf7a}
+  .refreshbtn{font:inherit;font-weight:700;border:2px solid var(--accent);background:var(--accentbg);
+    color:var(--ink);border-radius:8px;padding:.4rem .8rem;cursor:pointer;margin:.4rem 0 .8rem}
+  .counters{display:flex;gap:.6rem;margin:.6rem 0}
+  .counter{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.8rem;text-align:center}
+  .counter b{display:block;font-size:1.6em}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>ARUN Titan</h1>
+  <div class="sizebtns">
+    <button onclick="setScale(0.9)">A-</button>
+    <button onclick="setScale(1)">A</button>
+    <button onclick="setScale(1.25)">A+</button>
+  </div>
+</header>
+
+<div class="headline">
+  <span id="statusText">Checking engine status…</span>
+  <span id="statusPill" class="pill">…</span>
+</div>
+
+<div id="errorBox"></div>
+
+<div class="tabs">
+  <button class="active" data-tab="home" onclick="showTab('home')">mStock</button>
+  <button data-tab="capital" onclick="showTab('capital')">Capital</button>
+  <button data-tab="risk" onclick="showTab('risk')">Risk</button>
+  <button data-tab="setup" onclick="showTab('setup')">Setup</button>
+  <button data-tab="logs" onclick="showTab('logs')">Logs</button>
+  <button data-tab="stocks" onclick="showTab('stocks')">Stocks</button>
+  <button data-tab="tradehist" onclick="showTab('tradehist')">Trades</button>
+  <button data-tab="ibkr" onclick="showTab('ibkr')">IBKR</button>
+</div>
+
+<div id="tab-home" class="tabpanel active">
+  <h2>Open Positions</h2>
+  <div id="positions"><p class="muted">Loading…</p></div>
+
+  <h2>Recent Trades</h2>
+  <ul id="trades" class="feed"><li class="muted">Loading…</li></ul>
+</div>
+
+<div id="tab-capital" class="tabpanel">
+  <h2>Capital</h2>
+  <div class="card">
+    <div class="facts">
+      <span>Total capital: <b id="capTotal">—</b></span>
+      <span>Starting capital: <b id="capStart">—</b></span>
+    </div>
+    <p class="muted" style="margin:.6rem 0 0">Total/starting capital are edited in settings.json directly — not here. That's the big money lever, kept off the dashboard on purpose.</p>
+  </div>
+  <div class="card">
+    <div class="settingsrow"><span>Max % of capital per stock</span><input id="capMaxPerStock" type="number" step="0.1"></div>
+    <div class="settingsrow"><span>Daily loss limit %</span><input id="capDailyLoss" type="number" step="0.1"></div>
+    <div class="settingsrow"><span>Max simultaneous positions</span><input id="capMaxPositions" type="number" step="1"></div>
+    <button id="saveCapBtn" onclick="saveCapital()">Save</button>
+  </div>
+</div>
+
+<div id="tab-risk" class="tabpanel">
+  <h2>Risk Settings</h2>
+  <div class="card" id="riskSettingsCard"><p class="muted">Loading…</p></div>
+  <h2>Per-Position Risk</h2>
+  <div id="riskPositions"><p class="muted">Loading…</p></div>
+  <p class="muted" id="circuitNote"></p>
+</div>
+
+<div id="tab-setup" class="tabpanel">
+  <h2>Setup Checklist</h2>
+  <div class="card" id="setupCard"><p class="muted">Loading…</p></div>
+  <p class="muted">Broker credentials, TOTP, and stock symbols are configured in settings.json / the local desktop app, not through this page — see the note on the Capital tab for why.</p>
+</div>
+
+<div id="tab-logs" class="tabpanel">
+  <h2>Technical Logs <span class="muted" style="font-size:.7em">(last 200 lines)</span></h2>
+  <button class="refreshbtn" onclick="refreshLogs()">🔄 Refresh</button>
+  <div id="logbox" class="logbox">Loading…</div>
+</div>
+
+<div id="tab-stocks" class="tabpanel">
+  <h2>Symbol Configuration <span class="muted" style="font-size:.7em">(read-only)</span></h2>
+  <div id="stocksList"><p class="muted">Loading…</p></div>
+</div>
+
+<div id="tab-tradehist" class="tabpanel">
+  <h2>Trade History</h2>
+  <div class="counters">
+    <div class="counter"><span class="muted">Total</span><b id="thTotal">—</b></div>
+    <div class="counter"><span class="muted">Wins</span><b id="thWins" style="color:var(--good)">—</b></div>
+    <div class="counter"><span class="muted">Losses</span><b id="thLosses" style="color:var(--bad)">—</b></div>
+  </div>
+  <ul id="tradehistList" class="feed"><li class="muted">Loading…</li></ul>
+</div>
+
+<div id="tab-ibkr" class="tabpanel">
+  <h2>IBKR (US Markets)</h2>
+  <p class="muted">This is a separate broker/account from everything else on this dashboard — mStock tabs above never touch this data, and vice versa.</p>
+  <button class="refreshbtn" onclick="refreshIbkr()">🔄 Refresh</button>
+  <div id="ibkrStatus"><p class="muted">Click Refresh — this connects to IB Gateway fresh each time, not loaded automatically.</p></div>
+  <div id="ibkrPositions"></div>
+</div>
+
+<button id="engineBtn" class="engine-btn start" onclick="toggleEngine()">…</button>
+</div>
+
+<script>
+let currentStatus = null;
+
+function setScale(v){ document.documentElement.style.setProperty('--scale', v); try{localStorage.setItem('tb_scale', v)}catch(e){} }
+try{ const s = localStorage.getItem('tb_scale'); if(s) setScale(parseFloat(s)); }catch(e){}
+
+function fmtMoney(n){
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '₹' + Number(n).toLocaleString('en-IN', {maximumFractionDigits: 2});
+}
+
+// Separate from fmtMoney (₹, mStock/India tabs) — the IBKR tab is USD-only, always.
+// Reusing fmtMoney there was a real bug: it showed ₹ on real dollar amounts.
+function fmtUSD(n){
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return '$' + Number(n).toLocaleString('en-US', {maximumFractionDigits: 2});
+}
+
+async function refreshStatus(){
+  try{
+    const r = await fetch('/api/control/status');
+    const d = await r.json();
+    currentStatus = d.status;
+    const pill = document.getElementById('statusPill');
+    const btn = document.getElementById('engineBtn');
+    if (d.status === 'RUNNING'){
+      document.getElementById('statusText').textContent = 'Engine is running';
+      pill.textContent = 'RUNNING'; pill.className = 'pill running';
+      btn.textContent = '🛑 STOP ENGINE'; btn.className = 'engine-btn stop';
+    } else {
+      document.getElementById('statusText').textContent = 'Engine is stopped';
+      pill.textContent = 'STOPPED'; pill.className = 'pill stopped';
+      btn.textContent = '▶ START ENGINE'; btn.className = 'engine-btn start';
+    }
+  } catch(e){
+    document.getElementById('errorBox').innerHTML = '<div class="error">Could not reach the bot API — is backend/main.py running?</div>';
+  }
+}
+
+async function toggleEngine(){
+  const next = currentStatus === 'RUNNING' ? 'STOPPED' : 'RUNNING';
+  const verb = next === 'STOPPED' ? 'Stop' : 'Start';
+  if (!confirm(verb + ' the trading engine?')) return;
+  let pin = '';
+  try{ pin = sessionStorage.getItem('tb_pin') || ''; }catch(e){}
+  if (!pin){ pin = prompt('Enter PIN (leave blank if none configured):') || ''; try{sessionStorage.setItem('tb_pin', pin)}catch(e){} }
+  try{
+    const r = await fetch('/api/control/set', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: next, pin: pin})
+    });
+    if (r.status === 403){
+      try{sessionStorage.removeItem('tb_pin')}catch(e){}
+      alert('Wrong PIN.'); return;
+    }
+    if (!r.ok){ alert('Failed: ' + (await r.text())); return; }
+    await refreshStatus();
+  } catch(e){ alert('Request failed: ' + e); }
+}
+
+async function refreshPositions(){
+  try{
+    const r = await fetch('/api/positions');
+    const rows = await r.json();
+    const el = document.getElementById('positions');
+    if (!rows || !rows.length){ el.innerHTML = '<p class="muted">No open positions.</p>'; return; }
+    el.innerHTML = rows.map(p => {
+      const qty = p.net_quantity ?? p.qty ?? 0;
+      const avg = p.avg_entry_price ?? p.price ?? 0;
+      const invested = p.total_invested ?? (qty * avg);
+      return `<div class="card stock">
+        <div class="row"><span class="name">${p.symbol ?? '?'} <span class="muted">(${p.exchange ?? ''})</span></span></div>
+        <div class="facts">
+          <span>Qty: ${qty}</span>
+          <span>Avg entry: ${fmtMoney(avg)}</span>
+          <span>Invested: ${fmtMoney(invested)}</span>
+          <span>Strategy: ${p.strategy ?? '—'}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('positions').innerHTML = '<p class="muted">Could not load positions.</p>';
+  }
+}
+
+async function refreshTrades(){
+  try{
+    const r = await fetch('/api/trades/recent?limit=15');
+    const rows = await r.json();
+    const el = document.getElementById('trades');
+    if (!rows || !rows.length){ el.innerHTML = '<li class="muted">No trades yet.</li>'; return; }
+    el.innerHTML = rows.map(t => {
+      const ts = (t.timestamp || '').replace('T', ' ').slice(0, 19);
+      return `<li>
+        <span><b>${t.action ?? ''}</b> ${t.symbol ?? '?'} × ${t.quantity ?? ''} @ ${fmtMoney(t.price)}</span>
+        <span class="when">${ts}</span>
+      </li>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('trades').innerHTML = '<li class="muted">Could not load trades.</li>';
+  }
+}
+
+function showTab(name){
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  try{ localStorage.setItem('tb_tab', name); }catch(e){}
+  if (name === 'capital') refreshCapital();
+  if (name === 'risk') refreshRisk();
+  if (name === 'setup') refreshSetup();
+  if (name === 'logs') refreshLogs();
+  if (name === 'stocks') refreshStocks();
+  if (name === 'tradehist') refreshTradeHistory();
+}
+
+async function refreshTradeHistory(){
+  try{
+    const r = await fetch('/api/trades/summary?limit=200');
+    const d = await r.json();
+    document.getElementById('thTotal').textContent = d.total ?? '—';
+    document.getElementById('thWins').textContent = d.wins ?? '—';
+    document.getElementById('thLosses').textContent = d.losses ?? '—';
+    const rows = d.trades || [];
+    const el = document.getElementById('tradehistList');
+    if (!rows.length){ el.innerHTML = '<li class="muted">No trades yet.</li>'; return; }
+    el.innerHTML = rows.map(t => {
+      const ts = (t.timestamp || '').replace('T', ' ').slice(0, 19);
+      const pnl = t.pnl_net;
+      const pnlHtml = (pnl === null || pnl === undefined) ? '' :
+        `<span class="pl ${pnl >= 0 ? 'up' : 'down'}">${fmtMoney(pnl)}</span>`;
+      return `<li>
+        <span><b>${t.action ?? ''}</b> ${t.symbol ?? '?'} × ${t.quantity ?? ''} @ ${fmtMoney(t.price)} ${pnlHtml}</span>
+        <span class="when">${ts}</span>
+      </li>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('tradehistList').innerHTML = '<li class="muted">Could not load trade history.</li>';
+  }
+}
+
+async function refreshStocks(){
+  try{
+    const r = await fetch('/api/stocks');
+    const rows = await r.json();
+    const el = document.getElementById('stocksList');
+    if (!rows || !rows.length){ el.innerHTML = '<p class="muted">No stocks configured.</p>'; return; }
+    el.innerHTML = rows.map(s => {
+      const enabled = String(s.Enabled ?? s.enabled ?? '').toLowerCase() === 'true';
+      return `<div class="card">
+        <div class="row">
+          <span class="name">${s.Symbol ?? '?'} <span class="muted">(${s.Exchange ?? ''})</span></span>
+          <span class="pill ${enabled ? 'running' : 'stopped'}">${enabled ? 'ENABLED' : 'DISABLED'}</span>
+        </div>
+        <div class="facts">
+          <span>Timeframe: ${s.Timeframe ?? '—'}</span>
+          <span>Buy RSI &lt; ${s['Buy RSI'] ?? '—'}</span>
+          <span>Sell RSI &gt; ${s['Sell RSI'] ?? '—'}</span>
+          <span>Qty: ${s.Quantity ?? '—'}</span>
+          <span>Profit target: ${s['Profit Target %'] ?? '—'}%</span>
+          <span>Broker: ${s.Broker ?? '—'}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('stocksList').innerHTML = '<p class="muted">Could not load stocks.</p>';
+  }
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function refreshLogs(){
+  try{
+    const r = await fetch('/api/logs?lines=200');
+    const d = await r.json();
+    const lines = d.lines || [];
+    const box = document.getElementById('logbox');
+    if (!lines.length){ box.textContent = d.note || 'No log lines.'; return; }
+    box.innerHTML = lines.map(l => {
+      const esc = escapeHtml(l);
+      if (/❌|ERROR|error/.test(l)) return `<div class="err">${esc}</div>`;
+      if (/⚠️|WARN/.test(l)) return `<div class="warn">${esc}</div>`;
+      return `<div>${esc}</div>`;
+    }).join('');
+    box.scrollTop = box.scrollHeight;
+  } catch(e){
+    document.getElementById('logbox').textContent = 'Could not load logs.';
+  }
+}
+try{ const t = localStorage.getItem('tb_tab'); if (t) showTab(t); }catch(e){}
+
+async function refreshCapital(){
+  try{
+    const r = await fetch('/api/capital');
+    const d = await r.json();
+    document.getElementById('capTotal').textContent = fmtMoney(d.total_capital);
+    document.getElementById('capStart').textContent = fmtMoney(d.starting_capital);
+    document.getElementById('capMaxPerStock').value = d.max_per_stock_pct ?? '';
+    document.getElementById('capDailyLoss').value = d.daily_loss_limit_pct ?? '';
+    document.getElementById('capMaxPositions').value = d.max_positions ?? '';
+  } catch(e){ /* leave fields as-is */ }
+}
+
+async function saveCapital(){
+  let pin = '';
+  try{ pin = sessionStorage.getItem('tb_pin') || ''; }catch(e){}
+  if (!pin){ pin = prompt('Enter PIN (leave blank if none configured):') || ''; try{sessionStorage.setItem('tb_pin', pin)}catch(e){} }
+  const patch = {
+    max_per_stock_pct: document.getElementById('capMaxPerStock').value,
+    daily_loss_limit_pct: document.getElementById('capDailyLoss').value,
+    max_positions: document.getElementById('capMaxPositions').value,
+    pin: pin
+  };
+  try{
+    const r = await fetch('/api/capital', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch)});
+    if (r.status === 403){ try{sessionStorage.removeItem('tb_pin')}catch(e){}; alert('Wrong PIN.'); return; }
+    if (!r.ok){ alert('Save failed: ' + (await r.text())); return; }
+    alert('Saved.');
+  } catch(e){ alert('Request failed: ' + e); }
+}
+
+async function refreshRisk(){
+  try{
+    const r = await fetch('/api/risk');
+    const d = await r.json();
+    const s = d.settings || {};
+    document.getElementById('riskSettingsCard').innerHTML = `
+      <div class="facts">
+        <span>Stop loss: ${s.use_stop_loss ? s.stop_loss_pct + '%' : 'off'}</span>
+        <span>Profit target: ${s.use_profit_target ? s.profit_target_pct + '%' : 'off'}</span>
+        <span>Catastrophic stop: ${s.catastrophic_stop_enabled ? s.catastrophic_stop_pct + '%' : 'off'}</span>
+      </div>`;
+    const pos = d.positions || [];
+    document.getElementById('riskPositions').innerHTML = pos.length
+      ? pos.map(p => `<div class="card stock">
+          <div class="row"><span class="name">${p.symbol} <span class="muted">(${p.exchange})</span></span></div>
+          <div class="facts">
+            <span>Entry: ${fmtMoney(p.entry_price)}</span>
+            <span>Qty: ${p.quantity}</span>
+            <span>Stop-loss level: ${fmtMoney(p.stop_loss_price)}</span>
+            <span>Profit target level: ${fmtMoney(p.profit_target_price)}</span>
+          </div>
+        </div>`).join('')
+      : '<p class="muted">No open positions.</p>';
+    document.getElementById('circuitNote').textContent = 'Circuit breaker: ' + (d.circuit_breaker_status || 'unknown');
+  } catch(e){
+    document.getElementById('riskSettingsCard').innerHTML = '<p class="muted">Could not load risk settings.</p>';
+  }
+}
+
+async function refreshSetup(){
+  try{
+    const r = await fetch('/api/setup/status');
+    const d = await r.json();
+    const dot = (ok) => ok === true ? 'ok' : (ok === false ? 'bad' : 'unk');
+    const label = (ok) => ok === true ? 'Yes' : (ok === false ? 'No' : 'Unknown');
+    document.getElementById('setupCard').innerHTML = `
+      <div class="check"><span class="dot ${dot(d.broker_connected)}"></span> Broker session live: ${label(d.broker_connected)}</div>
+      <div class="check"><span class="dot ${dot(d.capital_configured)}"></span> Capital configured: ${label(d.capital_configured)}</div>
+      <div class="check"><span class="dot ${dot(d.stocks_configured)}"></span> Stocks configured: ${label(d.stocks_configured)} (${d.stock_count ?? 0})</div>
+    `;
+  } catch(e){
+    document.getElementById('setupCard').innerHTML = '<p class="muted">Could not load setup status.</p>';
+  }
+}
+
+async function refreshIbkr(){
+  const statusEl = document.getElementById('ibkrStatus');
+  const posEl = document.getElementById('ibkrPositions');
+  statusEl.innerHTML = '<p class="muted">Connecting to IB Gateway...</p>';
+  posEl.innerHTML = '';
+  try{
+    const r = await fetch('/api/ibkr/summary');
+    const d = await r.json();
+    if (!d.connected){
+      statusEl.innerHTML = `<div class="error">Not connected: ${escapeHtml(d.error || 'unknown error')}${d.hint ? '<br>' + escapeHtml(d.hint) : ''}</div>`;
+      return;
+    }
+    const livePill = d.is_live
+      ? '<span class="pill stopped">LIVE ACCOUNT — real money</span>'
+      : '<span class="pill running">Paper account</span>';
+    statusEl.innerHTML = `
+      <div class="headline">
+        <span>USD cash balance: <b>${fmtUSD(d.funds_usd)}</b></span>
+        ${livePill}
+      </div>`;
+    const positions = d.positions || {};
+    const symbols = Object.keys(positions);
+    if (!symbols.length){
+      posEl.innerHTML = '<p class="muted">No open IBKR positions.</p>';
+      return;
+    }
+    posEl.innerHTML = symbols.map(sym => {
+      const p = positions[sym];
+      const pnl = p.unrealized_pnl;
+      const pnlClass = (pnl ?? 0) >= 0 ? 'up' : 'down';
+      const purchased = p.first_purchase_date
+        ? new Date(p.first_purchase_date).toLocaleDateString()
+        : '<span class="muted">unknown (no BOT execution found today)</span>';
+      return `<div class="card stock ${(pnl ?? 0) >= 0 ? 'profit' : 'loss'}">
+        <div class="row">
+          <span class="name">${sym} <span class="muted">(${p.exchange ?? ''}, ${p.currency ?? ''})</span></span>
+          <span class="pl ${pnlClass}">${fmtUSD(pnl)}</span>
+        </div>
+        <div class="facts">
+          <span>Qty: ${p.qty}</span>
+          <span>Avg cost: ${fmtUSD(p.avg_cost)}</span>
+          <span>Market price: ${fmtUSD(p.market_price)}</span>
+          <span>Market value: ${fmtUSD(p.market_value)}</span>
+          <span>Realized P&L: ${fmtUSD(p.realized_pnl)}</span>
+          <span>First purchase: ${purchased}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e){
+    statusEl.innerHTML = `<div class="error">Request failed: ${escapeHtml(String(e))}</div>`;
+  }
+}
+
+function refreshAll(){ refreshStatus(); refreshPositions(); refreshTrades(); }
+refreshAll();
+setInterval(refreshAll, 15000);
+</script>
+</body>
+</html>

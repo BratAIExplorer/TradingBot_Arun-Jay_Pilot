@@ -1,0 +1,7 @@
+[Unit]
+Description=TradingBot database backup (one-shot, triggered by timer)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/tradingbot
+ExecStart=/bin/bash /opt/tradingbot/deploy/backup_db.sh

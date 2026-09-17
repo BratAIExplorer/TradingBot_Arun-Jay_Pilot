@@ -1,0 +1,19 @@
+# IBC (IBController) config template — headless IB Gateway login automation.
+# Copy to config.ini on the VPS, fill in real values, keep out of git (.env-style secret).
+# IBC project: https://github.com/IbcAlpha/IBC
+
+IbLoginId=CHANGE_ME_IBKR_USERNAME
+IbPassword=CHANGE_ME_IBKR_PASSWORD
+
+# live or paper — MUST match IBKR_PORT in .env (4001=live, 4002=paper)
+TradingMode=paper
+
+# Gateway, not TWS
+IbAutoRestartTime=
+
+AcceptIncomingConnectionAction=accept
+AllowBlindTrading=no
+ReadOnlyLogin=no
+
+DismissPasswordExpiryWarning=yes
+DismissNSEComplianceNotice=yes

@@ -1,0 +1,16 @@
+[Unit]
+Description=IB Gateway (headless, via Xvfb + IBC)
+After=network.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:1
+ExecStartPre=/usr/bin/Xvfb :1 -screen 0 1024x768x16 &
+ExecStartPre=/bin/sleep 2
+ExecStart=/opt/ibc/scripts/ibcstart.sh -g --mode=gateway --tws-path=/opt/ibgateway --ibc-path=/opt/ibc --ibc-ini=/opt/ibc/config.ini
+Restart=on-failure
+RestartSec=30
+User=root
+
+[Install]
+WantedBy=multi-user.target

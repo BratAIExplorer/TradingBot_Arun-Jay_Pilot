@@ -76,8 +76,10 @@ echo ""
 
 # --- App directory ---
 echo "[4/7] Creating $APP_DIR ..."
-mkdir -p "$APP_DIR/database" "$APP_DIR/logs"
+mkdir -p "$APP_DIR/database" "$APP_DIR/logs" "$APP_DIR/backups"
 echo "      Directory structure ready"
+echo "      GUARDRAIL: this script only creates directories/files — it never"
+echo "      deletes or overwrites an existing database/ or backups/ directory."
 echo ""
 
 # --- Virtual environment + deps ---
@@ -133,6 +135,8 @@ install_service() {
 }
 install_service "tradingbot-web.service"
 install_service "tradingbot-trading.service"
+install_service "tradingbot-backup.service"
+install_service "tradingbot-backup.timer"
 systemctl daemon-reload
 echo ""
 
@@ -164,6 +168,13 @@ echo ""
 echo "7. Logs:"
 echo "   tail -f $APP_DIR/logs/web.log"
 echo "   tail -f $APP_DIR/logs/trading.log"
+echo ""
+echo "8. Start the DB backup timer (every 6h, keeps last 30 days, never"
+echo "   touches the live database — see deploy/backup_db.sh):"
+echo "   systemctl start tradingbot-backup.timer"
+echo "   systemctl enable tradingbot-backup.timer"
+echo "   For real disaster recovery, also rsync $APP_DIR/backups off-box"
+echo "   periodically — local-disk backups don't survive a lost VPS."
 echo ""
 echo "NOTE: open port 8001 in the VPS firewall (ufw allow 8001, or your"
 echo "      provider's control-panel firewall)."

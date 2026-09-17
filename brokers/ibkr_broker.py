@@ -176,7 +176,9 @@ class IBKRBroker:
         return {"last_price": _clean(t.last), "bid": _clean(t.bid), "ask": _clean(t.ask)}
 
     def place_order(self, symbol, exchange, qty, side, instrument_token=None, price=0,
-                     use_amo=False, currency: str = "USD", tif: str = "DAY"):
+                     use_amo=False, currency: str = "USD", tif: str = "DAY",
+                     order_type: str = "LMT_OR_MKT", stop_price: float | None = None,
+                     oca_group: str | None = None, oca_type: int = 1):
         """
         Returns an ib_insync Trade object — NOT the same shape as mStock's
         requests.Response. Callers routing through get_broker() must branch on
@@ -190,11 +192,27 @@ class IBKRBroker:
         tif="GTC" (good-till-cancelled) for orders that need to stay resting past today
         — e.g. a profit-target sell. Default "DAY" expires at market close, same as a
         normal order.
+
+        order_type: "LMT_OR_MKT" (default) picks Market if price=0 else Limit, same as
+        before this param existed. Pass "STP" with stop_price set for a stop order
+        (triggers a market sell once price crosses stop_price — used for stop-loss).
+
+        oca_group/oca_type: link this order to others in the same "one cancels all"
+        group — e.g. a profit-target sell and a stop-loss sell for the same position,
+        where filling one should cancel the other. oca_type=1 = cancel remaining orders
+        with no block; IBKR's other oca_type values relate to partial-fill accounting
+        that doesn't apply to whole-share sells here.
         """
         self._ensure_connected()
-        from ib_insync import Stock, MarketOrder, LimitOrder
+        from ib_insync import Stock, MarketOrder, LimitOrder, StopOrder
         contract = Stock(symbol, exchange or "SMART", currency)
         side = side.upper()
-        order = MarketOrder(side, qty) if not price else LimitOrder(side, qty, price)
+        if order_type == "STP":
+            order = StopOrder(side, qty, stop_price)
+        else:
+            order = MarketOrder(side, qty) if not price else LimitOrder(side, qty, price)
         order.tif = tif
+        if oca_group:
+            order.ocaGroup = oca_group
+            order.ocaType = oca_type
         return self._ib.placeOrder(contract, order)

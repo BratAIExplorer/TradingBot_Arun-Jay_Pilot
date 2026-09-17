@@ -48,6 +48,21 @@ brokers/
 engine still calls its own functions directly. Rewiring it is saved for later —
 touching the live engine's order path is the risky part, done once, not twice.
 
+```
+deploy/
+  setup_ibgateway.sh              Installs Xvfb + IB Gateway + IBC on the VPS
+  ibgateway-headless.service      systemd unit: Xvfb + IBC-driven Gateway login
+  ibc/config.ini.template         IBC login config — copy, fill in, keep off git
+  backup_db.sh                    sqlite .backup (not cp) of all 3 DBs, 30-day retention
+  tradingbot-backup.service/.timer   Runs backup_db.sh every 6h via systemd
+```
+
+**Backup guardrails (setup.sh + backup_db.sh):** `sqlite3 .backup` instead of a raw
+file copy, so a live write mid-backup can't produce a torn/corrupt file. The retention
+sweep only deletes files it wrote itself, inside `backups/`, never the live
+`database/` files. `*.db` is already git-ignored. Local-disk only — for real
+disaster recovery, `backups/` still needs an off-box copy (rsync/scp), not done here.
+
 ## 3. Connection details (for whoever runs this next)
 
 - **TWS API via `ib_insync`**, socket connection to **IB Gateway** (not TWS, not the
@@ -103,9 +118,12 @@ touching the live engine's order path is the risky part, done once, not twice.
 - **IBKR uses average-cost accounting**, not per-lot (FIFO/LIFO) tracking. Realized
   P&L and cost basis blend across all purchases of a symbol — fine for a glance-at
   dashboard, not precise enough for tax reporting if that's ever needed.
-- **IB Gateway is not running unattended anywhere.** Everything above happened with
-  Gateway open on a local machine. Running it headless on the VPS (Xvfb + IBC to
-  automate the login Gateway's GUI normally requires) is separate, unstarted work.
+- **IB Gateway headless-on-VPS is scripted but not yet deployed/verified.**
+  `deploy/setup_ibgateway.sh` + `deploy/ibgateway-headless.service` +
+  `deploy/ibc/config.ini.template` install Xvfb + IB Gateway + IBC and run Gateway
+  as a systemd service. Needs a real run on the actual VPS (fill in
+  `ibc/config.ini` with real IBKR login, verify `check_ibkr_connection.py` goes
+  green) before this gap can be marked closed.
 - **RSI / day-change / position-weight** — not shown on the IBKR tab yet. RSI
   specifically requires pulling historical bars and computing it ourselves; IBKR
   doesn't provide it.
@@ -124,10 +142,14 @@ the confusion surfaced during testing (they were all still called generic names 
 ## 7. Suggested next steps, roughly in order of what unblocks what
 
 1. Decide: direct-routing fee tradeoff for IUIT/EQQQ — pay it, or find another route.
+   **Trading decision — not done here, needs a human to place the order.**
 2. Add a stop-loss leg to the three open positions, if wanted.
-3. IB Gateway unattended on the VPS (Xvfb + IBC) — needed before any of this can run
-   without a laptop open.
-4. `kickstart.py` → `get_broker()` rewiring — only once IBKR is trusted enough to
-   share the live engine's order path.
-5. Flex Query integration for full purchase-history / lot tracking, if the
-   average-cost approximation stops being good enough.
+   **Trading decision — not done here, needs a human to place the order.**
+3. IB Gateway unattended on the VPS — **scripted** (`deploy/setup_ibgateway.sh`),
+   not yet run on the real VPS. Run it, fill in `deploy/ibc/config.ini`, verify.
+4. `kickstart.py` → `get_broker()` rewiring — **deliberately not started.** This
+   touches the live mStock engine's order path; per `HANDOVER_HEADLESS_VPS.md`
+   Phase 4, it must be done in paper mode first, by someone who can watch it run.
+5. Flex Query integration for full purchase-history / lot tracking — **blocked on
+   IBKR account setup** (a Flex Query report + token must be created in the IBKR
+   web portal first; nothing to build in code until that exists).

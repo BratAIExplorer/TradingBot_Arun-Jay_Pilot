@@ -83,6 +83,16 @@
 <p><strong>Deliberately not done:</strong> <code>kickstart.py</code> is not wired to
 <code>get_broker()</code>. The mStock engine still calls its own functions directly —
 rewiring the live engine's order path is saved for later, done once, not twice.</p>
+<pre>deploy/
+  setup_ibgateway.sh              Installs Xvfb + IB Gateway + IBC on the VPS
+  ibgateway-headless.service      systemd unit: Xvfb + IBC-driven Gateway login
+  ibc/config.ini.template         IBC login config — copy, fill in, keep off git
+  backup_db.sh                    sqlite .backup (not cp), 30-day retention
+  tradingbot-backup.service/.timer   Runs backup_db.sh every 6h via systemd</pre>
+<p class="muted"><strong>Backup guardrails:</strong> uses <code>sqlite3 .backup</code>,
+not a raw file copy, so a live write mid-backup can't corrupt the output. Retention
+only deletes files it wrote itself, never the live database. <code>*.db</code> is
+already git-ignored. Local-disk only — off-box copy of <code>backups/</code> not done.</p>
 
 <h2>3. Connection details</h2>
 <ul>
@@ -128,9 +138,11 @@ rewiring the live engine's order path is saved for later, done once, not twice.<
       Flex Query report, not built.</li>
     <li><span class="pill gap">OPEN</span> <strong>Average-cost accounting</strong>, not
       per-lot — fine for a glance, not precise enough for tax reporting.</li>
-    <li><span class="pill gap">OPEN</span> <strong>IB Gateway not running unattended
-      anywhere</strong> — everything happened with Gateway open locally. Headless VPS
-      setup (Xvfb + IBC) is separate, unstarted work.</li>
+    <li><span class="pill gap">OPEN</span> <strong>IB Gateway headless-on-VPS is
+      scripted, not yet deployed</strong> — <code>deploy/setup_ibgateway.sh</code> +
+      <code>ibgateway-headless.service</code> + <code>ibc/config.ini.template</code>
+      exist; needs a real run on the VPS with real IBKR login filled in, then
+      verify via <code>check_ibkr_connection.py</code>.</li>
     <li><span class="pill gap">OPEN</span> <strong>RSI / day-change / position-weight</strong>
       not shown yet — RSI specifically needs historical bars pulled and computed ourselves.</li>
   </ul>
@@ -147,12 +159,14 @@ confusion surfaced during testing.</p>
 
 <h2>7. Suggested next steps</h2>
 <ol>
-  <li>Decide: pay the IUIT/EQQQ direct-routing fee, or find another route.</li>
-  <li>Add a stop-loss leg to the three open positions, if wanted.</li>
-  <li>IB Gateway unattended on the VPS (Xvfb + IBC).</li>
-  <li><code>kickstart.py</code> → <code>get_broker()</code> rewiring, once IBKR is
-    trusted enough to share the live engine's order path.</li>
-  <li>Flex Query integration for full purchase-history / lot tracking, if needed.</li>
+  <li>Decide: pay the IUIT/EQQQ direct-routing fee, or find another route.
+    <span class="muted">— trading decision, needs a human to place the order.</span></li>
+  <li>Add a stop-loss leg to the three open positions, if wanted.
+    <span class="muted">— trading decision, needs a human to place the order.</span></li>
+  <li>IB Gateway unattended on the VPS — scripted, not yet run on the real VPS.</li>
+  <li><code>kickstart.py</code> → <code>get_broker()</code> rewiring — deliberately
+    not started; must be done in paper mode first, watched by a human.</li>
+  <li>Flex Query integration — blocked on IBKR account/portal setup first.</li>
 </ol>
 
 <footer>

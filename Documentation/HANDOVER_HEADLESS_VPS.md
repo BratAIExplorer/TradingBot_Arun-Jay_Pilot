@@ -91,6 +91,12 @@ complete before the gate matters. Flag this before VPS first-run.
 
 ## 4. Final corrected plan
 
+**Status update 2026-09-17: Phases 1 and 2 are done** (verified in code —
+`backend/main.py` uses `state_mgr.is_stop_requested()`/`set_stop_requested()`,
+and the dead `run_cycle` block at the old `:756-895` is deleted). Phase 3 is
+scripted (`deploy/setup_ibgateway.sh`, `.service`, `ibc/config.ini.template`)
+but not yet run on the real VPS. Phase 4 is untouched — deliberately, see below.
+
 ### Phase 1 — fix web control wiring (2 edits in `backend/main.py`)
 The live engine reads `state_mgr.is_stop_requested()`, but the API writes `bot_status` to
 the DB (read by the *dead* `run_cycle` #1 only). So `/api/control/*` is currently a no-op.

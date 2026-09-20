@@ -43,8 +43,12 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python -m brokers.etf_tradability etfs.csv")
         return
-    with open(sys.argv[1], newline="") as f:
-        rows = list(csv.DictReader(f))
+    try:
+        with open(sys.argv[1], newline="") as f:
+            rows = list(csv.DictReader(f))
+    except FileNotFoundError:
+        print(f"{sys.argv[1]} not found. Create it with header: symbol,exchange,currency")
+        return
 
     b = IBKRBroker(client_id=11)
     out = []

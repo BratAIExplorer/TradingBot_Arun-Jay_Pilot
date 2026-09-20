@@ -18,6 +18,7 @@ from brokers.ibkr_broker import IBKRBroker
 
 
 OUT = "etf_tradability.csv"
+ERROR_WAIT = 0.6  # seconds; ponytail: fixed wait, raise if late errors still slip through
 COLUMNS = ["symbol", "exchange", "currency", "status", "note", "name", "isin", "conId", "primary_exchange",
            "category", "subcategory", "min_size", "trading_hours", "commission_1sh", "min_commission",
            "commission_ccy", "warning"]
@@ -50,6 +51,9 @@ def _check(ib, sym, exch, cur):
         # tif + account must be set explicitly or whatIf returns an empty list.
         order = MarketOrder("BUY", 1, tif="DAY", account=ib.managedAccounts()[0])
         state = ib.whatIfOrder(c, order)
+        # Rejections (e.g. 201 "minimum 2000 USD") can arrive AFTER whatIf returns an OrderState,
+        # so wait for them or the row is wrongly OK and the error lands on the next row.
+        ib.sleep(ERROR_WAIT)
         info.update({
             "commission_1sh": _num(getattr(state, "commission", "")), "min_commission": _num(getattr(state, "minCommission", "")),
             "commission_ccy": getattr(state, "commissionCurrency", ""), "warning": getattr(state, "warningText", ""),

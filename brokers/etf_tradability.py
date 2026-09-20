@@ -22,6 +22,11 @@ COLUMNS = ["symbol", "exchange", "currency", "status", "note", "name", "isin", "
            "commission_ccy", "warning"]
 
 
+def _num(v):
+    """IBKR sends 1.79e308 for 'no value' (e.g. market closed) — blank it."""
+    return "" if isinstance(v, float) and v > 1e300 else v
+
+
 def _check(ib, sym, exch, cur):
     from ib_insync import Stock, MarketOrder
     errors = []
@@ -41,16 +46,20 @@ def _check(ib, sym, exch, cur):
         }
         if d.stockType != "ETF":
             return {**info, "status": "NOT_ETF", "note": d.stockType}
-        state = ib.whatIfOrder(c, MarketOrder("BUY", 1))
+        # tif + account must be set explicitly or whatIf returns an empty list.
+        order = MarketOrder("BUY", 1, tif="DAY", account=ib.managedAccounts()[0])
+        state = ib.whatIfOrder(c, order)
         info.update({
-            "commission_1sh": getattr(state, "commission", ""), "min_commission": getattr(state, "minCommission", ""),
+            "commission_1sh": _num(getattr(state, "commission", "")), "min_commission": _num(getattr(state, "minCommission", "")),
             "commission_ccy": getattr(state, "commissionCurrency", ""), "warning": getattr(state, "warningText", ""),
         })
         # whatIf is answered with an OrderState; restrictions arrive as error events.
-        blocking = [e for e in errors if not e.startswith(("2104", "2106", "2158"))]
+        blocking = [e for e in errors if not e.startswith(("2103", "2104", "2105", "2106", "2107", "2108", "2158", "10349"))]
         if blocking:
-            return {**info, "status": "BLOCKED", "note": " | ".join(blocking)}
-        if state and state.initMarginChange != "":
+            note = " | ".join(blocking)
+            # 201 "equity with loan must exceed initial margin" = too little cash, NOT a product restriction.
+            return {**info, "status": "NO_FUNDS" if "EQUITY WITH LOAN" in note.upper() else "BLOCKED", "note": note}
+        if hasattr(state, "status"):
             return {**info, "status": "OK", "note": ""}
         return {**info, "status": "UNKNOWN", "note": "empty whatIf"}
     finally:

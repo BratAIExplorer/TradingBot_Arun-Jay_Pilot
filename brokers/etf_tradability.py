@@ -57,8 +57,9 @@ def _check(ib, sym, exch, cur):
         blocking = [e for e in errors if not e.startswith(("2103", "2104", "2105", "2106", "2107", "2108", "2158", "10349"))]
         if blocking:
             note = " | ".join(blocking)
-            # 201 "equity with loan must exceed initial margin" = too little cash, NOT a product restriction.
-            return {**info, "status": "NO_FUNDS" if "EQUITY WITH LOAN" in note.upper() else "BLOCKED", "note": note}
+            # 201 "equity with loan..." / "minimum 2000 USD to buy on margin" (e.g. no cash in that currency)
+            # = a cash issue, NOT a product restriction.
+            return {**info, "status": "NO_FUNDS" if ("EQUITY WITH LOAN" in note.upper() or "MINIMUM OF 2000" in note.upper()) else "BLOCKED", "note": note}
         if hasattr(state, "status"):
             return {**info, "status": "OK", "note": ""}
         return {**info, "status": "UNKNOWN", "note": "empty whatIf"}

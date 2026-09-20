@@ -17,6 +17,7 @@ import sys
 from brokers.ibkr_broker import IBKRBroker
 
 
+OUT = "etf_tradability.csv"
 COLUMNS = ["symbol", "exchange", "currency", "status", "note", "name", "isin", "conId", "primary_exchange",
            "category", "subcategory", "min_size", "trading_hours", "commission_1sh", "min_commission",
            "commission_ccy", "warning"]
@@ -78,27 +79,40 @@ def main():
         print(f"{sys.argv[1]} not found. Create it with header: symbol,exchange,currency")
         return
 
+    # Resume: rows already in the output file are skipped, so a crash loses nothing.
+    done = set()
+    try:
+        with open(OUT, newline="") as f:
+            done = {(r["symbol"], r["exchange"], r["currency"]) for r in csv.DictReader(f)}
+    except FileNotFoundError:
+        pass
+    new_file = not done
+
     b = IBKRBroker(client_id=11)
-    out = []
     try:
         b.connect()
-        for i, r in enumerate(rows, 1):
-            sym, exch, cur = r["symbol"].strip(), r.get("exchange", "").strip(), r.get("currency", "USD").strip()
-            try:
-                res = _check(b._ib, sym, exch, cur)
-            except Exception as e:
-                res = {"status": "ERROR", "note": str(e)}
-            print(f"[{i}/{len(rows)}] {sym} {exch or 'SMART'} {cur}: {res['status']} {res['note']}")
-            out.append({"symbol": sym, "exchange": exch, "currency": cur, **res})
-            b._ib.sleep(0.05)  # ponytail: crude pacing, IBKR allows ~50 msgs/sec
+        with open(OUT, "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
+            if new_file:
+                w.writeheader()
+            for i, r in enumerate(rows, 1):
+                sym, exch, cur = r["symbol"].strip(), r.get("exchange", "").strip(), r.get("currency", "USD").strip()
+                if (sym, exch, cur) in done:
+                    continue
+                if not b._ib.isConnected():
+                    print("Gateway connection lost — rerun to resume.")
+                    return
+                try:
+                    res = _check(b._ib, sym, exch, cur)
+                except Exception as e:
+                    res = {"status": "ERROR", "note": str(e)}
+                print(f"[{i}/{len(rows)}] {sym} {exch or 'SMART'} {cur}: {res['status']} {res['note']}")
+                w.writerow({"symbol": sym, "exchange": exch, "currency": cur, **res})
+                f.flush()
+                b._ib.sleep(0.05)  # ponytail: crude pacing, IBKR allows ~50 msgs/sec
     finally:
         b.disconnect()
-
-    with open("etf_tradability.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
-        w.writeheader()
-        w.writerows(out)
-    print(f"\nOK: {sum(o['status'] == 'OK' for o in out)} / {len(out)}  -> etf_tradability.csv")
+    print(f"Done -> {OUT}")
 
 
 if __name__ == "__main__":

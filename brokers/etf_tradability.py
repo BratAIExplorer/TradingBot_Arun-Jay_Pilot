@@ -17,6 +17,11 @@ import sys
 from brokers.ibkr_broker import IBKRBroker
 
 
+COLUMNS = ["symbol", "exchange", "currency", "status", "note", "name", "isin", "conId", "primary_exchange",
+           "category", "subcategory", "min_size", "trading_hours", "commission_1sh", "min_commission",
+           "commission_ccy", "warning"]
+
+
 def _check(ib, sym, exch, cur):
     from ib_insync import Stock, MarketOrder
     errors = []
@@ -25,16 +30,29 @@ def _check(ib, sym, exch, cur):
     try:
         details = ib.reqContractDetails(Stock(sym, exch or "SMART", cur))
         if not details:
-            return "NOT_FOUND", "no contract details"
+            return {"status": "NOT_FOUND", "note": "no contract details"}
         d = details[0]
+        c = d.contract
+        info = {
+            "name": d.longName, "isin": next((x.value for x in d.secIdList or [] if x.tag == "ISIN"), ""),
+            "conId": c.conId, "primary_exchange": c.primaryExchange,
+            "category": d.category, "subcategory": d.subcategory,
+            "min_size": d.minSize, "trading_hours": (d.liquidHours or "")[:60],
+        }
         if d.stockType != "ETF":
-            return "NOT_ETF", d.stockType
-        state = ib.whatIfOrder(d.contract, MarketOrder("BUY", 1))
+            return {**info, "status": "NOT_ETF", "note": d.stockType}
+        state = ib.whatIfOrder(c, MarketOrder("BUY", 1))
+        info.update({
+            "commission_1sh": getattr(state, "commission", ""), "min_commission": getattr(state, "minCommission", ""),
+            "commission_ccy": getattr(state, "commissionCurrency", ""), "warning": getattr(state, "warningText", ""),
+        })
         # whatIf is answered with an OrderState; restrictions arrive as error events.
         blocking = [e for e in errors if not e.startswith(("2104", "2106", "2158"))]
         if blocking:
-            return "BLOCKED", " | ".join(blocking)
-        return ("OK", "") if state and state.initMarginChange != "" else ("UNKNOWN", "empty whatIf")
+            return {**info, "status": "BLOCKED", "note": " | ".join(blocking)}
+        if state and state.initMarginChange != "":
+            return {**info, "status": "OK", "note": ""}
+        return {**info, "status": "UNKNOWN", "note": "empty whatIf"}
     finally:
         ib.errorEvent -= handler
 
@@ -57,17 +75,17 @@ def main():
         for i, r in enumerate(rows, 1):
             sym, exch, cur = r["symbol"].strip(), r.get("exchange", "").strip(), r.get("currency", "USD").strip()
             try:
-                status, note = _check(b._ib, sym, exch, cur)
+                res = _check(b._ib, sym, exch, cur)
             except Exception as e:
-                status, note = "ERROR", str(e)
-            print(f"[{i}/{len(rows)}] {sym} {exch or 'SMART'} {cur}: {status} {note}")
-            out.append({"symbol": sym, "exchange": exch, "currency": cur, "status": status, "note": note})
+                res = {"status": "ERROR", "note": str(e)}
+            print(f"[{i}/{len(rows)}] {sym} {exch or 'SMART'} {cur}: {res['status']} {res['note']}")
+            out.append({"symbol": sym, "exchange": exch, "currency": cur, **res})
             b._ib.sleep(0.05)  # ponytail: crude pacing, IBKR allows ~50 msgs/sec
     finally:
         b.disconnect()
 
     with open("etf_tradability.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["symbol", "exchange", "currency", "status", "note"])
+        w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
         w.writeheader()
         w.writerows(out)
     print(f"\nOK: {sum(o['status'] == 'OK' for o in out)} / {len(out)}  -> etf_tradability.csv")

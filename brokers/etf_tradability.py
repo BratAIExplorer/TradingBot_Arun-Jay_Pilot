@@ -72,6 +72,19 @@ def _check(ib, sym, exch, cur):
         ib.errorEvent -= handler
 
 
+def _split():
+    """OUT -> etf_tradable.csv (status OK) + etf_excluded.csv (everything else, with the reason)."""
+    with open(OUT, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    for name, keep in (("etf_tradable.csv", [r for r in rows if r["status"] == "OK"]),
+                       ("etf_excluded.csv", [r for r in rows if r["status"] != "OK"])):
+        with open(name, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
+            w.writeheader()
+            w.writerows(keep)
+        print(f"{name}: {len(keep)} rows")
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python -m brokers.etf_tradability etfs.csv")
@@ -117,6 +130,7 @@ def main():
     finally:
         b.disconnect()
     print(f"Done -> {OUT}")
+    _split()
 
 
 if __name__ == "__main__":

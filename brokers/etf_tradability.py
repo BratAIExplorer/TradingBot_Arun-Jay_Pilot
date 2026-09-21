@@ -108,6 +108,7 @@ def main():
     b = IBKRBroker(client_id=11)
     try:
         b.connect()
+        b._ib.RequestTimeout = 20  # a hung IBKR request raises instead of freezing the run
         with open(OUT, "a", newline="") as f:
             w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
             if new_file:
@@ -124,6 +125,8 @@ def main():
                 except Exception as e:
                     res = {"status": "ERROR", "note": str(e)}
                 print(f"[{i}/{len(rows)}] {sym} {exch or 'SMART'} {cur}: {res['status']} {res['note']}")
+                if res["status"] == "ERROR":
+                    continue  # not saved, so the next run retries it
                 w.writerow({"symbol": sym, "exchange": exch, "currency": cur, **res})
                 f.flush()
                 b._ib.sleep(0.05)  # ponytail: crude pacing, IBKR allows ~50 msgs/sec

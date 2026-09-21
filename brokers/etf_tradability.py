@@ -35,7 +35,10 @@ def _check(ib, sym, exch, cur):
     handler = lambda reqId, code, msg, contract: errors.append(f"{code}: {msg}")
     ib.errorEvent += handler
     try:
-        details = ib.reqContractDetails(Stock(sym, exch or "SMART", cur))
+        try:
+            details = ib.reqContractDetails(Stock(sym, exch or "SMART", cur))
+        except TimeoutError:  # IBKR never answers for contracts that no longer exist
+            return {"status": "NOT_FOUND", "note": "no reply (delisted?)"}
         if not details:
             return {"status": "NOT_FOUND", "note": "no contract details"}
         d = details[0]
@@ -108,7 +111,7 @@ def main():
     b = IBKRBroker(client_id=11)
     try:
         b.connect()
-        b._ib.RequestTimeout = 20  # a hung IBKR request raises instead of freezing the run
+        b._ib.RequestTimeout = 10  # a hung IBKR request raises instead of freezing the run
         with open(OUT, "a", newline="") as f:
             w = csv.DictWriter(f, fieldnames=COLUMNS, restval="")
             if new_file:

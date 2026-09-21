@@ -5,6 +5,7 @@
       "name": "tradingbot-backend",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-X", "utf8", "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8001"],
+      "env": {"IBKR_PORT": "4001"},
       "port": 8001
     }
   ]

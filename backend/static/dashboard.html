@@ -471,17 +471,21 @@ async function refreshIbkr(){
       const purchased = p.first_purchase_date
         ? new Date(p.first_purchase_date).toLocaleDateString()
         : '<span class="muted">unknown (no BOT execution found today)</span>';
+      const pct = p.avg_cost ? (p.market_price - p.avg_cost) / p.avg_cost * 100 : null;
+      const pctTxt = pct === null ? '' : ` (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+      const verdict = (pnl ?? 0) >= 0 ? 'In profit' : 'In loss';
       return `<div class="card stock ${(pnl ?? 0) >= 0 ? 'profit' : 'loss'}">
         <div class="row">
           <span class="name">${sym} <span class="muted">(${p.exchange ?? ''}, ${p.currency ?? ''})</span></span>
-          <span class="pl ${pnlClass}">${fmtUSD(pnl)}</span>
+          <span class="pl ${pnlClass}">${verdict}: ${fmtUSD(pnl)}${pctTxt}</span>
         </div>
         <div class="facts">
           <span>Qty: ${p.qty}</span>
           <span>Avg cost: ${fmtUSD(p.avg_cost)}</span>
           <span>Market price: ${fmtUSD(p.market_price)}</span>
           <span>Market value: ${fmtUSD(p.market_value)}</span>
-          <span>Realized P&L: ${fmtUSD(p.realized_pnl)}</span>
+          <span>Unrealized P&L (price now − bought at): ${fmtUSD(pnl)}${pctTxt}</span>
+          <span>Realized P&L (sold): ${fmtUSD(p.realized_pnl)}</span>
           <span>First purchase: ${purchased}</span>
         </div>
       </div>`;

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import sys
 import os
 
@@ -72,9 +72,9 @@ except Exception as e:  # noqa: BLE001 — the main API must still boot without 
     print(f"Warning: small-cap strategy routes not mounted: {e}")
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def read_root():
-    return {"status": "online", "message": "ARUN Titan Brain is Active"}
+    return RedirectResponse("/dashboard")
 
 _DASHBOARD_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "dashboard.html")
 

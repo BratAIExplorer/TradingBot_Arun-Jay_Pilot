@@ -72,6 +72,13 @@ except Exception as e:  # noqa: BLE001 — the main API must still boot without 
     print(f"Warning: small-cap strategy routes not mounted: {e}")
 
 
+try:
+    from backend.voyager_routes import build_router as build_voyager_router
+    app.include_router(build_voyager_router())
+except Exception as e:  # noqa: BLE001
+    print(f"Warning: voyager rule routes not mounted: {e}")
+
+
 @app.get("/", include_in_schema=False)
 def read_root():
     return RedirectResponse("/dashboard")

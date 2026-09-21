@@ -98,6 +98,7 @@
   <button data-tab="stocks" onclick="showTab('stocks')">Stocks</button>
   <button data-tab="tradehist" onclick="showTab('tradehist')">Trades</button>
   <button data-tab="ibkr" onclick="showTab('ibkr')">IBKR</button>
+  <button data-tab="rules" onclick="showTab('rules');loadRules()">Dip Rules</button>
 </div>
 
 <div id="tab-home" class="tabpanel active">
@@ -166,6 +167,18 @@
   <button class="refreshbtn" onclick="refreshIbkr()">🔄 Refresh</button>
   <div id="ibkrStatus"><p class="muted">Click Refresh — this connects to IB Gateway fresh each time, not loaded automatically.</p></div>
   <div id="ibkrPositions"></div>
+</div>
+
+<div id="tab-rules" class="tabpanel">
+  <h2>Buy-the-dip / Sell-at-% (IBKR, USD)</h2>
+  <p class="muted">Up to 25 stocks. BUY when price falls <b>Dip %</b> below its recent high (one entry per stock). Then a GTC SELL at <b>Sell %</b> above your cost. Saving only stores rules; orders go out only when the engine runs with VOYAGER_ORDERS_ENABLED=1.</p>
+  <div id="rulesMode"></div>
+  <table id="rulesTbl" style="width:100%;border-collapse:collapse"></table>
+  <button class="refreshbtn" onclick="addRule()">➕ Add stock</button>
+  <button class="refreshbtn" onclick="saveRules()">💾 Save</button>
+  <button class="refreshbtn" onclick="previewRules()">👁 Preview (no orders)</button>
+  <div id="rulesMsg"></div>
+  <div id="rulesPreview"></div>
 </div>
 
 <button id="engineBtn" class="engine-btn start" onclick="toggleEngine()">…</button>
@@ -493,6 +506,40 @@ async function refreshIbkr(){
   } catch(e){
     statusEl.innerHTML = `<div class="error">Request failed: ${escapeHtml(String(e))}</div>`;
   }
+}
+
+
+let rulesData = [];
+const RCOLS = [['symbol','Symbol'],['dip_pct','Dip %'],['sell_pct','Sell %'],['usd','$ per buy'],['lookback_days','High of last N days'],['enabled','On']];
+function drawRules(){
+  const t = document.getElementById('rulesTbl');
+  t.innerHTML = '<tr>' + RCOLS.map(c => `<th align="left">${c[1]}</th>`).join('') + '<th></th></tr>' +
+    rulesData.map((r,i) => '<tr>' + RCOLS.map(([k]) => k === 'enabled'
+      ? `<td><input type="checkbox" ${r[k] ? 'checked' : ''} onchange="rulesData[${i}].enabled=this.checked"></td>`
+      : `<td><input size="${k==='symbol'?8:6}" value="${escapeHtml(String(r[k]))}" onchange="rulesData[${i}].${k}=this.value"></td>`).join('') +
+      `<td><button onclick="rulesData.splice(${i},1);drawRules()">✖</button></td></tr>`).join('');
+}
+function addRule(){ rulesData.push({symbol:'', dip_pct:10, sell_pct:15, usd:100, lookback_days:20, enabled:true}); drawRules(); }
+async function loadRules(){
+  const d = await (await fetch('/api/voyager/rules')).json();
+  rulesData = d.rules; drawRules();
+  document.getElementById('rulesMode').innerHTML = d.orders_enabled
+    ? '<span class="pill stopped">ENGINE MAY SEND REAL ORDERS</span>' : '<span class="pill running">Dry-run only</span>';
+}
+async function saveRules(){
+  const m = document.getElementById('rulesMsg');
+  const r = await fetch('/api/voyager/rules', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({rules: rulesData})});
+  const d = await r.json();
+  if (!r.ok){ m.innerHTML = `<div class="error">${escapeHtml(d.detail)}</div>`; return; }
+  rulesData = d.rules; drawRules(); m.innerHTML = '<p class="muted">Saved.</p>';
+}
+async function previewRules(){
+  const el = document.getElementById('rulesPreview');
+  el.innerHTML = '<p class="muted">Connecting to IB Gateway…</p>';
+  const d = await (await fetch('/api/voyager/preview', {method:'POST'})).json();
+  if (d.error){ el.innerHTML = `<div class="error">${escapeHtml(d.error)}</div>`; return; }
+  el.innerHTML = d.rows.map(r => `<div class="card"><b>${r.symbol}</b> ${fmtUSD(r.price)} (high ${fmtUSD(r.ref_high)}) — ` +
+    (r.action ? `WOULD ${r.action.side} ${r.action.qty}${r.action.price ? ' @ ' + fmtUSD(r.action.price) : ' at market'} — ${escapeHtml(r.action.why)}` : escapeHtml(r.note || 'nothing to do')) + '</div>').join('');
 }
 
 function refreshAll(){ refreshStatus(); refreshPositions(); refreshTrades(); }

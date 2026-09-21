@@ -219,3 +219,22 @@ class IBKRBroker:
             order.ocaGroup = oca_group
             order.ocaType = oca_type
         return self._ib.placeOrder(contract, order)
+
+    def get_reference_high(self, symbol: str, days: int, exchange: str = "SMART", currency: str = "USD"):
+        """Highest daily high over the last `days` calendar days (delayed data is fine). None if no bars."""
+        self._ensure_connected()
+        from ib_insync import Stock
+        self._ib.reqMarketDataType(3)
+        contract = Stock(symbol, exchange, currency)
+        self._ib.qualifyContracts(contract)
+        bars = self._ib.reqHistoricalData(contract, endDateTime="", durationStr=f"{int(days)} D",
+                                          barSizeSetting="1 day", whatToShow="TRADES", useRTH=True)
+        return max(b.high for b in bars) if bars else None
+
+    def get_open_orders(self) -> dict[str, set[str]]:
+        """symbol -> set of sides ('BUY'/'SELL') with a live resting order."""
+        self._ensure_connected()
+        out: dict[str, set[str]] = {}
+        for t in self._ib.openTrades():
+            out.setdefault(t.contract.symbol, set()).add(t.order.action.upper())
+        return out

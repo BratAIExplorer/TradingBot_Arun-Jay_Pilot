@@ -34,6 +34,9 @@ from typing import Any
 IBKR_HOST = os.environ.get("IBKR_HOST", "127.0.0.1")
 IBKR_PORT = int(os.environ.get("IBKR_PORT", "4002"))  # 4002=Gateway paper, 4001=Gateway live
 IBKR_CLIENT_ID = int(os.environ.get("IBKR_CLIENT_ID", "7"))
+# Set IBKR_READONLY=1 where the Gateway login is read-only (VPS): skips the order queries that
+# make Gateway pop a "needs write access" dialog and add ~4s to every connect. Default off.
+IBKR_READONLY = os.environ.get("IBKR_READONLY", "").lower() in ("1", "true", "yes")
 
 
 class IBKRBroker:
@@ -73,7 +76,7 @@ class IBKRBroker:
         if self._ib is not None and self._ib.isConnected():
             return
         self._ib = IB()
-        self._ib.connect(self.host, self.port, clientId=self.client_id)
+        self._ib.connect(self.host, self.port, clientId=self.client_id, readonly=IBKR_READONLY)
 
     def disconnect(self):
         if self._ib is not None and self._ib.isConnected():

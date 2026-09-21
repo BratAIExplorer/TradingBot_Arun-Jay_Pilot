@@ -199,14 +199,15 @@ voyager_dip_state.json        engine memory: shares it owns, pending buys    [ru
 ### 8.4 Deployed setup (VPS `76.13.179.32`, `/opt/voyager`) and runbook
 - Engine service: `voyager-engine` (from `deploy/voyager-engine.service`). Deliberately has **no `Wants=` on
   `voyager-gateway`** — starting the Gateway needs phone 2FA and kicks other sessions.
-- Watch it: dashboard -> Dip Rules (status strip), or `journalctl`-style: `tail -f /opt/voyager/logs/dip_engine.log`.
+- Watch it: dashboard -> Dip Rules (status strip), or `tail -f /opt/voyager/logs/dip_engine.log`.
 - Stop: `systemctl stop voyager-engine` (writes `running:false`). Start: `systemctl start voyager-engine`.
 - If the Gateway is down the engine keeps running and shows "Last check was skipped: ..." — that is expected.
 - **Go-live checklist (do NOT do casually):** (1) real money — decide this is worth it, see 8.5; (2) Gateway login must be
   non-read-only (`ReadOnlyApi=no`); (3) unset `IBKR_READONLY`; (4) uncomment `Environment=VOYAGER_ORDERS_ENABLED=1`
   in the unit, `daemon-reload`, restart; (5) start with 1-2 rules and `$ per buy` you can lose.
-- The VPS `.env` has a PIN set, so the PIN gate is active there. `IBKR_READONLY` is **not** set in the VPS `.env`
-  (left as found); the engine is dry-run because `VOYAGER_ORDERS_ENABLED` is unset.
+- The VPS `.env` has a PIN set, so the PIN gate is active there. `voyager-web` gets `IBKR_READONLY=1` from the
+  drop-in `voyager-web.service.d/gateway.conf`; the engine unit sets it too (remove that line to go live). The engine
+  is dry-run on two counts: `VOYAGER_ORDERS_ENABLED` is unset AND `IBKR_READONLY=1`.
 
 ### 8.5 Backtest result — why Pass 2 (stop-loss/cooldown/OCA) was NOT built
 Run 2026-09-21, 5 years daily bars (yfinance), the 15 starter stocks, engine's own rule, dip 5/10/15% x sell 8/15% x
@@ -223,11 +224,11 @@ stop none/5/10/15%. Equal-capital benchmark: buy-and-hold returned **+27.4%**.
 - Results are noisy (neighbouring settings swing widely; a 5-day cooldown changed one result 8.5% -> 3.3%).
 - Biases that flatter the strategy: survivorship (today's names), mostly-bull window, close-price entries,
   stops filled exactly at the stop price (no gap-through). No commissions unless the cost column says so.
-- **Conclusion: no demonstrated edge. Consistent with the small-cap finding (`BACKTEST_FINDINGS.md`).** Keep the engine
+- **Conclusion: no demonstrated edge. Consistent with the small-cap finding (`strategies/BACKTEST_FINDINGS.md`).** Keep the engine
   as an observation tool in dry-run. Re-open Pass 2 only with a new idea and a fresh backtest.
 
 ### 8.6 Known gaps
-- Never run against a real Gateway from this code path yet (Gateway was down at deploy; verified locally with fakes/mocks and a browser).
+- Never run against a real Gateway from this code path yet (`voyager-gateway` was inactive at deploy time and is left for the user to start with 2FA; verified locally with fakes/mocks and a browser).
 - Whole shares only: at $100/buy, stocks above ~$100 can never fire (the card warns).
 - Quotes may be delayed depending on market-data subscriptions (not verified for this account).
 - `Documentation/VOYAGER_STATUS.html` was not regenerated from this file.

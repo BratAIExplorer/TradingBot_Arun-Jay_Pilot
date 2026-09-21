@@ -1,6 +1,6 @@
 # Voyager — US Markets (IBKR) Status
 
-**Last updated:** 2026-09-17
+**Last updated:** 2026-09-21
 **What this is:** the IBKR/US-markets module living inside `TradingBot` — a separate
 broker and account from the existing mStock engine, sharing this codebase but nothing
 else. Named Voyager for the same reason it exists: reaching beyond the home market.
@@ -145,8 +145,14 @@ the confusion surfaced during testing (they were all still called generic names 
    **Trading decision — not done here, needs a human to place the order.**
 2. Add a stop-loss leg to the three open positions, if wanted.
    **Trading decision — not done here, needs a human to place the order.**
-3. IB Gateway unattended on the VPS — **scripted** (`deploy/setup_ibgateway.sh`),
-   not yet run on the real VPS. Run it, fill in `deploy/ibc/config.ini`, verify.
+3. IB Gateway unattended on the VPS — **in progress (2026-09-21).** Stand-alone
+   deploy: `Voyager` branch cloned to `/opt/voyager` on `76.13.179.32` (shared VPS;
+   port 8001 is taken by Docker, so the dashboard uses `127.0.0.1:8011`, reached via
+   SSH tunnel, no nginx change). Target is **live** (port 4001). Still to do: user
+   fills `config.ini` credentials and approves IBKR 2FA; then install services.
+   Note: a live Gateway login on the VPS will disconnect the laptop's Gateway
+   session (one live session per IBKR user). PR #8 is a **draft that never merges**
+   — `main` is the desktop tool; Voyager stays a long-lived branch.
 4. `kickstart.py` → `get_broker()` rewiring — **deliberately not started.** This
    touches the live mStock engine's order path; per `HANDOVER_HEADLESS_VPS.md`
    Phase 4, it must be done in paper mode first, by someone who can watch it run.

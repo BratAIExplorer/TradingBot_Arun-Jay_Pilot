@@ -3,7 +3,10 @@
 Per enabled rule:
   no position, no resting BUY, price <= recent_high * (1 - dip_pct%)  -> BUY usd/price shares (whole shares)
   position held, no resting SELL                                       -> GTC LIMIT SELL at avg_cost * (1 + sell_pct%)
-Orders are only SENT when env VOYAGER_ORDERS_ENABLED=1 (file/env only, never from the UI). Otherwise dry-run.
+Orders are only SENT when env VOYAGER_ORDERS_ENABLED=1 (file/env only, never from the UI) AND IBKR_READONLY is unset.
+Otherwise dry-run. A live cycle that cannot read positions/open orders is skipped, never run on empty data.
+The engine only sells shares it bought itself (tracked in voyager_dip_state.json) unless a rule sets manage_existing.
+Each cycle it writes voyager_engine_state.json so the dashboard can show what it is doing.
 
 Run the loop:  python -m brokers.dip_engine   (every VOYAGER_INTERVAL_MIN minutes, default 15)
 """
@@ -14,9 +17,15 @@ import math
 import os
 import time
 
-RULES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voyager_rules.json")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RULES_PATH = os.path.join(_ROOT, "voyager_rules.json")
+STATE_PATH = os.path.join(_ROOT, "voyager_engine_state.json")      # what the engine is doing (dashboard reads it)
+DIP_STATE_PATH = os.path.join(_ROOT, "voyager_dip_state.json")     # engine memory: owned / pending buys
 MAX_RULES = 25
-_DEFAULTS = {"dip_pct": 10.0, "sell_pct": 15.0, "usd": 100.0, "lookback_days": 20, "enabled": True}
+PENDING_BUY_SECS = 30 * 60
+_DEFAULTS = {"dip_pct": 10.0, "sell_pct": 15.0, "usd": 100.0, "lookback_days": 20, "enabled": True,
+             "manage_existing": False}
+_BOOLS = ("enabled", "manage_existing")
 
 
 def clean_rules(raw) -> list[dict]:
@@ -34,7 +43,7 @@ def clean_rules(raw) -> list[dict]:
         rule = {"symbol": sym}
         for k, dflt in _DEFAULTS.items():
             v = r.get(k, dflt)
-            if k == "enabled":
+            if k in _BOOLS:
                 rule[k] = bool(v)
                 continue
             try:
@@ -65,6 +74,62 @@ def save_rules(rules: list[dict], path: str = RULES_PATH) -> list[dict]:
     return rules
 
 
+def _write_json(path: str, obj) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f)
+    os.replace(tmp, path)
+
+
+def _read_json(path: str):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def readonly() -> bool:
+    return os.environ.get("IBKR_READONLY", "").lower() in ("1", "true", "yes")
+
+
+def write_state(mode: str, rows: list[dict], interval_min: float, running: bool = True,
+                error: str | None = None, now: float | None = None, path: str = STATE_PATH) -> None:
+    _write_json(path, {"mode": mode, "ts": time.time() if now is None else now, "interval_min": interval_min,
+                       "running": running, "error": error, "rows": rows})
+
+
+def read_state(path: str = STATE_PATH) -> dict | None:
+    return _read_json(path)
+
+
+def engine_health(state: dict | None, now: float | None = None) -> str:
+    """'none' (never ran) | 'stopped' (clean exit) | 'stale' (silent for > 2 cycles) | 'running'."""
+    if not state:
+        return "none"
+    if not state.get("running"):
+        return "stopped"
+    now = time.time() if now is None else now
+    return "stale" if now - state["ts"] > 2 * state["interval_min"] * 60 + 120 else "running"
+
+
+def load_dip_state(path: str = DIP_STATE_PATH) -> dict:
+    s = _read_json(path) or {}
+    return {"owned": dict(s.get("owned", {})), "pending_buy": dict(s.get("pending_buy", {})),
+            "prev_held": list(s.get("prev_held", []))}
+
+
+def next_dip_state(state: dict, rows: list[dict], now: float) -> dict:
+    """Pure. owned = symbols the engine bought and still holds (or is waiting to fill); pending_buy = BUYs
+    sent in the last PENDING_BUY_SECS that haven't shown up as a position yet."""
+    held_now = {r["symbol"] for r in rows if r.get("held_qty", 0) > 0}
+    sent = {r["symbol"] for r in rows if r.get("sent") and r["action"]["side"] == "BUY"}
+    pending = {s: t for s, t in state["pending_buy"].items() if now - t < PENDING_BUY_SECS and s not in held_now}
+    pending.update({s: now for s in sent})
+    owned = {s: t for s, t in {**state["owned"], **{s: now for s in sent}}.items() if s in held_now or s in pending}
+    return {"owned": owned, "pending_buy": pending, "prev_held": sorted(held_now)}
+
+
 def decide(rule: dict, price: float | None, ref_high: float | None, held: dict | None, resting: set[str]) -> dict | None:
     """Pure: return {'side','qty','price'|None,'why'} or None. held = {'qty','avg_cost'} or None."""
     if not rule["enabled"]:
@@ -85,29 +150,54 @@ def decide(rule: dict, price: float | None, ref_high: float | None, held: dict |
     return None
 
 
-def run_once(broker, rules: list[dict] | None = None, live: bool = False) -> list[dict]:
-    """Evaluate every rule; send orders only if live. Returns one result row per rule."""
+def _fetch_account(broker, preview: bool) -> tuple[dict, dict, bool]:
+    """(held, resting, ok). Only Preview may degrade to empty; a live cycle must not run on missing data."""
+    try:
+        return broker.get_portfolio(), broker.get_open_orders(), True
+    except Exception:
+        if not preview:
+            raise
+        return {}, {}, False
+
+
+def run_once(broker, rules: list[dict] | None = None, live: bool = False, state: dict | None = None,
+             preview: bool = False, now: float | None = None) -> list[dict]:
+    """Evaluate every rule; send orders only if live. Returns one result row per rule.
+    Raises if positions/open orders can't be read (unless preview) so the caller skips the cycle."""
     rules = load_rules() if rules is None else rules
-    held, resting = broker.get_portfolio(), broker.get_open_orders()
+    state = state or {"owned": {}, "pending_buy": {}, "prev_held": []}
+    now = time.time() if now is None else now
+    held, resting, ok = _fetch_account(broker, preview)
     rows = []
     for rule in rules:
         sym = rule["symbol"]
-        row = {"symbol": sym, "action": None, "sent": False, "note": ""}
+        pos = held.get(sym)
+        qty = pos["qty"] if pos else 0
+        sides = resting.get(sym, set())
+        row = {"symbol": sym, "enabled": rule["enabled"], "stage": "watching", "action": None, "sent": False,
+               "note": "", "held_qty": qty, "avg_cost": pos.get("avg_cost") if pos else None,
+               "resting": sorted(sides), "account_ok": ok}
         try:
             q = broker.get_quote(sym) or {}
             price = q.get("last_price") or q.get("ask")
             high = broker.get_reference_high(sym, rule["lookback_days"])
             row.update(price=price, ref_high=high)
-            act = decide(rule, price, high, held.get(sym), resting.get(sym, set()))
-            row["action"] = act
-            if act and live:
-                broker.place_order(sym, "SMART", act["qty"], act["side"], price=act["price"] or 0,
-                                   tif="GTC" if act["side"] == "SELL" else "DAY")
-                row["sent"] = True
-            elif not act:
-                row["note"] = "waiting"
+            if not rule["enabled"]:
+                row["stage"] = "off"
+            elif qty > 0 and sym not in state["owned"] and not rule["manage_existing"]:
+                row.update(stage="unmanaged", note="you already hold shares the engine didn't buy - left alone")
+            elif qty == 0 and now - state["pending_buy"].get(sym, 0) < PENDING_BUY_SECS:
+                row.update(stage="pending", note="buy sent - waiting for it to fill")
+            else:
+                act = decide(rule, price, high, pos, sides)
+                row["action"] = act
+                if act and live:
+                    broker.place_order(sym, "SMART", act["qty"], act["side"], price=act["price"] or 0,
+                                       tif="GTC" if act["side"] == "SELL" else "DAY")
+                    row["sent"] = True
+                row["stage"] = "holding" if qty > 0 else "armed" if act else "pending" if "BUY" in sides else "watching"
         except Exception as e:  # one bad symbol must not stop the rest
-            row["note"] = f"error: {e}"
+            row.update(stage="error", note=f"error: {e}")
         rows.append(row)
     return rows
 
@@ -141,17 +231,40 @@ if __name__ == "__main__":
     if "--demo" in sys.argv:
         _demo()
         raise SystemExit
+    import signal
     from brokers.ibkr_broker import IBKRBroker
-    live = orders_enabled()
-    print("LIVE — orders will be sent" if live else "DRY RUN — set VOYAGER_ORDERS_ENABLED=1 to send orders")
-    while True:
-        b = IBKRBroker(client_id=int(os.environ.get("VOYAGER_CLIENT_ID", "11")))
-        try:
-            b.connect()
-            for r in run_once(b, live=live):
-                print(time.strftime("%H:%M:%S"), r)
-        except Exception as e:
-            print("cycle failed:", e)
-        finally:
-            b.disconnect()
-        time.sleep(float(os.environ.get("VOYAGER_INTERVAL_MIN", "15")) * 60)
+    interval = float(os.environ.get("VOYAGER_INTERVAL_MIN", "15"))
+    live = orders_enabled() and not readonly()
+    if orders_enabled() and readonly():
+        print("IBKR_READONLY is set - forcing DRY RUN (the Gateway would reject orders anyway)")
+    mode = "live" if live else "dry-run"
+    print("LIVE - orders will be sent" if live else "DRY RUN - set VOYAGER_ORDERS_ENABLED=1 to send orders")
+
+    def _term(*_):
+        raise SystemExit
+
+    signal.signal(signal.SIGTERM, _term)  # systemd stop -> clean exit, state file says running:false
+    write_state(mode, [], interval)
+    last_rows: list[dict] = []
+    try:
+        while True:
+            error = None
+            b = IBKRBroker(client_id=int(os.environ.get("VOYAGER_CLIENT_ID", "11")))
+            try:
+                b.connect()
+                st = load_dip_state()
+                rows = run_once(b, live=live, state=st)
+                for r in rows:
+                    print(time.strftime("%H:%M:%S"), r)
+                last_rows = rows
+                if live:
+                    _write_json(DIP_STATE_PATH, next_dip_state(st, rows, time.time()))
+            except Exception as e:
+                error = str(e)
+                print("cycle failed (skipped):", e)
+            finally:
+                b.disconnect()
+            write_state(mode, last_rows, interval, error=error)
+            time.sleep(interval * 60)
+    except (KeyboardInterrupt, SystemExit):
+        write_state(mode, last_rows, interval, running=False)

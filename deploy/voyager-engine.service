@@ -1,0 +1,20 @@
+[Unit]
+Description=Voyager dip engine (IBKR buy-the-dip rules) — DRY RUN unless VOYAGER_ORDERS_ENABLED=1 is set below
+After=network.target voyager-gateway.service
+Wants=voyager-gateway.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/voyager
+EnvironmentFile=-/opt/voyager/.env
+# Keep this line commented until you have decided to go live (also requires a NON-read-only Gateway login):
+# Environment=VOYAGER_ORDERS_ENABLED=1
+ExecStart=/opt/voyager/venv/bin/python -m brokers.dip_engine
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/voyager/logs/dip_engine.log
+StandardError=append:/opt/voyager/logs/dip_engine.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 [Unit]
 Description=Voyager dip engine (IBKR buy-the-dip rules) — DRY RUN unless VOYAGER_ORDERS_ENABLED=1 is set below
 After=network.target voyager-gateway.service
-Wants=voyager-gateway.service
+# No Wants= on the gateway on purpose: starting it needs a phone 2FA approval and kicks other Gateway sessions.
 
 [Service]
 Type=simple

@@ -1,6 +1,6 @@
 # Voyager — US Markets (IBKR) Status
 
-**Last updated:** 2026-09-21
+**Last updated:** 2026-09-21 (dip-rules engine + dashboard tab added; see section 8)
 **What this is:** the IBKR/US-markets module living inside `TradingBot` — a separate
 broker and account from the existing mStock engine, sharing this codebase but nothing
 else. Named Voyager for the same reason it exists: reaching beyond the home market.
@@ -161,3 +161,73 @@ the confusion surfaced during testing (they were all still called generic names 
 5. Flex Query integration for full purchase-history / lot tracking — **blocked on
    IBKR account setup** (a Flex Query report + token must be created in the IBKR
    web portal first; nothing to build in code until that exists).
+
+## 8. Dip rules — buy-the-dip / sell-at-% engine (added 2026-09-21)
+
+**Status: deployed in DRY-RUN only. No real orders. Pass 2 (stop-loss/cooldown) was dropped — see 8.5.**
+
+### 8.1 What it does
+Per rule (max 25 stocks, edited on the dashboard **Dip Rules** tab): no position and no resting BUY and
+price <= N-day high x (1 - dip%) -> BUY `$ per buy` worth of whole shares at market; position held and no
+resting SELL -> GTC limit SELL at avg cost x (1 + sell%). Checked every `VOYAGER_INTERVAL_MIN` (default 15).
+
+### 8.2 Files
+```
+brokers/dip_engine.py         rules + pure decide() + run_once() + the loop (python -m brokers.dip_engine)
+backend/voyager_routes.py     /api/voyager/{rules,state,preview}; PUT /rules is PIN-gated (TRADINGBOT_PIN)
+backend/static/dashboard.html Dip Rules tab: status strip, filter counters, one card per stock, save bar
+tests/test_dip_engine.py      9 pytest tests (safety guards, state file, validation)
+deploy/voyager-engine.service systemd unit, dry-run by default (NOT installed automatically)
+research/bt_voyager_dip.py    the backtest behind the Pass 2 decision (python research/bt_voyager_dip.py 5 0.3)
+voyager_rules.json            the rules (written by the dashboard)          [runtime, not in git]
+voyager_engine_state.json     what the engine did last cycle (dashboard reads it) [runtime, git-ignored]
+voyager_dip_state.json        engine memory: shares it owns, pending buys    [runtime, git-ignored]
+```
+
+### 8.3 Safety guards (all tested)
+- **Live orders need BOTH** `VOYAGER_ORDERS_ENABLED=1` **and** `IBKR_READONLY` unset. With `IBKR_READONLY` set the
+  engine forces dry-run. There is no way to enable live orders from the dashboard.
+- **A live cycle that can't read positions/open orders is skipped** (never run on empty data). Only the dashboard
+  Preview may degrade to "prices and triggers only".
+- **The engine only sells shares it bought itself** (`owned` in `voyager_dip_state.json`). Shares you already hold
+  show "Holding - not managed" unless the rule's *manage existing shares* box is ticked.
+- **No double-buy:** after a BUY is sent, the same stock is blocked for 30 min (or until the position appears).
+- **Saving rules needs the PIN**; the starter list (15 stocks under $100) is added switched OFF.
+- **Status honesty:** the badge comes from the engine's own state file, not the web server's env. Health =
+  running / stale (silent > 2 cycles) / stopped (clean exit) / none.
+
+### 8.4 Deployed setup (VPS `76.13.179.32`, `/opt/voyager`) and runbook
+- Engine service: `voyager-engine` (from `deploy/voyager-engine.service`). Deliberately has **no `Wants=` on
+  `voyager-gateway`** — starting the Gateway needs phone 2FA and kicks other sessions.
+- Watch it: dashboard -> Dip Rules (status strip), or `journalctl`-style: `tail -f /opt/voyager/logs/dip_engine.log`.
+- Stop: `systemctl stop voyager-engine` (writes `running:false`). Start: `systemctl start voyager-engine`.
+- If the Gateway is down the engine keeps running and shows "Last check was skipped: ..." — that is expected.
+- **Go-live checklist (do NOT do casually):** (1) real money — decide this is worth it, see 8.5; (2) Gateway login must be
+  non-read-only (`ReadOnlyApi=no`); (3) unset `IBKR_READONLY`; (4) uncomment `Environment=VOYAGER_ORDERS_ENABLED=1`
+  in the unit, `daemon-reload`, restart; (5) start with 1-2 rules and `$ per buy` you can lose.
+- The VPS `.env` has a PIN set, so the PIN gate is active there. `IBKR_READONLY` is **not** set in the VPS `.env`
+  (left as found); the engine is dry-run because `VOYAGER_ORDERS_ENABLED` is unset.
+
+### 8.5 Backtest result — why Pass 2 (stop-loss/cooldown/OCA) was NOT built
+Run 2026-09-21, 5 years daily bars (yfinance), the 15 starter stocks, engine's own rule, dip 5/10/15% x sell 8/15% x
+stop none/5/10/15%. Equal-capital benchmark: buy-and-hold returned **+27.4%**.
+
+| Round-trip cost per trade | Configs beating buy-and-hold (of 24) |
+|---|---|
+| 0% (perfect fills) | 6 |
+| 0.3% (spread + slippage) | **0** |
+| 2% (~$1 commission/side on a $100 buy — IBKR fee for this account NOT verified) | **0**, most negative |
+
+- No-stop variants look 100% "win" only because 5-15 losing positions stay open (worst -79%, held 6-12 months).
+- Stops trigger constantly (up to 591 of 1,046 trades), win rate 28-45%, average trade +0.2-0.7% — costs erase it.
+- Results are noisy (neighbouring settings swing widely; a 5-day cooldown changed one result 8.5% -> 3.3%).
+- Biases that flatter the strategy: survivorship (today's names), mostly-bull window, close-price entries,
+  stops filled exactly at the stop price (no gap-through). No commissions unless the cost column says so.
+- **Conclusion: no demonstrated edge. Consistent with the small-cap finding (`BACKTEST_FINDINGS.md`).** Keep the engine
+  as an observation tool in dry-run. Re-open Pass 2 only with a new idea and a fresh backtest.
+
+### 8.6 Known gaps
+- Never run against a real Gateway from this code path yet (Gateway was down at deploy; verified locally with fakes/mocks and a browser).
+- Whole shares only: at $100/buy, stocks above ~$100 can never fire (the card warns).
+- Quotes may be delayed depending on market-data subscriptions (not verified for this account).
+- `Documentation/VOYAGER_STATUS.html` was not regenerated from this file.

@@ -292,6 +292,13 @@ def set_bot_status(command: dict):
 
     try:
         state_mgr.set_stop_requested(new_status == "STOPPED")
+        # Voyager VPS: set GATEWAY_UNIT=voyager-gateway so Stop logs IB Gateway out (frees the
+        # IBKR session for your own login) and Start brings it back. Unset = old behaviour.
+        unit = os.environ.get("GATEWAY_UNIT")
+        if unit:
+            import subprocess
+            act = "stop" if new_status == "STOPPED" else "start"
+            subprocess.run(["systemctl", act, unit], check=True, timeout=60)
         return {"status": "success", "new_state": new_status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

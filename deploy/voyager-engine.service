@@ -8,6 +8,8 @@ Type=simple
 User=root
 WorkingDirectory=/opt/voyager
 EnvironmentFile=-/opt/voyager/.env
+# Gateway on the VPS is read-only (ReadOnlyApi=yes) and voyager-web already runs with IBKR_READONLY=1. Remove this line to go live.
+Environment=IBKR_READONLY=1
 # Keep this line commented until you have decided to go live (also requires a NON-read-only Gateway login):
 # Environment=VOYAGER_ORDERS_ENABLED=1
 ExecStart=/opt/voyager/venv/bin/python -m brokers.dip_engine

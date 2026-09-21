@@ -7,5 +7,5 @@ start /b ssh -N -L 8011:127.0.0.1:8011 root@76.13.179.32
 :loop
 for /f %%s in ('ssh root@76.13.179.32 "systemctl is-active voyager-gateway"') do set S=%%s
 if "%S%"=="active" (echo %time%  IBKR Gateway: CONNECTED) else (echo %time%  IBKR Gateway: DISCONNECTED ^(%S%^))
-timeout /t 10 >nul
+timeout /t 30 >nul
 goto loop

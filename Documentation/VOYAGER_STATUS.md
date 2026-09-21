@@ -148,12 +148,12 @@ the confusion surfaced during testing (they were all still called generic names 
 3. IB Gateway unattended on the VPS — **DONE, running live (2026-09-21).**
    Stand-alone on the shared VPS `76.13.179.32`: `Voyager` branch in `/opt/voyager`,
    services `voyager-gateway` (IB Gateway 10.45 + IBC in `/opt/voyager-ibc`, live port
-   4001, `ReadOnlyLogin=yes`, no orders possible) and `voyager-web` (dashboard on
+   4001; read-only via `ReadOnlyApi=yes` in `/opt/voyager-ibc/config.ini` — NOTE `ReadOnlyLogin` is NOT supported by Gateway and does nothing; verified in the IBC log) and `voyager-web` (dashboard on
    `127.0.0.1:8011`), both enabled at boot. View via
    `ssh -L 8011:127.0.0.1:8011 root@76.13.179.32` → http://localhost:8011/dashboard.
    Port 4001 is firewalled from outside. Needs IBKR-mobile 2FA approval on each
    Gateway (re)start, including IBKR's daily restart. One live session per IBKR user:
-   the laptop Gateway cannot run while the VPS holds it. Extra apt package needed:
+   the laptop Gateway cannot run while the VPS holds it. 2FA sometimes completes with no new phone prompt (IBKR accepts a recent approval); check IBKR Client Portal login history if unsure. Dashboard refresh takes ~4s because Gateway pops a harmless "write access" dialog per connect; `IBKR_READONLY=1` env switch exists in `brokers/ibkr_broker.py` but is untested (left off). Extra apt package needed:
    `libxtst6 libxi6 libxrender1`. PR #8 is a draft that never merges (`main` = desktop tool).
 4. `kickstart.py` → `get_broker()` rewiring — **deliberately not started.** This
    touches the live mStock engine's order path; per `HANDOVER_HEADLESS_VPS.md`

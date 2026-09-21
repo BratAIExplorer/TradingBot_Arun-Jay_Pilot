@@ -145,14 +145,16 @@ the confusion surfaced during testing (they were all still called generic names 
    **Trading decision — not done here, needs a human to place the order.**
 2. Add a stop-loss leg to the three open positions, if wanted.
    **Trading decision — not done here, needs a human to place the order.**
-3. IB Gateway unattended on the VPS — **in progress (2026-09-21).** Stand-alone
-   deploy: `Voyager` branch cloned to `/opt/voyager` on `76.13.179.32` (shared VPS;
-   port 8001 is taken by Docker, so the dashboard uses `127.0.0.1:8011`, reached via
-   SSH tunnel, no nginx change). Target is **live** (port 4001). Still to do: user
-   fills `config.ini` credentials and approves IBKR 2FA; then install services.
-   Note: a live Gateway login on the VPS will disconnect the laptop's Gateway
-   session (one live session per IBKR user). PR #8 is a **draft that never merges**
-   — `main` is the desktop tool; Voyager stays a long-lived branch.
+3. IB Gateway unattended on the VPS — **DONE, running live (2026-09-21).**
+   Stand-alone on the shared VPS `76.13.179.32`: `Voyager` branch in `/opt/voyager`,
+   services `voyager-gateway` (IB Gateway 10.45 + IBC in `/opt/voyager-ibc`, live port
+   4001, `ReadOnlyLogin=yes`, no orders possible) and `voyager-web` (dashboard on
+   `127.0.0.1:8011`), both enabled at boot. View via
+   `ssh -L 8011:127.0.0.1:8011 root@76.13.179.32` → http://localhost:8011/dashboard.
+   Port 4001 is firewalled from outside. Needs IBKR-mobile 2FA approval on each
+   Gateway (re)start, including IBKR's daily restart. One live session per IBKR user:
+   the laptop Gateway cannot run while the VPS holds it. Extra apt package needed:
+   `libxtst6 libxi6 libxrender1`. PR #8 is a draft that never merges (`main` = desktop tool).
 4. `kickstart.py` → `get_broker()` rewiring — **deliberately not started.** This
    touches the live mStock engine's order path; per `HANDOVER_HEADLESS_VPS.md`
    Phase 4, it must be done in paper mode first, by someone who can watch it run.

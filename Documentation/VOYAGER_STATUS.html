@@ -163,11 +163,12 @@ confusion surfaced during testing.</p>
     <span class="muted">— trading decision, needs a human to place the order.</span></li>
   <li>Add a stop-loss leg to the three open positions, if wanted.
     <span class="muted">— trading decision, needs a human to place the order.</span></li>
-  <li>IB Gateway unattended on the VPS — <strong>in progress (2026-09-21)</strong>. Stand-alone:
-    <code>Voyager</code> branch cloned to <code>/opt/voyager</code> on 76.13.179.32; dashboard on
-    <code>127.0.0.1:8011</code> via SSH tunnel (port 8001 is taken); target is live (4001).
-    Pending: user fills <code>config.ini</code> and approves IBKR 2FA. A live login on the VPS
-    disconnects the laptop's Gateway. PR #8 is a draft that never merges; <code>main</code> is the desktop tool.</li>
+  <li>IB Gateway unattended on the VPS — <strong>done, running live (2026-09-21)</strong>.
+    Stand-alone on 76.13.179.32: <code>/opt/voyager</code>, services <code>voyager-gateway</code>
+    (live 4001, read-only login) and <code>voyager-web</code> (<code>127.0.0.1:8011</code>), enabled at boot.
+    View via <code>ssh -L 8011:127.0.0.1:8011 root@76.13.179.32</code>. Needs IBKR-mobile 2FA on each
+    Gateway restart. One live session per user: the laptop Gateway can't run at the same time.
+    PR #8 is a draft that never merges.</li>
   <li><code>kickstart.py</code> → <code>get_broker()</code> rewiring — deliberately
     not started; must be done in paper mode first, watched by a human.</li>
   <li>Flex Query integration — blocked on IBKR account/portal setup first.</li>

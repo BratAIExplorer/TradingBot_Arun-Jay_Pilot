@@ -1,0 +1,196 @@
+{
+ "market": "IN",
+ "bench": "^NSEI",
+ "tickers_requested": 99,
+ "tickers_with_data": 92,
+ "data_from": "2015-06-01",
+ "data_to": "2026-10-30",
+ "A_full_1m3m6m12m": {
+  "strategy": {
+   "CAGR": 16.6,
+   "MaxDD": -43.7,
+   "Sharpe": 0.77
+  },
+  "bench": {
+   "CAGR": 10.2,
+   "MaxDD": -37.8,
+   "Sharpe": 0.66
+  },
+  "slices": [
+   {
+    "from": "2016-07-01",
+    "to": "2017-12-29",
+    "strat": {
+     "CAGR": 27.3,
+     "MaxDD": -18.1,
+     "Sharpe": 1.27
+    },
+    "bench": {
+     "CAGR": 16.2,
+     "MaxDD": -11.7,
+     "Sharpe": 1.28
+    },
+    "beats_return": true,
+    "beats_dd": false
+   },
+   {
+    "from": "2018-01-01",
+    "to": "2019-12-31",
+    "strat": {
+     "CAGR": -6.0,
+     "MaxDD": -27.5,
+     "Sharpe": -0.24
+    },
+    "bench": {
+     "CAGR": 8.4,
+     "MaxDD": -14.2,
+     "Sharpe": 0.62
+    },
+    "beats_return": false,
+    "beats_dd": false
+   },
+   {
+    "from": "2020-01-01",
+    "to": "2021-12-31",
+    "strat": {
+     "CAGR": 48.1,
+     "MaxDD": -36.1,
+     "Sharpe": 1.42
+    },
+    "bench": {
+     "CAGR": 18.3,
+     "MaxDD": -37.8,
+     "Sharpe": 0.81
+    },
+    "beats_return": true,
+    "beats_dd": true
+   },
+   {
+    "from": "2022-01-03",
+    "to": "2023-12-29",
+    "strat": {
+     "CAGR": 43.2,
+     "MaxDD": -16.4,
+     "Sharpe": 1.76
+    },
+    "bench": {
+     "CAGR": 12.1,
+     "MaxDD": -16.7,
+     "Sharpe": 0.84
+    },
+    "beats_return": true,
+    "beats_dd": true
+   },
+   {
+    "from": "2024-01-01",
+    "to": "2025-12-31",
+    "strat": {
+     "CAGR": 0.3,
+     "MaxDD": -35.2,
+     "Sharpe": 0.12
+    },
+    "bench": {
+     "CAGR": 9.9,
+     "MaxDD": -17.1,
+     "Sharpe": 0.74
+    },
+    "beats_return": false,
+    "beats_dd": false
+   }
+  ]
+ },
+ "B_skip_1m": {
+  "strategy": {
+   "CAGR": 15.5,
+   "MaxDD": -42.5,
+   "Sharpe": 0.72
+  },
+  "bench": {
+   "CAGR": 10.2,
+   "MaxDD": -37.8,
+   "Sharpe": 0.66
+  },
+  "slices": [
+   {
+    "from": "2016-07-01",
+    "to": "2017-12-29",
+    "strat": {
+     "CAGR": 33.6,
+     "MaxDD": -16.4,
+     "Sharpe": 1.44
+    },
+    "bench": {
+     "CAGR": 16.2,
+     "MaxDD": -11.7,
+     "Sharpe": 1.28
+    },
+    "beats_return": true,
+    "beats_dd": false
+   },
+   {
+    "from": "2018-01-01",
+    "to": "2019-12-31",
+    "strat": {
+     "CAGR": -5.5,
+     "MaxDD": -23.2,
+     "Sharpe": -0.21
+    },
+    "bench": {
+     "CAGR": 8.4,
+     "MaxDD": -14.2,
+     "Sharpe": 0.62
+    },
+    "beats_return": false,
+    "beats_dd": false
+   },
+   {
+    "from": "2020-01-01",
+    "to": "2021-12-31",
+    "strat": {
+     "CAGR": 31.3,
+     "MaxDD": -37.6,
+     "Sharpe": 1.02
+    },
+    "bench": {
+     "CAGR": 18.3,
+     "MaxDD": -37.8,
+     "Sharpe": 0.81
+    },
+    "beats_return": true,
+    "beats_dd": true
+   },
+   {
+    "from": "2022-01-03",
+    "to": "2023-12-29",
+    "strat": {
+     "CAGR": 41.6,
+     "MaxDD": -18.5,
+     "Sharpe": 1.66
+    },
+    "bench": {
+     "CAGR": 12.1,
+     "MaxDD": -16.7,
+     "Sharpe": 0.84
+    },
+    "beats_return": true,
+    "beats_dd": false
+   },
+   {
+    "from": "2024-01-01",
+    "to": "2025-12-31",
+    "strat": {
+     "CAGR": 8.6,
+     "MaxDD": -33.1,
+     "Sharpe": 0.47
+    },
+    "bench": {
+     "CAGR": 9.9,
+     "MaxDD": -17.1,
+     "Sharpe": 0.74
+    },
+    "beats_return": false,
+    "beats_dd": false
+   }
+  ]
+ }
+}

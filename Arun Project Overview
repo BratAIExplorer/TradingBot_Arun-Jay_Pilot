@@ -1,0 +1,217 @@
+# 🚀 ARUN Trading Bot — What It Is & Where It's Going
+
+**A plain-English overview you can share with anyone**
+
+---
+
+## 💡 The One-Liner
+
+> **ARUN is a personal stock-trading assistant that watches the Indian stock market for you, buys quality stocks when they're cheap, and sells them when they've made a profit — all automatically, while you go about your day.**
+
+Think of it like hiring a disciplined, tireless stockbroker who works inside your laptop, follows strict rules, never panics, and never gets greedy.
+
+---
+
+## 🤔 Why Does This Exist?
+
+Most people who invest in stocks face three problems:
+
+| Problem | How Most People Cope | How ARUN Helps |
+|---|---|---|
+| **"I don't have time to watch the market all day"** | Miss good opportunities | ARUN watches every second of the trading day (9:15 AM – 3:30 PM) |
+| **"I panic-sell when prices drop"** | Sell low, regret later | ARUN follows rules, not emotions |
+| **"I don't know when to buy or sell"** | Rely on tips & rumors | ARUN uses mathematical indicators tested over decades |
+
+---
+
+## ✅ What It Can Do Today (Current Features)
+
+### 1. 🤖 Fully Automatic Trading
+- Connects to your **mStock** broker account (Mirae Asset)
+- Buys and sells stocks **on its own** during market hours
+- Trades only **India's top blue-chip companies** (NIFTY 50) — no risky penny stocks
+- Can track and trade **multiple stocks at the same time**
+
+### 2. 🛡️ Built-In Safety Systems
+Think of these as the **seatbelts and airbags** of the system:
+
+- **🚨 Panic Button** — One click to stop everything immediately. Your money stays safe; nothing gets sold in a rush
+- **🔒 Daily Loss Limit** — If the bot loses more than a set amount in a day, it automatically stops trading to protect your capital
+- **📉 "Never Sell at a Loss" Mode** — An optional setting that prevents any stock from being sold below its purchase price (3 layers of protection!)
+- **⏸️ Cooldown System** — If the broker rejects an order, the bot takes a break on that stock instead of retrying endlessly
+
+### 3. 📊 Beautiful Live Dashboard ("Titan V2")
+A modern, clean control panel that shows you:
+- **How much money you have** (total balance, available cash, and what's in active trades)
+- **Live Profit & Loss** — see how much you're making or losing in real time
+- **Market Mood** — is the market feeling fearful, greedy, or neutral today?
+- **Trade History** — a full record of every buy and sell the bot has made
+- **Bot vs. Manual Holdings** — clearly distinguishes which stocks the bot is managing vs. ones you bought yourself
+
+### 4. 🧠 Strategy Sensei — Your AI Trading Coach
+An AI-powered advisor built right into the dashboard that:
+- **Explains in plain English** why the bot made a particular trade
+- **Gives you tips** based on current market conditions
+- **Considers big-picture events** (like budget announcements, global market crashes) when giving advice
+- You can **chat with it** and ask questions like *"Should I be worried about my portfolio?"*
+
+### 5. 📱 Telegram Alerts
+Get instant notifications on your phone via Telegram:
+- 🟢 **"Bot started"** — with your capital summary
+- 🔴 **"Bot stopped"** — with today's profit/loss summary
+- 📈 **Daily Report** — a summary sent after market close every day
+
+### 6. 🌐 Web Dashboard (Remote Access)
+A modern website interface (accessible from any browser) that lets you:
+- View your portfolio and bot status from **any device** — phone, tablet, or another computer
+- See charts, recent trades, and performance stats
+- Manage your bots remotely without needing to be at your computer
+
+### 7. 🧙‍♂️ First-Run Setup Wizard
+New users get a friendly **3-step guided setup**:
+1. Enter your broker credentials
+2. Choose your risk level (Conservative / Moderate / Aggressive)
+3. Pick which stocks to trade (with suggested "starter packs")
+
+No technical knowledge needed!
+
+### 8. 🔐 Bank-Grade Security
+- All passwords and API keys are **encrypted** on your computer
+- Automatic secure login using **two-factor authentication** (like your bank's OTP)
+- **Single-instance lock** — prevents the bot from accidentally running twice and placing duplicate orders
+
+---
+
+## 📈 Performance & Intelligence
+
+The bot doesn't just blindly trade. Before every decision, it considers:
+
+| What It Checks | Why It Matters |
+|---|---|
+| **RSI** (Relative Strength Index) | Tells if a stock is oversold (cheap) or overbought (expensive) |
+| **MACD** (Moving Average Trend) | Shows if a stock's momentum is going up or down |
+| **ADX** (Trend Strength) | Measures how strong the current trend is |
+| **ATR** (Volatility) | Measures how wildly a stock's price is swinging |
+| **Nifty 50 Overall Trend** | Checks if the overall market is going up or down |
+| **India VIX** (Fear Index) | Gauges how nervous or calm the market is |
+
+All of this happens behind the scenes — you just see the simple result: **BUY**, **SELL**, or **WAIT**.
+
+---
+
+## 🔮 What's Coming Next (Potential New Features)
+
+These are exciting improvements on the roadmap:
+
+### 🏦 More Broker Support
+Currently works with **mStock (Mirae Asset)**. Future plans include:
+- **Zerodha** (India's most popular broker)
+- **Upstox**, **Angel One**, and more
+- *This means anyone with any major broker account could use ARUN*
+
+### 📱 Mobile Companion App
+- A dedicated **Android/iOS app** to check your portfolio on the go
+- View-only mode — see your P&L, active trades, and bot status from your phone
+- Push notifications for important events
+
+### 🧪 Paper Trading Mode (Risk-Free Practice)
+- A fully simulated mode where you can **test strategies with fake money** before going live
+- Great for learning how the bot works without risking a single rupee
+
+### 💰 Smart SIP (Systematic Investment Plan)
+- An auto-investing feature for **long-term wealth building**
+- Automatically buys when high-quality stocks dip significantly
+- Like a smarter version of your mutual fund SIP
+
+### 🌍 AI-Powered News Reading
+- The bot will read **financial news and headlines** automatically
+- If bad news about a company breaks (e.g., a scandal or lawsuit), it will factor that into its decisions
+- If good news breaks (e.g., record earnings), it can act faster than you could
+
+### 📊 Advanced Analytics & Reporting
+- **Backtesting** — test any strategy against years of historical data *before* risking real money
+- **Tax Report Generator** — automatically generate reports for your income tax filing
+- **Portfolio Rebalancing** — automatically adjust your holdings to maintain your desired risk level
+
+### 🏪 Strategy Marketplace
+- A **store** where expert traders can share their custom strategies
+- Users can browse, review, and activate strategies created by others
+- Think of it like an "App Store" but for trading strategies
+
+### 🤝 Copy Trading
+- **Follow top performers** — if someone has a great track record, you can set your bot to mirror their trades
+- Great for beginners who want to learn from experienced traders
+
+### 🌐 Multi-Language Support
+- Hindi, Tamil, Telugu, and more
+- Making algorithmic trading accessible to non-English speakers across India
+
+### 🔗 Integration with FinFlow Wealth Hub
+- See your **complete financial picture** in one place: trading bot profits, insurance, bank balances, loans
+- Read-only — FinFlow can see your data but can never control your bot
+
+---
+
+## 🎯 Who Is This For?
+
+| Person | How ARUN Helps Them |
+|---|---|
+| **Working professionals** | Trades for you while you're at work |
+| **New investors** | Guided setup + paper trading = learn safely |
+| **Active traders** | Executes faster & more consistently than manual trading |
+| **Retirees** | Set-and-forget mode with conservative settings |
+| **Anyone afraid of the stock market** | Safety systems + AI explanations make it less intimidating |
+
+---
+
+## 💼 The Big Picture
+
+ARUN isn't just a hobby project — it has real **commercial potential**:
+
+- **14 Crore+** demat accounts exist in India (2024)
+- **3–5 Crore** active traders are looking for automation tools
+- Current competitors charge ₹20,000–50,000/year and are hard to use
+- ARUN aims to be **simpler, safer, and more affordable**
+
+### Planned Pricing (When It Goes Commercial)
+
+| Plan | Price | Who It's For |
+|---|---|---|
+| **Starter** | ~₹3,000/month | Beginners testing the waters |
+| **Pro** | ~₹7,000/month | Regular traders who want full automation |
+| **Elite** | ~₹15,000/month | Serious investors wanting custom strategies |
+
+---
+
+## 🏗️ How Far Along Is It?
+
+| Milestone | Status |
+|---|---|
+| Core trading engine | ✅ **Done** — live with real money |
+| Risk management & safety | ✅ **Done** — 3-layer loss protection |
+| Desktop dashboard (Titan V2) | ✅ **Done** — beautiful, modern UI |
+| Web dashboard (remote access) | ✅ **Done** — accessible from any browser |
+| Strategy Sensei (AI advisor) | ✅ **Done** — chat with your bot |
+| Telegram notifications | ✅ **Done** — alerts on your phone |
+| First-run wizard (easy setup) | ✅ **Done** — no tech skills needed |
+| Multi-broker support | 🔜 **Coming soon** |
+| Mobile app | 🔜 **Planned** |
+| Strategy marketplace | 🔜 **Future** |
+
+---
+
+## ✨ In Simple Terms…
+
+**ARUN is like having a smart, disciplined financial assistant who:**
+- ☀️ Wakes up every market morning at 9:15 AM
+- 📊 Scans hundreds of data points across dozens of stocks
+- 🛒 Buys when the math says it's a good deal
+- 💰 Sells when profits hit your target
+- 🛑 Stops immediately if things get risky
+- 📱 Sends you updates on Telegram
+- 🧠 Explains its decisions in plain English via AI
+- 😴 And it never takes a day off, never gets emotional, and never forgets a rule
+
+---
+
+*Built with ❤️ by Arun — Making smart investing accessible to everyone in India*

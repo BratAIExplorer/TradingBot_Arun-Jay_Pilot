@@ -1,0 +1,4 @@
+Symbol,Broker,Enabled,Timeframe,Buy RSI,Sell RSI,Profit Target %,Quantity,Exchange
+MICEL,mstock,TRUE,15T,35,65,10,0,BSE
+MOSCHIP,mstock,TRUE,15T,35,65,10,0,NSE
+MOSCHIP,mstock,TRUE,15T,35,65,10,0,BSE

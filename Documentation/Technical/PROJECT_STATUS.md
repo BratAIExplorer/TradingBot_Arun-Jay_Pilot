@@ -1,7 +1,7 @@
 # 🏗️ ARUN Project Status & Architecture (Titan V2)
 
-**Last Updated:** January 18, 2026
-**Version:** Titan V2 (Phase 2 Complete)
+**Last Updated:** February 16, 2026
+**Version:** Titan V2.5.2 (Never Sell at Loss Hardening)
 
 ---
 
@@ -13,7 +13,7 @@ Here is the updated breakdown of the Titan V2 codebase.
 | File | Purpose | Status |
 |------|---------|--------|
 | `kickstart.py` | **The Brain.** Headless trading engine. Handles API calls, RSI logic, and trade execution. | ✅ Active |
-| `dashboard_v2.py` | **The Face.** Titan V2 UI (Bento Grid). Dark mode, real-time metrics, and sector-based control. | ✅ Active |
+| `sensei_v1_dashboard.py` | **The Face.** Titan V2 UI (Bento Grid). Dark mode, real-time metrics, and sector-based control. | ✅ Active |
 | `market_sentiment.py`| **The Mood.** Fear/Greed index calculation with live reasoning engine. | ✅ Active |
 | `settings_gui.py` | **The Control Room.** Embedded 5-tab settings panel for broker, risk, and stock config. | ✅ Active |
 | `settings_manager.py`| Handles encrypted config storage and TOTP-based auto-login. | ✅ Active |
@@ -44,9 +44,22 @@ Here is the updated breakdown of the Titan V2 codebase.
 ---
 
 ## 🛠 Recent Engineering Improvements
-*   **Crash Resilience**: Fixed race conditions in background threads and GUI initialization.
+*   **Never Sell at Loss Hardening (v2.5.2)**: Implemented 3-layer defense-in-depth to strictly block loss sells when `never_sell_at_loss` is enabled. Includes hardcoded safety gate in `kickstart.py`, updated catastrophic stop logic in `risk_manager.py`, and risk execution checks.
+*   **Security Audit Fixes (v2.5.1)**: Addressed critical security findings including credential encryption, git exclusion, and secret logging. Fixed operator precedence bug and enforced singleton pattern for SettingsManager.
+*   **Stability & Accuracy Update (v2.5.0)**:
+    *   **RMS Cooldown**: Automated 1-hour cooldown for "Insufficient Quantity" rejections to prevent infinite SELl loops.
+    *   **Immediate Panic Stop**: Refactored `run_cycle` with mid-loop checks for `STOP_REQUESTED`, ensuring immediate response to user stop commands.
+    *   **Real-time Trade Counters**: Unified "SUCCESS" and "FAILED" counters on the dashboard using `StateManager` data for broker-level execution accuracy.
+    *   **P&L Logging Robustness**: Added fallback entry price support in `trades_db.py` to ensure P&L is calculated even if the initial BUY record is missing.
+*   **Risk UI Modernization (v2.4.2)**: Redesigned Settings > Risk Controls with grouped cards, visual sliders, and improved safety toggles. Added `COLOR_DANGER` constants.
+*   **Duplicate Buy Fix (v2.4.2)**: Made `check_existing_orders` symbol-aware across all exchanges. Prevents buying `ABC` on NSE if `ABC` is already held/ordered on BSE.
+*   **Config Self-Healing (v2.4.2)**: Fixed corrupted `settings.json` where strategies were stuck as `NaN`, defaulting them to `TRADE`.
+*   **REIT OHLC Fix (v2.3.1)**: Fixed REIT OHLC API 400 errors. Numeric token mapping (`NSE:9383`) was wrong - OHLC API expects scrip names. Now tries BSE exchange first for REITs (where they're listed as regular equity), eliminating log spam.
+*   **Scanner Key Case Fix (v2.3.1)**: Fixed `scanner_complete()` using lowercase `r['signal']` vs scanner engine's uppercase `r['SIGNAL']`, which prevented STRONG BUY/BUY summary counts from displaying.
+*   **REIT Mapping & Fallback**: Resolved mStock OHLC API errors for `EMBASSY` and `BIRET` by implementing scrip token mapping and a holdings-based price fallback.
+*   **Balance Accuracy**: Fixed "Used" capital inflation by strictly summing only `BOT` tagged positions and correctly tagging manual holdings as `BUTLER`.
+*   **Connectivity Hardening**: Standardized browser-like headers and refined offline detection to prevent engine pauses during transient API issues.
 *   **Hot-Reloading**: Settings can now be saved and applied without restarting the entire bot.
-*   **Source Tagging**: Every trade in the database is now marked as `BOT` or `MANUAL` for cleaner audits.
 *   **Professional Installer**: Surfshark-style EXE installer for one-click setup on new machines.
 
 ---

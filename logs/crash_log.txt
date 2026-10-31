@@ -1,0 +1,10 @@
+OSError: [WinError 87] The parameter is incorrect
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Antigravity\TradingBots-Aruns Project\sensei_v1_dashboard.py", line 1788, in <module>
+    check_single_instance()
+  File "C:\Antigravity\TradingBots-Aruns Project\sensei_v1_dashboard.py", line 1738, in check_single_instance
+    os.kill(pid, 0)
+SystemError: <built-in function kill> returned a result with an exception set

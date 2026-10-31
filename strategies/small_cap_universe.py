@@ -162,6 +162,31 @@ class SmallCapScanner(MACDScanner):
             return filter_by_market_cap(self._tickers, self._min_cr, self._max_cr)
         return list(self._tickers)
 
+    def scan_market(self, max_stocks: Optional[int] = None, mode: str = "SMALLCAP") -> List[dict]:
+        """Per-stock scan loop, kept here because origin/main's MACDScanner.scan_market became a batch
+        downloader that bypasses scan_single_stock (and so the offline `fetch` seam). Same shape as the
+        original parent method."""
+        import time
+        self.results = []
+        self.stop_requested = False
+        stock_list = self.get_stock_list(mode=mode)
+        if max_stocks:
+            stock_list = stock_list[:max_stocks]
+        total = len(stock_list)
+        if self.progress_callback:
+            self.progress_callback(0, total, "Starting scan...")
+        for i, ticker in enumerate(stock_list, 1):
+            if self.stop_requested:
+                break
+            result = self.scan_single_stock(ticker, i, total)
+            if result:
+                self.results.append(result)
+            if self._fetch is _yf_history:           # only rate-limit real Yahoo calls, not injected offline fetchers
+                time.sleep(0.15)
+        if self.progress_callback:
+            self.progress_callback(total, total, f"Complete! Found {len(self.results)} opportunities")
+        return self.results
+
     def scan_single_stock(self, ticker: str, progress: int, total: int) -> Optional[dict]:
         """Offline-capable copy of the parent: candles via self._fetch, crossover
         via the framework detector. Same output dict shape and score >= 60 gate."""

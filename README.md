@@ -35,11 +35,17 @@ You need **Python** installed to run this bot.
 ---
 
 ## 4. Launching the Bot
-1.  Double-click the file **`dashboard_v2.py`** (if you have Python set to open .py files).
+1.  Double-click the file **`sensei_v1_dashboard.py`** (if you have Python set to open .py files).
 2.  OR, better yet, use the provided launcher:
     - Double-click **`LAUNCH_ARUN.bat`** (This ensures Python is found correctly).
 3.  The **Titan V2 Dashboard** will open.
 4.  Click **▶ Start Engine**.
+
+> [!NOTE]
+> **Version 2.5.0 Stability Features**:
+> - Automatic RMS Failures cooldown (1 hour).
+> - Immediate Stop responses (checks mid-cycle).
+> - Persisted state counters for UI accuracy.
 
 
 ---
@@ -47,8 +53,7 @@ You need **Python** installed to run this bot.
 ## 5. Troubleshooting
 *   **"403 Forbidden"**: Your API Key might be invalid, or your TOTP Secret is wrong. Check Settings.
 *   **"System Offline"**: Check your internet connection.
-
----
-
-**Questions?**
-Check the "Knowledge Center" tab inside the application for detailed logic explanations.
+## 6. Ecosystem Integration (Optional)
+While the **ARUN Bot** is a fully standalone execution engine, it is compatible with the **FinFlow Wealth Hub**. 
+- You can connect your Bot's database to FinFlow to see your trading performance alongside your other assets (Insurance, Loans, Banks).
+- This is a **read-only** integration; FinFlow cannot control your bot or modify trades.

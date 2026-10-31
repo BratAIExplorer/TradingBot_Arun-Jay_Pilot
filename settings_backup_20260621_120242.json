@@ -1,0 +1,172 @@
+{
+  "broker": {
+    "name": "mstock",
+    "api_key": "Z0FBQUFBQnBxbThLWVpnOTRKMEFqZG1zVGkya2xpck90VERZTk5nbk1iWnBJWUFDajJsc2VWSDhqNWJTUXlFeWJTT2hkcml5MjBuWjRwZjFQb0l1TTJfc1lwUGFhZHlaTWZKQW85X3JKTDhTQWZQNDBOZ1J5Y21JaGVNSmxhTVVRY1gwNnNDNm1zRVU=",
+    "api_secret": "Z0FBQUFBQnBxbThLRENScnVqSzRwbzVLajRPTk9rVmw5M2NhT2x4VEhpNTNPUHdrUzh3QnBjWVpRcFZjZFpHdzRkS0ladF9icV9obm9LdndSZnctaGc5QV9VX0Z1ODhQTG9VTnlqSElCdkhwR0tONHhKLTI1VHZEWV9tR2k5bHZNRXpXM1hweUZjQzA=",
+    "client_code": "MA8224736",
+    "password": "Z0FBQUFBQnBxbThLMkR0Y3dkcV9CRkdFZnVrMVVZNVZGaTFWYzhlM2VIQ3pLTUlHQWdoTDg1UV9VTzc5SmJYQ0w1dnU2cTJSWVZ6ZmlTNjBmWTgwNmN6NkFQM2ltRG9QV0E9PQ==",
+    "access_token": "Z0FBQUFBQnBxbThVVDBwOVh5NE55YkE0c3VNNGZ4WUpqR0dXbjU0NjRZSEFtSWNTcTJpN2M5RnVLcU01SXV2SVRmMTdtc0RVaExRYWRjSWFNSHd1M2NXNmpkelA2aDFNYjVkZXYzQkdmdGRCMVRqSUN5WXVGa0U2OUJsdUhlbTFNTG1jUUxYbWlkWTFDZEo0UkYzUHpEcHVwdFVXNXBwTDZpRkxyMnVuTmtZZEphYW9kQlBNcFBWckpPRm53ajJsak5rcTNMeElqU2NyVFRKeG5hNFhwaWdMM2djb1BpSDZiNnozaEs2SGlYTkVKZ3FJSjRsSmNwM0g1ZENVaFAxMnI0dk9seFI1R1JuZEpxS0QyRjB5SFRVS185Nk9pWnhubkpxOHM4UFgxZnFwNW9kTzJlQkk0c0tsU0NWVl9PUUtZZjNVUmp6UmlpOG9RMVhQemNkSXVmUDVtcldxTWtoT1MwNllRQWFzYWQ5WjdpV0ViemhESHlmTVpzSFg1NmNBaVpFekJCbE4wLVdrMktiUzZ1NDVULTJNTVJjM3JTR0pycTYtaF9sT05lOUpsQ2tFcXd6M1dXYi0yYzJzN3pnaENFZWxLYUJac3d2ZWpTdDR6ZUljdUV4a2k4bUJHc1AxSUtreUR5WnBsd0o3dV9YdzBUbG9KaV9VRlNQTC1Jc0dYMmtXdzJ2Y0REeURzRl9Ud3pzSzgzeFp0Uk9mcDJtRTFrQjI3U3g2RXdoQ1BzWVE4X3dxaGI1M1hidXdscWFEaXBIOWVjaGU1anBJZmtjTmd6T2RHZ0pzUFhKSmJuSDVvU1RzOUVZb3ZyRmk2Vjh1ajljeGh0SU0zY0tGNXN2MmxwNzl1SHZwVDJhOE5MMlhRVG5IR2Vwal9kcVg2UUNnWDBFRFF2cFlJT0RFcjFJZWFjSkdjTGE2OXVaWG5zMmFYa2tqbWxEc1VXdDhRVzhKNzZYTWNEZ29CaFBWalp1Q2cxS2l0c0RLSzFHTFFQMU5udExZRzJncXFtNF8xRGJDYzVGSkl3R25taTMycTNRcnVZS3BkRUhiQ1ZNZGJZWm5RSFlBb1BXbWxSVi1HdUpfN1hFbDA0Z0t1MnplSGpLTTlPdUxpNmhWWW9yT3lsS0hWUUMyeGwzSUMzZXptNzlRWTc0V0tNUUhjUnEwY3FWY1V6elJsRU5vanVWU3RUNGNSakR2T3c0Yl8zMkQ5WldRXzc1a2dEejNDQy1DYlhKNzQzVmw5ck1GV3kycksyNEFWMm5yN0k4dzJaLWptREtseldUNmRkcV9Ba192cXBRRUVfcjZvN2FMX2Z2S2J5cDM4QjNaZVZnaGY5UWF5UzNFdjhKTGt2bkNIZDh3Q0ZLOFE3OVpDek9BbkFBODNXS2owMFY3NkZPZmhBbWRiNTVTWEJpU2p4d1NsNnNaLWRFb2RNVzFQQllFSzZXUTZwVC1oeVRlQVY4c0YtdUNWdnVXdnUzelU5WVRWVGh0MVJUVElpZjJMdTNnTXhnQXd5a2hLeXJzenVoSW1JTzY4M3E0LUQ3UEI1UUxTV3hwcUhXT3hPd2Y0V1ZHX1RjcFFIYmJQczMzNVo3TXR4WmVOX2laeTZoT3V1cnh0ZUJ6azdoMHZSVUxLbjFTal9haTFaZk5FRkZwVmp0Wkp6X1Z3U2hJa0w5N1JwdEhuUkhQR2YwUWE1djQ2c0pIWEVIaDBHMWJfSkRwVGxOLVppbzQwOE80ZDdKVnhPOW5MZEhLZ2JPNWRzR0FBLUlyWkJIaE5GUW5YcXN2cUdnVm84Rm5nZG90WExUWFBCbHNGd2N0bnlqV1ZmNnBtWWFLRlpPaHZWaDNBOThmbG5fSlotbFJDYUNlNDEtWWx3UmhPaFloUnE5ODg5TnNFd2RFU2VSU3pLemRZTW9va3kwTFBQTUktdFEyLUpXRWpOcUdReHFhdHVTMkZyYWJKYkZuNmlBZzBWWkY2clFqaTI2Mk9aZFJlTDRDLTNRWXpyamEyN2VpcENoV0R0eEdMMFE0OW1ZVWI2bzRvd2VpQWhhamlVUnZRajNPNXRueG5WUU9VWmlNRlFaajdxNEljSjJTZnBBVE9rVWlYMDFXbl9YT0o1RFh0UmlCN0tEcHF5dm43X0xERnlTczNzdl9vZW9sWEh2cWdqZW14U2FLUlR1bGl1NUZSZU92WGpxWXVSTFBNUnVHbFRWSWUxOFg4ckJUbmxoUlEyc3NFWVlZYnhMUTltQTFVUktrLVFTX0E5Mk1wVEhBNjVSZlVlc0JSYmNCNlI1dnVOaWp6RjByTzlVPQ==",
+    "totp_secret": "I25KMXCXICZ3QIFXR5RXTSY3BGUYP6YR"
+  },
+  "market": {
+    "name": "india_nse",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "currency_symbol": "\u00e2\u201a\u00b9",
+    "open_time": "09:15",
+    "close_time": "15:30"
+  },
+  "capital": {
+    "allocated_limit": 25000.0,
+    "max_per_stock_type": "percentage",
+    "per_trade_pct": 20.0,
+    "max_per_stock_fixed_amount": 5000.0,
+    "max_positions": 5,
+    "compound_profits": false
+  },
+  "notifications": {
+    "enabled": false,
+    "telegram_bot_token": "",
+    "telegram_chat_id": ""
+  },
+  "risk_controls": {
+    "default_use_stop_loss": true,
+    "default_stop_loss_pct": 5,
+    "default_use_profit_target": true,
+    "default_profit_target_pct": 10,
+    "default_use_trailing_stop": false,
+    "default_trailing_stop_pct": 3,
+    "catastrophic_stop_enabled": true,
+    "catastrophic_stop_pct": 20,
+    "hold_quality_stocks": true,
+    "quality_stock_hold_days": 60,
+    "quality_criteria": {
+      "min_confluence_score": 75,
+      "min_promoter_holding_pct": 50,
+      "min_roe_pct": 15,
+      "max_debt_to_equity": 1.0
+    }
+  },
+  "strategies": {
+    "rsi_mean_reversion": {
+      "name": "RSI Mean Reversion",
+      "enabled": true,
+      "timeframe": "15T",
+      "buy_rsi_threshold": 35,
+      "sell_rsi_threshold": 65,
+      "use_stop_loss": true,
+      "stop_loss_pct": 5,
+      "use_profit_target": true,
+      "profit_target_pct": 10,
+      "never_sell_at_loss": false,
+      "never_sell_at_loss_warning_shown": false
+    },
+    "qglp_filter": {
+      "name": "QGLP Quality Filter",
+      "enabled": false,
+      "use_stop_loss": false,
+      "stop_loss_pct": 10,
+      "use_profit_target": true,
+      "profit_target_pct": 20,
+      "never_sell_at_loss": true,
+      "never_sell_at_loss_warning_shown": false,
+      "min_holding_days": 90
+    },
+    "trend_filter": {
+      "enabled": false,
+      "ma_period": 50,
+      "ma_type": "SMA"
+    }
+  },
+  "app_settings": {
+    "paper_trading_mode": false,
+    "nifty_50_only": false
+  },
+  "risk": {
+    "stop_loss_pct": 0.5,
+    "profit_target_pct": 16.0,
+    "catastrophic_stop_loss_pct": 5.0,
+    "daily_loss_limit_pct": 1.0,
+    "never_sell_at_loss": true
+  },
+  "stocks": [
+    {
+      "symbol": "NIFTYBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 10,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "GOLDBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 20,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "BANKBEES",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 10,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "RELIANCE",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 5,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "INFY",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 10,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "HDFCBANK",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "quantity": 5,
+      "profit_target_pct": 10
+    },
+    {
+      "symbol": "BEL",
+      "exchange": "NSE",
+      "enabled": true,
+      "strategy": "TRADE",
+      "timeframe": "15T",
+      "buy_rsi": 35,
+      "sell_rsi": 65,
+      "Ignore_RSI": false,
+      "quantity": 10,
+      "profit_target_pct": 10.0
+    }
+  ]
+}

@@ -69,10 +69,7 @@ if exist settings_default.json (
     echo ⚠️ settings_default.json not found in source.
 )
 
-if exist config_table.csv (
-    copy config_table.csv "%DIST_FOLDER%\" >nul
-    echo ✅ Copied config_table.csv
-)
+
 
 if exist database (
     echo 📂 Copying Database...

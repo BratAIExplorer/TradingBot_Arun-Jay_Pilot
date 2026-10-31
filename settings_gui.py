@@ -7,8 +7,8 @@ import customtkinter as ctk
 from tkinter import messagebox, ttk
 from settings_manager import SettingsManager
 import json
-from typing import Dict, Any
-import pandas as pd
+from typing import Dict, Any, List, Tuple
+# import pandas as pd # Removed dependency
 import os
 import time
 import pyotp
@@ -17,7 +17,41 @@ import requests
 from symbol_validator import validate_symbol
 
 # UI Color Constants
-COLOR_ACCENT = "#00F0FF"  # Cyber Cyan
+COLOR_ACCENT = "#479FB6"  # Soft Cyan (Mockup Matching)
+COLOR_BG = "#EFEBE3"     # Soft Cream
+COLOR_TEXT = "#1a1a1a"   # High Contrast Dark Gray
+COLOR_DANGER = "#EF4444"  # Red-500
+COLOR_SUCCESS = "#10B981" # Emerald-500
+
+# BROKER-SPECIFIC CREDENTIAL SCHEMAS (BUG-013: Dynamic broker fields)
+BROKER_CREDENTIAL_FIELDS: Dict[str, List[Tuple[str, str, str]]] = {
+    'mstock': [
+        ('api_key', 'API Key', 'Enter API Key'),
+        ('api_secret', 'API Secret', 'Enter API Secret'),
+        ('client_code', 'Client Code (Broker)', 'Enter Client Code'),
+        ('password', 'Password (Broker)', 'Enter Password'),
+        ('totp_secret', 'TOTP Secret (Auto-Login)', 'Enter TOTP Secret'),
+        ('access_token', 'Access Token (Manual)', 'Enter Access Token'),
+    ],
+    'ibkr': [
+        ('account_id', 'Account ID', 'Enter Account ID (e.g., DU12345)'),
+        ('username', 'Username (Email)', 'Enter your IBKR email'),
+        ('password', 'Password', 'Enter your IBKR password'),
+        ('auth_token', 'Auth Token', 'Enter IBKR Auth Token'),
+        ('trading_perm_token', 'Trading Permission Token', 'Enter Trading Token'),
+    ],
+    'zerodha': [
+        ('api_key', 'API Key', 'Enter Kite Connect API Key'),
+        ('api_secret', 'API Secret', 'Enter Kite Connect API Secret'),
+        ('client_id', 'Client ID', 'Enter your Zerodha Client ID'),
+        ('password', 'Password', 'Enter your Zerodha password'),
+    ],
+    'other': [
+        ('api_key', 'API Key', 'Enter API Key'),
+        ('api_secret', 'API Secret', 'Enter API Secret'),
+        ('password', 'Password', 'Enter your password'),
+    ],
+}
 
 class SettingsGUI:
     def __init__(self, root=None, parent=None, on_save_callback=None):
@@ -26,8 +60,13 @@ class SettingsGUI:
         self.settings_mgr.load()
         self.on_save_callback = on_save_callback
         
+        # Market Data Cache (Persistence)
+        self.cache_file = "market_data_cache.json"
+        self.market_cache = {}
+        self.load_market_cache()
+        
         # Theme
-        ctk.set_appearance_mode("dark")
+        ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("blue")
         
         self.is_embedded = False
@@ -61,10 +100,11 @@ class SettingsGUI:
             # Header (only for standalone)
             header = ctk.CTkLabel(
                 self.root,
-                text="⚙️ ARUN Trading Bot - Configuration",
-                font=("Arial", 20, "bold")
+                text="⚙️ ORBIT TRADING - Configuration",
+                font=("Arial", 22, "bold"),
+                text_color=COLOR_TEXT
             )
-            header.pack(pady=20)
+            header.pack(pady=25)
         
         # Create tabbed interface
         self.tabview = ctk.CTkTabview(self.root, width=850 if not self.is_embedded else 1100, height=550 if not self.is_embedded else 600)
@@ -75,14 +115,14 @@ class SettingsGUI:
         self.tabview.add("Capital")
         self.tabview.add("Risk Controls")
         self.tabview.add("Notifications")
-        self.tabview.add("Stocks")
+        # self.tabview.add("Stocks")
         
         # Build each tab
         self.build_broker_tab()
         self.build_capital_tab()
         self.build_risk_tab()
         self.build_notifications_tab()
-        self.build_stocks_tab()
+        # self.build_stocks_tab()
         
         # Bottom buttons
         button_frame = ctk.CTkFrame(self.root)
@@ -112,22 +152,39 @@ class SettingsGUI:
         )
         self.cancel_btn.grid(row=0, column=1, padx=10)
 
+        # Status Bar
+        self.status_label = ctk.CTkLabel(
+            self.root,
+            text="Ready",
+            font=("Consolas", 11),
+            text_color="gray",
+            anchor="w"
+        )
+        self.status_label.pack(side="bottom", fill="x", padx=10, pady=(0, 5))
+
         # Disclaimer Section
         disclaimer_label = ctk.CTkLabel(
             self.root,
-            text="⚠️ ARUN is a utility tool, not financial advice. You are responsible for your own investment decisions.",
+            text="⚠️ ORBIT TRADING is a utility tool, not financial advice. You are responsible for your own investment decisions.",
             font=("Arial", 10, "italic"),
             text_color="gray"
         )
-        disclaimer_label.pack(side="bottom", pady=10)
+        disclaimer_label.pack(side="bottom", pady=5)
     
+    def update_status(self, message, color="gray"):
+        """Update the status bar message"""
+        try:
+            self.status_label.configure(text=message, text_color=color)
+            self.root.update_idletasks()
+        except:
+            pass
+
     def build_broker_tab(self):
-        """Broker credentials configuration"""
+        """Broker credentials configuration with dynamic fields per broker type"""
         tab = self.tabview.tab("Broker")
-        
-        # Get broker settings
+        self.broker_tab = tab
         broker = self.settings_mgr.get("broker", {})
-        
+
         # Paper Trading Mode Toggle
         paper_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
         paper_frame.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
@@ -137,135 +194,59 @@ class SettingsGUI:
             paper_frame,
             text="🧪 Enable Paper Trading (Simulation Mode)",
             variable=self.paper_mode_var,
-            font=("Arial", 13, "bold"),
-            text_color="#3498DB"
+            font=("Arial", 15, "bold"),
+            text_color="#2980B9"
         )
         paper_check.pack(side="left", padx=(15, 5), pady=10)
 
-        # Help button for Paper Mode (Manual pack)
         help_btn_1 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "When enabled, trades are simulated in a local database. No real money is used. Recommended for testing new strategies.")
+            paper_frame,  text="?", width=20, height=20, fg_color="transparent", border_width=1,
+            text_color="gray", hover_color="#333333",
+            command=lambda: messagebox.showinfo("Paper Trading", "When enabled, trades are simulated. No real money used. Recommended for testing.")
         )
         help_btn_1.pack(side="left", padx=(0, 15), pady=10)
 
-        # Nifty 50 Filter Toggle
         self.nifty_filter_var = ctk.BooleanVar(value=self.settings_mgr.get("app_settings.nifty_50_only", False))
         nifty_check = ctk.CTkCheckBox(
             paper_frame,
             text="🛡️ Nifty 50 Only (Safety Filter)",
             variable=self.nifty_filter_var,
-            font=("Arial", 13, "bold"),
-            text_color="#2ECC71"
+            font=("Arial", 15, "bold"),
+            text_color="#27AE60"
         )
         nifty_check.pack(side="left", padx=(15, 5), pady=10)
-        
-        # Help button for Nifty Filter (Manual pack)
+
         help_btn_2 = ctk.CTkButton(
-            paper_frame, 
-            text="?", 
-            width=20, 
-            height=20, 
-            fg_color="transparent", 
-            border_width=1,
-            text_color="gray",
-            hover_color="#333333",
-            command=lambda: messagebox.showinfo("How to get this?", "If enabled, the bot will ONLY trade stocks that are part of the Nifty 50 index. It blocks risky penny stocks automatically.")
+            paper_frame, text="?", width=20, height=20, fg_color="transparent", border_width=1,
+            text_color="gray", hover_color="#333333",
+            command=lambda: messagebox.showinfo("Nifty 50 Filter", "ONLY trade Nifty 50 stocks. Blocks risky penny stocks automatically.")
         )
         help_btn_2.pack(side="left", padx=(0, 15), pady=10)
 
-        # Broker selection
-        broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 14, "bold"))
+        # Broker selection with dynamic callback
+        broker_label = ctk.CTkLabel(tab, text="Select Broker:", font=("Arial", 16, "bold"), text_color=COLOR_TEXT)
         broker_label.grid(row=1, column=0, sticky="w", padx=20, pady=10)
-        
+
         self.broker_var = ctk.StringVar(value=broker.get("name", "mstock"))
+        self.broker_var.trace("w", lambda *args: self._on_broker_changed())
+
         broker_menu = ctk.CTkOptionMenu(
             tab,
             variable=self.broker_var,
-            values=["mstock", "zerodha", "other"],
+            values=["mstock", "ibkr", "zerodha", "other"],
             width=200
         )
         broker_menu.grid(row=1, column=1, sticky="w", padx=10, pady=10)
-        
-        # API Key
-        api_label = ctk.CTkLabel(tab, text="API Key:", font=("Arial", 12))
-        api_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_key_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Key", show="*")
-        self.api_key_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_key", ""))
-        self.api_key_entry.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
-        # Help button for API Key
-        self.add_help_button(tab, 2, "API Key: Available in your broker's API portal (e.g., mStock Developer Console or Zerodha Kite Connect).")
-        
-        # API Secret
-        secret_label = ctk.CTkLabel(tab, text="API Secret:", font=("Arial", 12))
-        secret_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
-        
-        self.api_secret_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter API Secret", show="*")
-        self.api_secret_entry.insert(0, self.settings_mgr.get_decrypted("broker.api_secret", ""))
-        self.api_secret_entry.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        # Credential fields container (will be recreated dynamically)
+        self.broker_fields_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        self.broker_fields_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=20, pady=10)
 
-        # Help button for API Secret
-        self.add_help_button(tab, 3, "API Secret: Companion to API Key, found in the same API portal.")
-        
-        # Client Code
-        ctk.CTkLabel(tab, text="Client Code (Broker):", font=("Arial", 12)).grid(row=4, column=0, sticky="w", padx=20, pady=10)
-        
-        self.client_code_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Client Code")
-        self.client_code_entry.insert(0, broker.get("client_code", ""))
-        self.client_code_entry.grid(row=4, column=1, sticky="w", padx=10, pady=10)
+        # Store for dynamic field entries
+        self.broker_field_entries: Dict[str, ctk.CTkEntry] = {}
 
-        # Help button for Client Code
-        self.add_help_button(tab, 4, "Client Code: Your unique login ID provided by the broker.")
-        
-        # Password
-        ctk.CTkLabel(tab, text="Password (Broker):", font=("Arial", 12)).grid(row=5, column=0, sticky="w", padx=20, pady=10)
-        
-        self.password_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Password", show="*")
-        self.password_entry.insert(0, self.settings_mgr.get_decrypted("broker.password", ""))
-        self.password_entry.grid(row=5, column=1, sticky="w", padx=10, pady=10)
-
-        # Help button for Password
-        self.add_help_button(tab, 5, "Password: Your login password for the broker portal.")
-
-        # TOTP Secret (For Auto-Login)
-        ctk.CTkLabel(tab, text="TOTP Secret (Auto-Login):", font=("Arial", 12)).grid(row=6, column=0, sticky="w", padx=20, pady=10)
-        
-        self.totp_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter TOTP Secret (e.g., JBSWY3DPEHPK3PXP)", show="*")
-        self.totp_entry.insert(0, self.settings_mgr.get_decrypted("broker.totp_secret", ""))
-        self.totp_entry.grid(row=6, column=1, sticky="w", padx=10, pady=10)
-        
-        # Validation Button
-        validate_totp_btn = ctk.CTkButton(
-            tab,
-            text="Validate",
-            width=60,
-            command=self.validate_totp_secret,
-            fg_color="#E67E22",
-            hover_color="#D35400"
-        )
-        validate_totp_btn.grid(row=6, column=3, sticky="w", padx=5)
-
-        self.add_help_button(tab, 6, "TOTP Secret: Found in mStock 'Trading APIs' > 'Enable TOTP'. Setting this enables 100% automated daily login!")
-
-        # Access Token
-        token_label = ctk.CTkLabel(tab, text="Access Token (Manual):", font=("Arial", 12))
-        token_label.grid(row=7, column=0, sticky="w", padx=20, pady=10)
-        
-        self.access_token_entry = ctk.CTkEntry(tab, width=300, placeholder_text="Enter Access Token (if TOTP not used)", show="*")
-        self.access_token_entry.insert(0, self.settings_mgr.get_decrypted("broker.access_token", ""))
-        self.access_token_entry.grid(row=7, column=1, sticky="w", padx=10, pady=10)
-        
-        # Help button for Token
-        self.add_help_button(tab, 7, "Access Token: \n- Manual Override if Auto-Login fails.\n- Generated via login flow every day.")
+        # Build initial fields for selected broker
+        self._rebuild_broker_fields()
 
         # Show password toggle
         self.show_pass_var = ctk.BooleanVar(value=False)
@@ -275,8 +256,8 @@ class SettingsGUI:
             variable=self.show_pass_var,
             command=lambda: self.toggle_password_visibility()
         )
-        show_pass_check.grid(row=8, column=1, sticky="w", padx=10, pady=5)
-        
+        show_pass_check.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
         # Info label
         info = ctk.CTkLabel(
             tab,
@@ -284,7 +265,7 @@ class SettingsGUI:
             font=("Arial", 10),
             text_color="gray"
         )
-        info.grid(row=9, column=0, columnspan=2, padx=20, pady=5)
+        info.grid(row=4, column=0, columnspan=3, padx=20, pady=5)
 
         # Test Connection Button
         test_btn = ctk.CTkButton(
@@ -296,7 +277,87 @@ class SettingsGUI:
             fg_color="#8E44AD",
             hover_color="#732D91"
         )
-        test_btn.grid(row=10, column=0, columnspan=3, pady=20)
+        test_btn.grid(row=5, column=0, columnspan=3, pady=20)
+
+    def _on_broker_changed(self) -> None:
+        """BUG-013 Fix: Handle broker selection change and rebuild fields dynamically"""
+        self._rebuild_broker_fields()
+
+    def _rebuild_broker_fields(self) -> None:
+        """BUG-013 Fix: Rebuild credential form fields based on selected broker type"""
+        # Clear existing fields
+        for widget in self.broker_fields_frame.winfo_children():
+            widget.destroy()
+        self.broker_field_entries.clear()
+
+        broker_name = self.broker_var.get()
+        fields = BROKER_CREDENTIAL_FIELDS.get(broker_name, BROKER_CREDENTIAL_FIELDS['mstock'])
+        broker_data = self.settings_mgr.get("broker", {})
+
+        # Build fields for selected broker
+        for idx, (field_name, field_label, placeholder) in enumerate(fields):
+            # Label
+            label = ctk.CTkLabel(
+                self.broker_fields_frame,
+                text=f"{field_label}:",
+                font=("Arial", 12),
+                text_color=COLOR_TEXT
+            )
+            label.grid(row=idx, column=0, sticky="w", padx=(20, 0), pady=10)
+
+            # Entry field
+            is_password = 'password' in field_name.lower() or 'token' in field_name.lower() or 'secret' in field_name.lower()
+            entry = ctk.CTkEntry(
+                self.broker_fields_frame,
+                width=300,
+                placeholder_text=placeholder,
+                show="*" if is_password else ""
+            )
+
+            # Load existing value
+            existing_value = self.settings_mgr.get_decrypted(f"broker.{field_name}", "")
+            if existing_value:
+                entry.insert(0, existing_value)
+
+            entry.grid(row=idx, column=1, sticky="w", padx=10, pady=10)
+            self.broker_field_entries[field_name] = entry
+
+            # Help button
+            help_text = self._get_broker_field_help(broker_name, field_name)
+            if help_text:
+                self.add_help_button(self.broker_fields_frame, idx, help_text)
+
+    def _get_broker_field_help(self, broker: str, field: str) -> str:
+        """Get help text for broker credential fields"""
+        help_map = {
+            'mstock': {
+                'api_key': 'Get from mStock Developer Console > API Settings',
+                'api_secret': 'Pair with API Key from Developer Console',
+                'client_code': 'Your mStock Client ID (e.g., MA8224736)',
+                'password': 'Your mStock login password',
+                'totp_secret': 'Enable in mStock Trading APIs > TOTP for auto-login',
+                'access_token': 'Generated via login flow daily',
+            },
+            'ibkr': {
+                'account_id': 'Your IBKR Account ID (e.g., DU12345)',
+                'username': 'Your IBKR email address',
+                'password': 'Your IBKR password',
+                'auth_token': 'Get from IBKR API settings',
+                'trading_perm_token': 'Enable trading permissions in IBKR',
+            },
+            'zerodha': {
+                'api_key': 'Get from Zerodha API Console > API Keys',
+                'api_secret': 'Pair with API Key from Kite Connect',
+                'client_id': 'Your Zerodha Client ID',
+                'password': 'Your Zerodha password',
+            },
+            'other': {
+                'api_key': 'Your broker API Key',
+                'api_secret': 'Your broker API Secret',
+                'password': 'Your broker password',
+            }
+        }
+        return help_map.get(broker, {}).get(field, "")
     
     def build_capital_tab(self):
         """Capital management configuration"""
@@ -415,136 +476,128 @@ class SettingsGUI:
         info_text.pack(anchor="w", padx=10, pady=5)
     
     def build_risk_tab(self):
-        """Risk controls configuration"""
+        """Risk controls configuration - Modern Redesign"""
         tab = self.tabview.tab("Risk Controls")
         
+        # Data
         risk = self.settings_mgr.get("risk", {})
+
+        # --- Layout Helpers ---
+        def create_section_header(parent, title, icon="🛡️"):
+            frame = ctk.CTkFrame(parent, fg_color="transparent")
+            frame.pack(fill="x", pady=(15, 5), padx=10)
+            ctk.CTkLabel(frame, text=f"{icon} {title}", font=("Roboto", 16, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+            ctk.CTkFrame(frame, height=2, fg_color="#DDD").pack(side="left", fill="x", expand=True, padx=10)
+
+        # Container
+        container = ctk.CTkScrollableFrame(tab, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # --- SECTION 1: PRIMARY PROTECTION ---
+        create_section_header(container, "PRIMARY PROTECTION", "🛡️")
         
-        # Stop-loss %
-        sl_label = ctk.CTkLabel(tab, text="Stop-Loss (%):", font=("Arial", 14, "bold"))
-        sl_label.grid(row=0, column=0, sticky="w", padx=20, pady=15)
+        card_primary = ctk.CTkFrame(container, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0E0E0")
+        card_primary.pack(fill="x", padx=10, pady=5)
+        
+        # Grid for Sliders
+        card_primary.grid_columnconfigure(1, weight=1)
+        
+        # Row 1: Stop-Loss
+        ctk.CTkLabel(card_primary, text="Stop-Loss (%):", font=("Roboto", 13, "bold"), text_color="#333").grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
         
         self.stop_loss_var = ctk.DoubleVar(value=risk.get("stop_loss_pct", 5.0))
-        sl_slider = ctk.CTkSlider(
-            tab,
-            from_=1,
-            to=20,
-            number_of_steps=38,
-            variable=self.stop_loss_var,
-            width=300,
-            command=lambda val: sl_value_label.configure(text=f"{val:.1f}%")
-        )
-        sl_slider.grid(row=0, column=1, sticky="w", padx=10, pady=15)
+        sl_slider = ctk.CTkSlider(card_primary, from_=0.5, to=20, number_of_steps=39, variable=self.stop_loss_var, 
+                                  width=250, progress_color=COLOR_ACCENT, button_color=COLOR_ACCENT,
+                                  command=lambda val: sl_val.configure(text=f"{val:.1f}%"))
+        sl_slider.grid(row=0, column=1, sticky="ew", padx=10)
         
-        sl_value_label = ctk.CTkLabel(tab, text=f"{self.stop_loss_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="red")
-        sl_value_label.grid(row=0, column=2, sticky="w", padx=5)
+        sl_val = ctk.CTkLabel(card_primary, text=f"{self.stop_loss_var.get():.1f}%", font=("Roboto", 14, "bold"), text_color=COLOR_DANGER, width=60)
+        sl_val.grid(row=0, column=2, padx=20)
         
-        # Profit target %
-        tp_label = ctk.CTkLabel(tab, text="Profit Target (%):", font=("Arial", 14, "bold"))
-        tp_label.grid(row=1, column=0, sticky="w", padx=20, pady=15)
+        ctk.CTkLabel(card_primary, text="Limits loss per trade. Triggers market sell when hit.", font=("Roboto", 10), text_color="gray").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 15))
+
+        # Row 2: Profit Target
+        ctk.CTkLabel(card_primary, text="Profit Target (%):", font=("Roboto", 13, "bold"), text_color="#333").grid(row=2, column=0, sticky="w", padx=20, pady=(5, 5))
         
         self.profit_target_var = ctk.DoubleVar(value=risk.get("profit_target_pct", 10.0))
-        tp_slider = ctk.CTkSlider(
-            tab,
-            from_=2,
-            to=50,
-            number_of_steps=48,
-            variable=self.profit_target_var,
-            width=300,
-            command=lambda val: tp_value_label.configure(text=f"{val:.1f}%")
-        )
-        tp_slider.grid(row=1, column=1, sticky="w", padx=10, pady=15)
+        tp_slider = ctk.CTkSlider(card_primary, from_=1, to=50, number_of_steps=98, variable=self.profit_target_var, 
+                                  width=250, progress_color=COLOR_SUCCESS, button_color=COLOR_SUCCESS,
+                                  command=lambda val: tp_val.configure(text=f"{val:.1f}%"))
+        tp_slider.grid(row=2, column=1, sticky="ew", padx=10)
         
-        tp_value_label = ctk.CTkLabel(tab, text=f"{self.profit_target_var.get():.1f}%", font=("Arial", 12, "bold"), text_color="green")
-        tp_value_label.grid(row=1, column=2, sticky="w", padx=5)
+        tp_val = ctk.CTkLabel(card_primary, text=f"{self.profit_target_var.get():.1f}%", font=("Roboto", 14, "bold"), text_color=COLOR_SUCCESS, width=60)
+        tp_val.grid(row=2, column=2, padx=20)
+
+        ctk.CTkLabel(card_primary, text="Secures profit when price reaches this target.", font=("Roboto", 10), text_color="gray").grid(row=3, column=1, sticky="w", padx=10, pady=(0, 20))
+
+        # --- SECTION 2: SAFETY NETS ---
+        create_section_header(container, "SAFETY NETS (CIRCUIT BREAKERS)", "⛓️")
         
-        # Catastrophic stop %
-        cat_label = ctk.CTkLabel(tab, text="Catastrophic Stop (%):", font=("Arial", 12))
-        cat_label.grid(row=2, column=0, sticky="w", padx=20, pady=10)
+        card_safety = ctk.CTkFrame(container, fg_color="#FFFFFF", corner_radius=10, border_width=1, border_color="#E0E0E0")
+        card_safety.pack(fill="x", padx=10, pady=5)
+        card_safety.grid_columnconfigure(1, weight=1)
+
+        # Catastrophic Stop
+        ctk.CTkLabel(card_safety, text="Emergency Stop (%):", font=("Roboto", 13)).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
         
         self.cat_stop_var = ctk.DoubleVar(value=risk.get("catastrophic_stop_loss_pct", 15.0))
-        cat_slider = ctk.CTkSlider(
-            tab,
-            from_=10,
-            to=50,
-            number_of_steps=40,
-            variable=self.cat_stop_var,
-            width=300,
-            command=lambda val: cat_value_label.configure(text=f"{val:.1f}%")
-        )
-        cat_slider.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+        cat_slider = ctk.CTkSlider(card_safety, from_=5, to=50, number_of_steps=45, variable=self.cat_stop_var, width=250,
+                                   progress_color="orange", button_color="orange",
+                                   command=lambda val: cat_val.configure(text=f"{val:.1f}%"))
+        cat_slider.grid(row=0, column=1, sticky="ew", padx=10)
         
-        cat_value_label = ctk.CTkLabel(tab, text=f"{self.cat_stop_var.get():.1f}%", font=("Arial", 12, "bold"))
-        cat_value_label.grid(row=2, column=2, sticky="w", padx=5)
+        cat_val = ctk.CTkLabel(card_safety, text=f"{self.cat_stop_var.get():.1f}%", font=("Roboto", 13, "bold"), text_color="orange", width=60)
+        cat_val.grid(row=0, column=2, padx=20)
         
-        # Daily loss limit %
-        daily_label = ctk.CTkLabel(tab, text="Daily Loss Limit (%):", font=("Arial", 12))
-        daily_label.grid(row=3, column=0, sticky="w", padx=20, pady=10)
+        ctk.CTkLabel(card_safety, text="Absolute exit if Stop-Loss fails (e.g. gap down).", font=("Roboto", 10), text_color="gray").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 15))
+
+        # Daily Loss Limit
+        ctk.CTkLabel(card_safety, text="Daily Loss Limit (%):", font=("Roboto", 13)).grid(row=2, column=0, sticky="w", padx=20, pady=(5, 5))
         
         self.daily_loss_var = ctk.DoubleVar(value=risk.get("daily_loss_limit_pct", 10.0))
-        daily_slider = ctk.CTkSlider(
-            tab,
-            from_=5,
-            to=30,
-            number_of_steps=25,
-            variable=self.daily_loss_var,
-            width=300,
-            command=lambda val: daily_value_label.configure(text=f"{val:.1f}%")
-        )
-        daily_slider.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+        daily_slider = ctk.CTkSlider(card_safety, from_=1, to=20, number_of_steps=38, variable=self.daily_loss_var, width=250,
+                                     progress_color="red", button_color="red",
+                                     command=lambda val: daily_val.configure(text=f"{val:.1f}%"))
+        daily_slider.grid(row=2, column=1, sticky="ew", padx=10)
         
-        daily_value_label = ctk.CTkLabel(tab, text=f"{self.daily_loss_var.get():.1f}%", font=("Arial", 12, "bold"))
-        daily_value_label.grid(row=3, column=2, sticky="w", padx=5)
+        daily_val = ctk.CTkLabel(card_safety, text=f"{self.daily_loss_var.get():.1f}%", font=("Roboto", 13, "bold"), text_color="red", width=60)
+        daily_val.grid(row=2, column=2, padx=20)
         
-        # Never sell at loss option
-        never_sell_frame = ctk.CTkFrame(tab, fg_color="#2B2B2B")
-        never_sell_frame.grid(row=4, column=0, columnspan=3, padx=20, pady=15, sticky="ew")
+        ctk.CTkLabel(card_safety, text="Stops all trading if portfolio drops by this % in a single day.", font=("Roboto", 10), text_color="gray").grid(row=3, column=1, sticky="w", padx=10, pady=(0, 20))
+
+        # --- SECTION 3: ADVANCED OVERRIDES ---
+        create_section_header(container, "ADVANCED OVERRIDES", "⚙️")
+        
+        card_advanced = ctk.CTkFrame(container, fg_color="#2B2B2B", corner_radius=10, border_width=1, border_color="#444")
+        card_advanced.pack(fill="x", padx=10, pady=5)
         
         self.never_sell_at_loss_var = ctk.BooleanVar(value=risk.get("never_sell_at_loss", False))
-        never_sell_check = ctk.CTkCheckBox(
-            never_sell_frame,
-            text="⛔ Never Sell at Loss (Override Stop-Loss)",
-            variable=self.never_sell_at_loss_var,
-            font=("Arial", 13, "bold"),
-            command=self.on_never_sell_at_loss_toggled
-        )
-        never_sell_check.pack(anchor="w", padx=15, pady=(15, 5))
         
-        never_sell_warning = ctk.CTkLabel(
-            never_sell_frame,
-            text="⚠️ WARNING: When enabled, stop-loss will NOT trigger if position is in loss.\n"
-                 "This could lead to unlimited losses if market keeps dropping.\n"
-                 "Catastrophic stop will still work as final safety measure.",
-            font=("Arial", 10),
-            text_color="#FFB84D",
-            justify="left"
-        )
-        never_sell_warning.pack(anchor="w", padx=15, pady=(0, 15))
+        switch_frame = ctk.CTkFrame(card_advanced, fg_color="transparent")
+        switch_frame.pack(fill="x", padx=20, pady=15)
         
-        # Risk summary section
-        warning_frame = ctk.CTkFrame(tab, fg_color="darkred")
-        warning_frame.grid(row=5, column=0, columnspan=3, padx=20, pady=20, sticky="ew")
+        lbl_switch = ctk.CTkLabel(switch_frame, text="⛔ NEVER SELL AT LOSS", font=("Roboto", 14, "bold"), text_color="#FFF")
+        lbl_switch.pack(side="left")
         
-        warning_label = ctk.CTkLabel(
-            warning_frame,
-            text="⚠️ RISK PROTECTION ACTIVE\n"
-                 "Bot will automatically sell if:\n"
-                 f"• Position loss exceeds {self.stop_loss_var.get():.1f}% (Stop-Loss)\n"
-                 f"• Position profit reaches {self.profit_target_var.get():.1f}% (Take Profit)\n"
-                 f"• Position loss exceeds {self.cat_stop_var.get():.1f}% (Emergency Stop)\n"
-                 f"• Daily portfolio loss exceeds {self.daily_loss_var.get():.1f}% (Circuit Breaker)",
-            font=("Arial", 11),
-            justify="left"
+        switch = ctk.CTkSwitch(switch_frame, text="", variable=self.never_sell_at_loss_var, onvalue=True, offvalue=False,
+                               progress_color=COLOR_DANGER, button_hover_color="#555",
+                               command=self.on_never_sell_at_loss_toggled)
+        switch.pack(side="right")
+        
+        warn_msg = (
+            "⚠️ DANGER ZONE: When enabled, the bot will IGNORE the Stop-Loss setting if the position is in loss.\n"
+            "This converts trades into long-term holdings. Use only if you are investing in high-quality stocks.\n"
+            "Note: The 'Emergency Stop' will still trigger as a catastrophic failsafe."
         )
-        warning_label.pack(padx=15, pady=15)
+        ctk.CTkLabel(card_advanced, text=warn_msg, font=("Roboto", 11), text_color="#FFB84D", justify="left").pack(anchor="w", padx=20, pady=(0, 20))
     
     def build_stocks_tab(self):
         """Stock configuration - View and validate interface"""
         tab = self.tabview.tab("Stocks")
         
         # Title
-        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration", font=("Arial", 16, "bold"))
-        title_label.pack(pady=(10, 5))
+        title_label = ctk.CTkLabel(tab, text="📊 Stock Configuration & Live Pricing", font=("Arial", 18, "bold"), text_color=COLOR_TEXT)
+        title_label.pack(pady=(15, 5))
         
         # Table Frame
         table_frame = ctk.CTkFrame(tab)
@@ -553,9 +606,9 @@ class SettingsGUI:
         # Treeview for symbols
         self.stock_table = ttk.Treeview(
             table_frame,
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status"),
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Skip RSI", "Qty", "Target %", "Price", "Status"),
             show="headings",
-            height=8
+            height=10
         )
         self.stock_table.heading("Symbol", text="Symbol")
         self.stock_table.heading("Exchange", text="Exch")
@@ -564,22 +617,31 @@ class SettingsGUI:
         self.stock_table.heading("Timeframe", text="TF")
         self.stock_table.heading("Buy RSI", text="Buy")
         self.stock_table.heading("Sell RSI", text="Sell")
+        self.stock_table.heading("Skip RSI", text="Skip RSI")
         self.stock_table.heading("Qty", text="Qty")
         self.stock_table.heading("Target %", text="Profit %")
+        self.stock_table.heading("Price", text="LTP (Live)")
         self.stock_table.heading("Status", text="Status")
         
         for col in self.stock_table["columns"]:
-            self.stock_table.column(col, width=60, anchor="center")
-        self.stock_table.column("Symbol", width=100)
-        self.stock_table.column("Status", width=80)
+            self.stock_table.column(col, width=70, anchor="center")
+        self.stock_table.column("Symbol", width=120)
+        self.stock_table.column("Price", width=100)
+        self.stock_table.column("Status", width=90)
         
         self.stock_table.pack(side="left", fill="both", expand=True)
         
+        # TREEVIEW ACCESSIBILITY (Larger Font)
+        style = ttk.Style()
+        style.configure("Treeview", font=("Arial", 12), rowheight=30)
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
+
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.stock_table.yview)
         scrollbar.pack(side="right", fill="y")
         self.stock_table.configure(yscrollcommand=scrollbar.set)
 
         # Load data from CSV
+        self.load_market_cache()
         self.refresh_stock_table()
 
         # Action Buttons Frame
@@ -587,11 +649,22 @@ class SettingsGUI:
         btn_frame.pack(pady=10)
 
         ctk.CTkButton(btn_frame, text="➕ Add", width=80, fg_color="green", hover_color="darkgreen", command=self.on_add_stock).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=1, padx=5)
-        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=2, padx=5)
         
-        self.validate_btn = ctk.CTkButton(btn_frame, text="🔍 Validate", width=100, command=self.on_validate_symbols)
-        self.validate_btn.grid(row=0, column=3, padx=15)
+        # Force Refresh
+        ctk.CTkButton(btn_frame, text="🔄 Force Refresh", width=120, fg_color="#E59866", hover_color="#D35400", command=lambda: self.on_validate_symbols(force=True)).grid(row=0, column=1, padx=5)
+        
+        ctk.CTkButton(btn_frame, text="✏️ Edit", width=80, command=self.on_edit_stock).grid(row=0, column=2, padx=5)
+        ctk.CTkButton(btn_frame, text="🗑 Delete", width=80, fg_color="#C0392B", hover_color="#922B21", command=self.on_delete_stock).grid(row=0, column=3, padx=5)
+        
+        self.validate_btn = ctk.CTkButton(
+            btn_frame, 
+            text="🔍 Validate & Get Prices", 
+            width=180, 
+            height=35, 
+            command=lambda: self.on_validate_symbols(force=False), 
+            font=("Arial", 14, "bold")
+        )
+        self.validate_btn.grid(row=0, column=4, padx=15)
 
     def build_notifications_tab(self):
         """Telegram notifications configuration"""
@@ -635,29 +708,47 @@ class SettingsGUI:
         help_btn.pack(pady=20)
 
     def refresh_stock_table(self):
-        """Load symbols from CSV into the table"""
+        """Load symbols from SettingsManager into the table"""
+        # Ensure cache is loaded if not already
+        if not self.market_cache:
+            self.load_market_cache()
+
         for item in self.stock_table.get_children():
             self.stock_table.delete(item)
             
-        csv_path = 'config_table.csv'
-        if os.path.exists(csv_path):
-            try:
-                df = pd.read_csv(csv_path)
-                for _, row in df.iterrows():
-                    self.stock_table.insert("", "end", values=(
-                        row['Symbol'], 
-                        row['Exchange'], 
-                        "Yes" if str(row['Enabled']).upper() == 'TRUE' else "No",
-                        row.get('Strategy', 'TRADE'), # Default to TRADE if missing
-                        row['Timeframe'],
-                        row['Buy RSI'],
-                        row['Sell RSI'],
-                        row['Quantity'],
-                        row['Profit Target %'],
-                        "" # Status
-                    ))
-            except Exception as e:
-                print(f"Error loading CSV: {e}")
+        stocks = self.settings_mgr.get_stock_configs()
+        for stock in stocks:
+            sym = stock.get('symbol', '')
+            ex = stock.get('exchange', 'NSE') # Default to NSE if missing
+            
+            # Default values
+            price_disp = "-"
+            status_disp = ""
+            
+            # Check Cache Persistence
+            key = f"{sym}:{ex}"
+            if hasattr(self, 'market_cache') and key in self.market_cache:
+                cached = self.market_cache[key]
+                if cached:
+                    p = cached.get("price")
+                    s = cached.get("status")
+                    if p is not None: price_disp = f"₹{p:,.2f}"
+                    if s: status_disp = s
+
+            self.stock_table.insert("", "end", values=(
+                sym,
+                ex,
+                "Yes" if stock.get('enabled', False) else "No",
+                stock.get('strategy', 'TRADE'),
+                stock.get('timeframe', '15T'),
+                stock.get('buy_rsi', 30),
+                stock.get('sell_rsi', 70),
+                "Yes" if stock.get('Ignore_RSI', False) else "No",
+                stock.get('quantity', 0),
+                f"{stock.get('profit_target_pct', 10.0)}%", # Persisted Target %
+                price_disp, # PERSISTED PRICE
+                status_disp # PERSISTED STATUS
+            ))
 
     def validate_totp_secret(self):
         """Validate the TOTP secret by generating a code"""
@@ -687,55 +778,172 @@ class SettingsGUI:
                 f"Invalid TOTP Secret.\nEnsure you copied the Alphanumeric key, not the URL.\n\nError: {str(e)}"
             )
 
-    def on_validate_symbols(self):
-        """Validate all symbols in the table"""
-        self.validate_btn.configure(state="disabled", text="Validating...")
-        self.root.update_idletasks()
+    def on_validate_symbols(self, force=False):
+        """
+        Validate symbols in background thread to prevent UI freeze
+        force: If True, re-validates ALL symbols regardless of current status.
+        """
+        # Prevent double-clicks
+        if hasattr(self, 'is_validating') and self.is_validating:
+            return
+            
+        import threading
+        import time
+        from datetime import datetime
         
         items = self.stock_table.get_children()
-        total = len(items)
-        valid_count = 0
+        if not items:
+            messagebox.showinfo("ℹ️ Info", "No stocks to validate.")
+            return
+
+        # Disable button to prevent spamming
+        self.is_validating = True
+        try:
+            self.validate_btn.configure(state="disabled", text="⏳ Validating...")
+        except: pass
+
+        # gather data from UI thread first
+        validation_queue = []
+        skipped_count = 0
         
-        for i, item in enumerate(items):
-            # Get all values from the row
-            values = list(self.stock_table.item(item, "values"))
-            
-            # Ensure we have at least Symbol and Exchange
-            if len(values) < 2:
-                continue
+        for item_id in items:
+            vals = self.stock_table.item(item_id)['values']
+            if len(vals) >= 2:
+                symbol = vals[0]
+                exchange = vals[1]
+                current_status = vals[10] if len(vals) > 10 else ""
                 
-            symbol = values[0]
-            exchange = values[1]
-            
-            # Temporarily set Status to "..."
-            new_values = list(values)
-            # Ensure list has enough slots (10 slots for 10 columns)
-            while len(new_values) < 10:
-                new_values.append("")
+                # SMART VALIDATION: Skip if already OK and not forced
+                # User requested: "validate the Price only", so we must fetch unless it's a completely static check.
+                # Since we use fetch for price AND validation, "Smart" here means:
+                # If we have a recent cache (e.g. < 5 mins) and status is OK, maybe skip?
+                # But user said "stocks not validated should be initiated".
+                # Interpretation: If Status == "✅ OK" and NOT force, SKIP validation (retain old price).
                 
-            new_values[9] = "⏳" # Set Status column index
-            self.stock_table.item(item, values=new_values)
-            self.root.update_idletasks()
+                if not force and "OK" in current_status:
+                    skipped_count += 1
+                    continue
+                    
+                validation_queue.append((item_id, vals, symbol, exchange))
+        
+        if not validation_queue and skipped_count > 0:
+            self.is_validating = False
+            self.update_status(f"Stopped: All {skipped_count} symbols are already valid.", "green")
+            try:
+                self.validate_btn.configure(state="normal", text="🔍 Validate & Get Prices")
+            except: pass
+            messagebox.showinfo("ℹ️ Smart Check", f"All {skipped_count} symbols are already valid.\nUse 'Force Refresh' to re-check prices.")
+            return
+
+        # UI Feedback
+        self.root.configure(cursor="wait") 
+        self.update_status(f"Starting validation for {len(validation_queue)} symbols...", "blue")
+        
+        def worker():
+            success_count = 0
+            error_count = 0
             
-            # Simulate a small delay for UX so user sees "Validating..."
-            time.sleep(0.1) 
+            # Lazy import
+            try:
+                import kickstart
+                from kickstart import fetch_market_data_once
+                from symbol_validator import get_symbol_price
+            except ImportError as e:
+                print("Import Error in Validation Worker")
+                self.update_status(f"Critical Error: {e}", "red")
+                return
+
+            total = len(validation_queue)
+            for i, item_data in enumerate(validation_queue):
+                # Rate limiting to prevent "Expecting value" / HTTPS errs
+                time.sleep(0.5)
+                
+                item_id, current_vals, symbol, exchange = item_data
+                
+                self.update_status(f"Scanning {i+1}/{total}: {symbol}...", "blue")
+                
+                price = None
+                last_error = ""
+                try:
+                    # 1. Try Broker API
+                    quote, _ = fetch_market_data_once(symbol, exchange)
+                    if quote and 'lastPrice' in quote:
+                        price = float(quote['lastPrice'])
+                    
+                    # 2. Fallback to YFinance
+                    if price is None:
+                        price = get_symbol_price(symbol, exchange)
+                except Exception as e:
+                    price = None
+                    last_error = str(e)
+
+                # Prepare Result Row
+                new_vals = list(current_vals)
+                while len(new_vals) < 11: new_vals.append("") # Ensure size
+
+                status_text = ""
+                price_text = "-"
+                
+                if price is not None:
+                    price_text = f"₹{price:,.2f}"
+                    status_text = "✅ OK"
+                    new_vals.append("") # padding if needed
+                    new_vals.append("")
+                    new_vals[10] = price_text # Price Column
+                    new_vals[11] = status_text # Status Column
+                    success_count += 1
+                    
+                    # UPDATE CACHE
+                    key = f"{symbol}:{exchange}"
+                    self.market_cache[key] = {
+                        "price": price, 
+                        "status": status_text,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                else:
+                    new_vals.append("")
+                    new_vals.append("")
+                    new_vals[10] = "-"
+                    new_vals[11] = "❌ No Data"
+                    error_count += 1
+                    # Show error in status bar briefly
+                    self.update_status(f"Error {symbol}: {last_error[:40]}", "red")
+                
+                # Schedule UI Update
+                def update_ui(iid=item_id, v=new_vals):
+                    try:
+                        self.stock_table.item(iid, values=v)
+                    except: pass
+                
+                self.root.after(0, update_ui)
             
-            # Validate
-            # We assume validate_symbol is available or imported. If not, logic:
-            is_valid = False
-            if symbol and exchange:
-                is_valid = True # Placeholder for actual validation logic (yfinance check)
-                # Ideally: is_valid = validate_symbol(symbol, exchange)
+            # SAVE CACHE AFTER BATCH
+            self.save_market_cache()
             
-            status_icon = "✅ Valid" if is_valid else "❌ Error"
-            if is_valid: valid_count += 1
+            # Completion
+            def on_complete():
+                self.root.configure(cursor="")
+                self.is_validating = False
+                try:
+                    self.validate_btn.configure(state="normal", text="🔍 Validate & Get Prices")
+                except: pass
+                
+                msg = f"Checked {len(validation_queue)} symbols.\n✅ Live Prices: {success_count}\n❌ Failed/No Data: {error_count}"
+                status_msg = f"Done. Success: {success_count}, Failed: {error_count}"
+                status_color = "green" if error_count == 0 else "orange"
+                
+                if skipped_count > 0:
+                    msg += f"\n\n(Skipped {skipped_count} already valid symbols)"
+                    status_msg += f" (Skipped {skipped_count})"
+                    
+                self.update_status(status_msg, status_color)
+                messagebox.showinfo("✅ Validation Complete", msg)
             
-            new_values[9] = status_icon
-            self.stock_table.item(item, values=new_values)
-            self.root.update_idletasks()
-            
-        self.validate_btn.configure(state="normal", text="🔍 Validate")
-        messagebox.showinfo("Validation Complete", f"Validated {total} symbols.\nSuccess: {valid_count}\nFailed: {total - valid_count}")
+            self.root.after(0, on_complete)
+
+        # Start Thread
+        threading.Thread(target=worker, daemon=True).start()
 
     def test_broker_connection(self):
         """Test API credentials and fetch balance with enhanced debugging"""
@@ -1002,25 +1210,33 @@ class SettingsGUI:
     def save_settings(self):
         """Save all settings to JSON"""
         try:
-            # Build settings dictionary
-            new_settings = {
+            # Save SENSITIVE fields via set() — triggers Fernet encryption at rest
+            sensitive_fields = {
+                "broker.api_key": self.api_key_entry.get(),
+                "broker.api_secret": self.api_secret_entry.get(),
+                "broker.password": self.password_entry.get(),
+                "broker.access_token": self.access_token_entry.get(),
+                "broker.totp_secret": self.totp_entry.get(),
+                "notifications.telegram_bot_token": self.tg_token_entry.get(),
+            }
+            for key_path, value in sensitive_fields.items():
+                if value:  # Only encrypt non-empty values
+                    self.settings_mgr.set(key_path, value)
+
+            # Save NON-SENSITIVE fields via bulk update
+            non_sensitive = {
                 "app_settings": {
                     "paper_trading_mode": self.paper_mode_var.get(),
                     "nifty_50_only": self.nifty_filter_var.get()
                 },
                 "broker": {
                     "name": self.broker_var.get(),
-                    "api_key": self.api_key_entry.get(),
-                    "api_secret": self.api_secret_entry.get(),
                     "client_code": self.client_code_entry.get(),
-                    "password": self.password_entry.get(),
-                    "access_token": self.access_token_entry.get(),
-                    "totp_secret": self.totp_entry.get()
                 },
                 "capital": {
                     "allocated_limit": float(self.allocated_capital_entry.get()),
                     "max_per_stock_type": self.sizing_method_var.get(),
-                    "per_trade_pct": self.per_trade_var.get(), # Updated key name to match load
+                    "per_trade_pct": self.per_trade_var.get(),
                     "max_per_stock_fixed_amount": float(self.fixed_amount_entry.get()),
                     "max_positions": self.max_positions_var.get(),
                     "compound_profits": self.compound_var.get()
@@ -1034,19 +1250,17 @@ class SettingsGUI:
                 },
                 "notifications": {
                     "enabled": self.tg_enabled_var.get(),
-                    "telegram_bot_token": self.tg_token_entry.get(),
                     "telegram_chat_id": self.tg_chat_id_entry.get()
                 }
             }
-            
-            # Merge with existing settings (preserve other sections)
-            current_settings = self.settings_mgr.settings
-            current_settings.update(new_settings)
-            
-            # Save to JSON
-            self.settings_mgr.save()
-            
-            # Save to JSON
+
+            # Deep merge non-sensitive fields (preserve existing keys in each section)
+            for section, values in non_sensitive.items():
+                if section not in self.settings_mgr.settings:
+                    self.settings_mgr.settings[section] = {}
+                self.settings_mgr.settings[section].update(values)
+
+            # Single save call
             self.settings_mgr.save()
             
             if self.on_save_callback:
@@ -1132,18 +1346,11 @@ class SettingsGUI:
         exchange = self.stock_table.item(selected[0], "values")[1]
         
         if messagebox.askyesno("Confirm Delete", f"Are you sure you want to remove {symbol} ({exchange})?"):
-            try:
-                csv_path = 'config_table.csv'
-                df = pd.read_csv(csv_path)
-                
-                # Filter out the selected stock
-                df = df[~((df['Symbol'] == symbol) & (df['Exchange'] == exchange))]
-                
-                df.to_csv(csv_path, index=False)
+            if self.settings_mgr.delete_stock_config(symbol, exchange):
                 self.refresh_stock_table()
                 messagebox.showinfo("Success", f"Removed {symbol} from list.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to delete: {e}")
+            else:
+                messagebox.showerror("Error", "Failed to delete from settings.")
 
     def show_stock_dialog(self, edit_values=None):
         """Show dialog for adding/editing a stock"""
@@ -1189,7 +1396,7 @@ class SettingsGUI:
         ctk.CTkLabel(rsi_frame, text="Buy RSI:").grid(row=0, column=0, padx=10)
         buy_rsi_entry = ctk.CTkEntry(rsi_frame, width=60)
         buy_rsi_entry.grid(row=1, column=0, padx=10)
-        # Table indices: 0:Sym, 1:Ex, 2:En, 3:Strat, 4:TF, 5:BuyRSI, 6:SellRSI, 7:Qty, 8:Profit
+        # Table indices (edit_values): 0:Sym, 1:Ex, 2:En, 3:Strat, 4:TF, 5:BuyRSI, 6:SellRSI, 7:SkipRSI, 8:Qty, 9:Profit
         buy_rsi_entry.insert(0, edit_values[5] if edit_values else "35")
         
         ctk.CTkLabel(rsi_frame, text="Sell RSI:").grid(row=0, column=1, padx=10)
@@ -1228,12 +1435,15 @@ class SettingsGUI:
         ctk.CTkLabel(scroll_frame, text="Quantity (0 for Dynamic):").pack(pady=(10, 0))
         qty_entry = ctk.CTkEntry(scroll_frame, width=200)
         qty_entry.pack(pady=5)
-        qty_entry.insert(0, edit_values[7] if edit_values else "0")
+        qty_entry.insert(0, edit_values[8] if edit_values else "0")
         
         ctk.CTkLabel(scroll_frame, text="Profit Target %:").pack(pady=(10, 0))
         target_entry = ctk.CTkEntry(scroll_frame, width=200)
         target_entry.pack(pady=5)
-        target_entry.insert(0, edit_values[8] if edit_values else "10.0")
+        target_entry.insert(0, edit_values[9] if edit_values else "10.0")
+
+        ignore_rsi_var = ctk.BooleanVar(value=True if edit_values and edit_values[7] == "Yes" else False)
+        ctk.CTkCheckBox(scroll_frame, text="Ignore RSI for BUY (Aggressive)", variable=ignore_rsi_var, text_color="#E67E22").pack(pady=5)
 
         enabled_var = ctk.BooleanVar(value=True if not edit_values or edit_values[2] == "Yes" else False)
         ctk.CTkCheckBox(scroll_frame, text="Enabled", variable=enabled_var).pack(pady=15)
@@ -1245,38 +1455,47 @@ class SettingsGUI:
                 return
             
             try:
+                # Build match config object (snake_case)
                 new_data = {
-                    'Symbol': symbol,
-                    'Exchange': exch_var.get(),
-                    'Broker': 'mstock', 
-                    'Enabled': enabled_var.get(),
-                    'Strategy': strat_var.get(),
-                    'Timeframe': tf_var.get(),
-                    'Buy RSI': int(buy_rsi_entry.get()),
-                    'Sell RSI': int(sell_rsi_entry.get()),
-                    'Profit Target %': float(target_entry.get()),
-                    'Quantity': int(qty_entry.get())
+                    'symbol': symbol,
+                    'exchange': exch_var.get(),
+                    'enabled': enabled_var.get(),
+                    'strategy': strat_var.get(),
+                    'timeframe': tf_var.get(),
+                    'buy_rsi': int(buy_rsi_entry.get()),
+                    'sell_rsi': int(sell_rsi_entry.get()),
+                    'Ignore_RSI': ignore_rsi_var.get(),
+                    'quantity': int(qty_entry.get()),
+                    'profit_target_pct': float(target_entry.get())
                 }
                 
-                csv_path = 'config_table.csv'
-                if os.path.exists(csv_path):
-                    df = pd.read_csv(csv_path)
-                    # If editing, remove old entry
-                    if edit_values:
-                        df = df[~((df['Symbol'] == edit_values[0]) & (df['Exchange'] == edit_values[1]))]
-                    
-                    # Append new entry
-                    df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-                    df.to_csv(csv_path, index=False)
+                if self.settings_mgr.add_stock_config(new_data):
+                    self.refresh_stock_table()
+                    dialog.destroy()
                 else:
-                    pd.DataFrame([new_data]).to_csv(csv_path, index=False)
-                
-                self.refresh_stock_table()
-                dialog.destroy()
+                    messagebox.showerror("Error", "Failed to save to settings.json")
+                    
             except Exception as e:
                 messagebox.showerror("Error", f"Invalid data: {e}")
 
         ctk.CTkButton(scroll_frame, text="💾 Save Stock", fg_color="green", command=save_stock).pack(pady=20)
+
+    def load_market_cache(self):
+        """Load market data cache from disk"""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, "r") as f:
+                    self.market_cache = json.load(f)
+            except Exception as e:
+                print(f"Failed to load cache: {e}")
+
+    def save_market_cache(self):
+        """Save market data cache to disk"""
+        try:
+            with open(self.cache_file, "w") as f:
+                json.dump(self.market_cache, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save cache: {e}")
 
 if __name__ == "__main__":
     app = SettingsGUI()

@@ -1,5 +1,5 @@
 """
-🎨 ARUN TITAN V2 - The "Titan" UI Update
+🎨 ORBIT TRADING V2 - The "Titan" UI Update
 Matches the precise mockup: Dark Neon, Top Nav, Grid Layout.
 """
 
@@ -8,10 +8,23 @@ import queue
 import customtkinter as ctk
 from tkinter import END, ttk, messagebox
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
+import atexit
+import tempfile
+from pathlib import Path
+
+# Ensure project root is in path
+_PROJECT_ROOT = Path(__file__).parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # --- Core Logic Imports ---
 try:
@@ -19,8 +32,8 @@ try:
     from knowledge_center import TOOLTIPS, STRATEGY_GUIDES, get_strategy_guide, get_contextual_tip
     from market_sentiment import MarketSentiment
     from settings_manager import SettingsManager
-    from state_manager import StateManager
-    state_mgr = StateManager()
+    from state_manager import state as state_mgr
+    from ui.market_selector import MarketSelector, MARKETS
     
     # Reload config to ensure fresh access token from settings.json
     reload_config()
@@ -41,20 +54,21 @@ except ImportError as e:
     print(f"CRITICAL: Could not import core modules. ({e})")
     sys.exit(1)
 
-# --- UI CONSTANTS (SENSEI V1 THEME) ---
-COLOR_BG = "#09090B"      # Deep Space Black (Zinc-950)
-COLOR_CARD = "#18181B"    # Card Surface (Zinc-900)
-COLOR_ACCENT = "#06B6D4"  # Cyan-500 (Vibrant, readable)
+# --- UI CONSTANTS (ORBIT TRADING LIGHT THEME) ---
+# Matching mockup: Soft Cream Background, High Contrast Text, Cyan Accents
+COLOR_BG = "#EFEBE3"      # Soft Cream / Zinc-50 alternative
+COLOR_CARD = "#FFFFFF"    # Pure White Cards (Elevated)
+COLOR_ACCENT = "#479FB6"  # Soft Cyan-600
 COLOR_DANGER = "#EF4444"  # Red-500
 COLOR_SUCCESS = "#10B981" # Emerald-500
 COLOR_WARN = "#F59E0B"    # Amber-500
-FONT_MAIN = ("Roboto Medium", 12)
-FONT_HEADER = ("Roboto", 14, "bold")
-FONT_BIG = ("Roboto", 32, "bold")
+FONT_MAIN = ("Roboto Medium", 14)        # Increased from 12
+FONT_HEADER = ("Roboto", 16, "bold")     # Increased from 14
+FONT_BIG = ("Roboto", 34, "bold")        # Increased from 32
 
 class TitanCard(ctk.CTkFrame):
     """A standardized Sensei-style card"""
-    def __init__(self, parent, title=None, border_color="#3F3F46", **kwargs):
+    def __init__(self, parent, title=None, border_color="#D1D5DB", **kwargs):
         super().__init__(parent, fg_color=COLOR_CARD, corner_radius=10, border_width=1, border_color=border_color, **kwargs)
         if title:
             # Title Bar
@@ -64,14 +78,14 @@ class TitanCard(ctk.CTkFrame):
             # Accent Pill
             ctk.CTkFrame(self.title_frame, width=4, height=16, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
             
-            ctk.CTkLabel(self.title_frame, text=title.upper(), font=("Roboto", 11, "bold"), text_color="#AAA").pack(side="left", padx=10)
+            ctk.CTkLabel(self.title_frame, text=title.upper(), font=("Roboto", 13, "bold"), text_color="#1a1a1a").pack(side="left", padx=10)
 
 class DashboardV2:
     def __init__(self, root):
         # 1. Setup Window (Root passed from main)
         self.root = root
-        self.root.title("SENSEI V1 DASHBOARD")
-        self.root.geometry("1400x900")
+        self.root.title("ORBIT TRADING V2 - Release v2.0.2 (Light Mode)")
+        self.root.geometry("1450x900") # Expanded slightly for larger fonts
         self.root.configure(fg_color=COLOR_BG)
         
         self.settings_mgr = SettingsManager()
@@ -81,15 +95,37 @@ class DashboardV2:
         self.stop_update_flag = threading.Event()
         self.data_queue = queue.Queue(maxsize=100)
         self.running = False
+        self.running = False
         self.alerts_list = [] # Store recent alerts
+        self.is_online_status = False # Connection status flag
         
         # Trade Activity Tracking
         self.trade_stats = {'attempts': 0, 'success': 0, 'failed': 0}
         self.all_positions_data = {}  # Store for filtering
 
-        # Log redirection
-        sys.stdout.write = self.write_log
-        sys.stderr.write = self.write_log
+        # Scanner state
+        self.scanner_running = False
+        self.scanner_results = []
+        self.last_scan_total = 0
+        self.scanner_thread = None
+
+        # Market selector state
+        self.current_market = "IN"
+        self.current_market_config = MARKETS["IN"]
+        self.market_settings = self.settings_mgr.get_market_settings("IN") if hasattr(self.settings_mgr, "get_market_settings") else {}
+        self.rsi_threshold_buy = self.market_settings.get("rsi_threshold_buy", 30)
+        self.rsi_threshold_sell = self.market_settings.get("rsi_threshold_sell", 70)
+
+        # Create market selector widget early (available even if build_header is patched in tests)
+        self.market_selector = MarketSelector(
+            self.root,
+            on_market_change=self._on_market_changed,
+            current_market="IN",
+        )
+
+        # Log redirection (DISABLED - Can cause GUI freeze)
+        # sys.stdout.write = self.write_log
+        # sys.stderr.write = self.write_log
 
         # --- LAYOUT CONSTRUCTION ---
         self.build_header()
@@ -108,6 +144,7 @@ class DashboardV2:
         self.view_hybrid = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_trades = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.view_stocks = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.view_scanner = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
         self.build_dashboard_view()
         self.build_strategies_view()
@@ -117,6 +154,7 @@ class DashboardV2:
         self.build_hybrid_view()
         self.build_trades_view()
         self.build_stocks_view()
+        self.build_scanner_view()
         
         # Default View (Always Dashboard for Sensei V1)
         self.show_view("DASHBOARD")
@@ -139,6 +177,7 @@ class DashboardV2:
         
         threading.Thread(target=self.sentiment_worker, daemon=True).start()
         threading.Thread(target=self.positions_worker, daemon=True).start()
+        threading.Thread(target=self.connectivity_worker, daemon=True).start()
         
     def update_ui_loop(self):
         """Main UI Update Loop (Consumer)"""
@@ -148,6 +187,18 @@ class DashboardV2:
             if hasattr(self, 'positions_label'):
                 self.positions_label.configure(text=f"📊 Live Positions (Last Check: {now})")
             
+            # Update Connection Indicator
+            if hasattr(self, 'status_indicator'):
+                color = "#10B981" if self.is_online_status else "gray" # Green or Gray
+                text = "●"
+                if not self.is_online_status:
+                     text = "○" # Hollow if offline/connecting
+                     
+                self.status_indicator.configure(text_color=color, text=text)
+                
+                tooltip = "Backend: Online 🟢" if self.is_online_status else "Backend: Connecting... 🟡"
+                self.status_tooltip.configure(text=tooltip)
+
             # 2. Consume Data Queue
             updates_processed = 0
             while not self.data_queue.empty() and updates_processed < 20:
@@ -196,15 +247,81 @@ class DashboardV2:
             try:
                 positions = safe_get_live_positions_merged()
                 if positions:
+                    # Filter positions by current market (BUG-014 fix)
+                    filtered_positions = self._filter_positions_by_market(positions)
                     # Cache holdings for next startup
-                    state_mgr.cache_holdings(positions)
-                    self.data_queue.put(("positions", positions))
-                    self.write_log(f"✅ Fetched {len(positions)} holdings from API\n")
+                    state_mgr.cache_holdings(filtered_positions)
+                    self.data_queue.put(("positions", filtered_positions))
+                    self.write_log(f"✅ Fetched {len(filtered_positions)} holdings from {self.current_market_config.name} market\n")
                 else:
                     self.write_log("⚠️ No positions returned from API\n")
             except Exception as e:
                 self.write_log(f"❌ Positions fetch error: {e}\n")
-            time.sleep(30)  # Refresh every 30 seconds
+            time.sleep(10)  # Refresh every 10 seconds
+
+    def _filter_positions_by_market(self, positions: dict) -> dict:
+        """
+        Filter broker positions to only include those from the current market.
+
+        Market detection logic:
+        - India market (IN): Exchange = 'NSE' or 'BSE'
+        - US market (US): Exchange = 'SMART' or 'NYSE' or 'NASDAQ'
+
+        Args:
+            positions: Dict with keys (symbol, exchange) from merge_positions_and_orders()
+
+        Returns:
+            Filtered dict containing only positions from current market
+        """
+        if not hasattr(self, 'current_market'):
+            return positions
+
+        # Map market codes to expected exchanges
+        market_exchanges = {
+            'IN': ('NSE', 'BSE', 'NCDEX', 'MCX'),
+            'US': ('SMART', 'NYSE', 'NASDAQ', 'ARCA', 'ISLAND')
+        }
+
+        allowed_exchanges = market_exchanges.get(self.current_market, ())
+        if not allowed_exchanges:
+            return positions
+
+        # Filter positions by exchange
+        filtered = {}
+        for (symbol, exchange), pos_data in positions.items():
+            if exchange.upper() in allowed_exchanges:
+                filtered[(symbol, exchange)] = pos_data
+
+        return filtered
+
+    def get_market_filtered_positions(self) -> dict:
+        """
+        Get live positions filtered for current market.
+
+        Convenience method that returns market-filtered positions.
+        Uses cached data if available, falls back to API fetch with filtering.
+
+        Returns:
+            Dict with (symbol, exchange) keys, filtered by current market
+        """
+        if hasattr(self, 'all_positions_data') and self.all_positions_data:
+            return self.all_positions_data
+
+        # Fallback: fetch and filter
+        positions = safe_get_live_positions_merged()
+        return self._filter_positions_by_market(positions)
+
+    def connectivity_worker(self):
+        """Background worker to check backend connectivity"""
+        while not self.stop_update_flag.is_set():
+            try:
+                # Use is_system_online from kickstart
+                online = is_system_online()
+                self.is_online_status = online
+            except Exception as e:
+                self.is_online_status = False
+                print(f"Connectivity check failed: {e}")
+            time.sleep(5) # Check every 5 seconds
 
     def balance_refresh_timer(self):
         """Auto-refresh balance every 15 minutes"""
@@ -233,32 +350,47 @@ class DashboardV2:
         # Logo Area
         logo_frame = ctk.CTkFrame(header, fg_color="transparent")
         logo_frame.pack(side="left", padx=20)
-        ctk.CTkLabel(logo_frame, text="ARUN", font=("Roboto", 20, "bold"), text_color=COLOR_ACCENT).pack(side="left")
-        ctk.CTkLabel(logo_frame, text="TITAN", font=("Roboto", 20, "bold"), text_color="white").pack(side="left", padx=5)
+        ctk.CTkLabel(logo_frame, text="ARUN", font=("Roboto", 22, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        ctk.CTkLabel(logo_frame, text="TITAN", font=("Roboto", 22, "bold"), text_color="#333").pack(side="left", padx=5)
+        ctk.CTkLabel(logo_frame, text="v2.6.0", font=("Roboto", 10, "bold"), text_color="#333").pack(side="left", padx=5, pady=(5,0))
 
         # Navigation (Segmented Button Style)
         self.nav_var = ctk.StringVar(value="DASHBOARD")
         self.nav_bar = ctk.CTkSegmentedButton(
             header, 
-            values=["DASHBOARD", "HYBRID", "TRADES", "STOCKS", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
+            values=["DASHBOARD", "HYBRID", "TRADES", "SCANNER", "STOCKS", "KNOWLEDGE", "STRATEGIES", "SETTINGS", "LOGS"],
             command=self.show_view,
-            font=("Roboto", 12, "bold"),
+            font=("Roboto", 14, "bold"), # Increased
             selected_color=COLOR_ACCENT,
             selected_hover_color=COLOR_ACCENT,
-            unselected_color="#000",
-            unselected_hover_color="#222",
-            text_color="white",
-            fg_color="#000",
-            height=32,
-            width=650
+            unselected_color="#E0E0E0",
+            unselected_hover_color="#D1D5DB",
+            text_color="black",
+            fg_color="#F3F4F6",
+            height=36,
+            width=800  # Accommodate extra tab
         )
         self.nav_bar.pack(side="left", padx=50, pady=14)
         self.nav_bar.set("DASHBOARD") # Set default
 
+        # Market Selector (Right of nav, before user profile)
+        self.market_selector = MarketSelector(
+            header,
+            on_market_change=self._on_market_changed,
+            current_market="IN",
+        )
+        self.market_selector.pack(side="left", padx=10, pady=10)
+
         # User Profile & Notification (Far Right)
         user_frame = ctk.CTkFrame(header, fg_color="transparent")
         user_frame.pack(side="right", padx=10)
-        
+
+        # Connection Status Indicator
+        self.status_indicator = ctk.CTkLabel(user_frame, text="●", font=("Arial", 24), text_color="gray")
+        self.status_indicator.pack(side="left", padx=5)
+        self.status_tooltip = ctk.CTkLabel(user_frame, text="Backend: Connecting...", font=("Roboto", 10), text_color="gray")
+        self.status_tooltip.pack(side="left", padx=(0, 10))
+
         ctk.CTkLabel(user_frame, text="ARUN ADMIN", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=10)
         ctk.CTkLabel(user_frame, text="🔔", font=("Arial", 16)).pack(side="left", padx=5)
 
@@ -273,6 +405,136 @@ class DashboardV2:
         else:
              self.write_log("❌ Failed to reload settings.\n")
 
+    # ------------------------------------------------------------------
+    # Market Selector — integration methods
+    # ------------------------------------------------------------------
+
+    def _on_market_changed(self, market: str) -> None:
+        """
+        Handle market selection change from the MarketSelector widget.
+
+        Updates internal market state, loads per-market settings including
+        RSI thresholds, then refreshes the portfolio display.
+
+        Args:
+            market: New market code ('IN' | 'US').
+        """
+        self.current_market = market
+        self.current_market_config = MARKETS[market]
+
+        # Load market-specific settings (RSI thresholds, currency, etc.)
+        if hasattr(self.settings_mgr, "get_market_settings"):
+            self.market_settings = self.settings_mgr.get_market_settings(market)
+        else:
+            self.market_settings = {}
+
+        # Apply per-market RSI thresholds
+        self.rsi_threshold_buy = self.market_settings.get("rsi_threshold_buy", 30)
+        self.rsi_threshold_sell = self.market_settings.get("rsi_threshold_sell", 70)
+
+        # Update market context label in positions table
+        if hasattr(self, "lbl_market_context"):
+            market_name = self.current_market_config.name
+            currency_code = self.current_market_config.currency_code
+            exchange = self.current_market_config.exchange
+            self.lbl_market_context.configure(
+                text=f"📍 Market: {market_name} ({currency_code}) - {exchange}"
+            )
+
+        # Refresh portfolio for the newly selected market
+        self._refresh_portfolio_for_market(market)
+
+        self.write_log(f"Switched to {self.current_market_config.name} market "
+                       f"({self.current_market_config.currency} {self.current_market_config.currency_code})\n")
+
+    def _refresh_portfolio_for_market(self, market: str) -> None:
+        """
+        Reload portfolio trade data filtered for the given market.
+
+        Queries the database for recent trades belonging to `market` and
+        hands off to ``_update_portfolio_display()`` for rendering.
+        No-op when no database is available.
+
+        Args:
+            market: Market code to filter by ('IN' | 'US').
+        """
+        if not hasattr(self, "db") or self.db is None:
+            return
+
+        trades = self.db.get_recent_trades(limit=100, market=market)
+        self._update_portfolio_display(trades)
+
+    def _update_portfolio_display(self, trades: list) -> None:
+        """
+        Refresh the portfolio UI section with the supplied trade list.
+
+        Formats each trade's price and P&L using the active market's
+        currency symbol, then delegates to the existing holdings display
+        logic.  Safe to call with an empty list.
+
+        Args:
+            trades: List of trade dicts (keys: symbol, price, pnl_net, …).
+        """
+        currency = self.current_market_config.currency
+
+        formatted = []
+        for trade in trades:
+            symbol = trade.get("symbol", "")
+            price = trade.get("price", 0) or 0
+            pnl = trade.get("pnl_net", 0) or 0
+            formatted.append({
+                "symbol": symbol,
+                "price_str": f"{currency}{price:.2f}",
+                "pnl_str": f"{currency}{pnl:.2f}",
+                **trade,
+            })
+
+        # Delegate to the existing display method if available
+        if hasattr(self, "filter_positions_display"):
+            filter_val = (
+                self.holdings_filter_var.get()
+                if hasattr(self, "holdings_filter_var")
+                else "ALL"
+            )
+            self.filter_positions_display(filter_val)
+
+    def _format_currency(self, amount: float) -> str:
+        """
+        Format a numeric amount with the active market's currency symbol.
+
+        Args:
+            amount: Monetary value to format.
+
+        Returns:
+            String like '₹1,234.56' or '$1,234.56'.
+        """
+        currency = self.current_market_config.currency
+        return f"{currency}{amount:,.2f}"
+
+    def _start_market_status_loop(self) -> None:
+        """
+        Background thread that polls market open/closed status every 60 s.
+
+        Updates the MarketSelector status indicator for both IN and US
+        markets so the 🟢/🔴 indicator stays accurate without any
+        additional work in the widget itself.
+        """
+        from markets import is_market_open
+
+        def _update_loop() -> None:
+            while not self.stop_update_flag.is_set():
+                for market_code in ("IN", "US"):
+                    try:
+                        is_open = is_market_open(market_code)
+                        if hasattr(self, "market_selector"):
+                            self.market_selector.set_market_status(market_code, is_open)
+                    except Exception:
+                        pass
+                self.stop_update_flag.wait(timeout=60)
+
+        thread = threading.Thread(target=_update_loop, daemon=True, name="market-status")
+        thread.start()
+
     def show_view(self, view_name):
         # Hide all
         self.view_dashboard.pack_forget()
@@ -284,6 +546,7 @@ class DashboardV2:
         self.view_trades.pack_forget()
         self.view_hybrid.pack_forget() 
         self.view_stocks.pack_forget()
+        self.view_scanner.pack_forget()
         
         # Show selected
         if view_name == "DASHBOARD":
@@ -306,6 +569,8 @@ class DashboardV2:
             self.view_trades.pack(fill="both", expand=True)
         elif view_name == "STOCKS":
             self.view_stocks.pack(fill="both", expand=True)
+        elif view_name == "SCANNER":
+            self.view_scanner.pack(fill="both", expand=True)
 
     def build_dashboard_view(self):
         """Redesigned Dashboard v2: Enhanced Quick Monitor + Compact Engine Commander"""
@@ -317,9 +582,10 @@ class DashboardV2:
         self.view_dashboard.grid_columnconfigure(1, weight=7)
         self.view_dashboard.grid_rowconfigure(0, weight=1)
 
-        # === LEFT COLUMN: QUICK STATS & CONTROLS ===
-        left_col = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
+        # === LEFT COLUMN: QUICK STATS & CONTROLS (Now Scrollable) ===
+        left_col = ctk.CTkScrollableFrame(self.view_dashboard, fg_color="transparent", label_text="")
         left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=10)
+        left_col._scrollbar.configure(width=6) # Visible thin scrollbar
         
         # 1. Enhanced Quick Monitor Card
         self.card_stats = TitanCard(left_col, title="QUICK MONITOR", border_color=COLOR_ACCENT)
@@ -328,46 +594,55 @@ class DashboardV2:
         stats_in = ctk.CTkFrame(self.card_stats, fg_color="transparent")
         stats_in.pack(fill="x", padx=15, pady=10)
         
+        # ⚠️ WARNING BANNER (For unmanaged holdings)
+        self.lbl_warning_banner = ctk.CTkLabel(stats_in, text="", font=("Roboto", 11, "bold"), text_color=COLOR_DANGER, wraplength=250)
+        self.lbl_warning_banner.pack(fill="x", pady=(0, 10))
+        self.lbl_warning_banner.pack_forget() # Hide by default
+        
         # 💰 Live Wallet Balance (from mStock API)
-        ctk.CTkLabel(stats_in, text="💰 WALLET BALANCE", font=("Roboto", 10), text_color="#AAA").pack(anchor="w")
-        self.lbl_total_balance = ctk.CTkLabel(stats_in, text="₹--,---", font=("Roboto", 22, "bold"), text_color="white")
+        ctk.CTkLabel(stats_in, text="💰 WALLET BALANCE", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        self.lbl_total_balance = ctk.CTkLabel(stats_in, text="₹--,---", font=("Roboto", 24, "bold"), text_color="#1a1a1a")
         self.lbl_total_balance.pack(anchor="w", pady=(0, 8))
         
         # 📊 Bot Capital with Progress Bar
-        ctk.CTkLabel(stats_in, text="📊 BOT CAPITAL", font=("Roboto", 10), text_color="#AAA").pack(anchor="w")
+        ctk.CTkLabel(stats_in, text="📊 BOT CAPITAL", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
         capital_row = ctk.CTkFrame(stats_in, fg_color="transparent")
         capital_row.pack(fill="x", pady=(0, 3))
-        self.lbl_total_allocated = ctk.CTkLabel(capital_row, text="₹10,000", font=("Roboto", 16, "bold"), text_color=COLOR_WARN)
+        self.lbl_total_allocated = ctk.CTkLabel(capital_row, text="₹10,000", font=("Roboto", 18, "bold"), text_color="#2c3e50")
         self.lbl_total_allocated.pack(side="left")
-        self.lbl_deployed = ctk.CTkLabel(capital_row, text="Used: ₹0", font=("Roboto", 10), text_color="#888")
+        self.lbl_deployed = ctk.CTkLabel(capital_row, text="Used: ₹0", font=("Roboto", 11, "bold"), text_color="#2c3e50")
         self.lbl_deployed.pack(side="right")
         
         # Progress bar for capital usage
-        self.wallet_progress = ctk.CTkProgressBar(stats_in, height=8, progress_color=COLOR_SUCCESS, fg_color="#333")
+        self.wallet_progress = ctk.CTkProgressBar(stats_in, height=8, progress_color=COLOR_ACCENT, fg_color="#D1D5DB")
         self.wallet_progress.pack(fill="x", pady=(0, 3))
         self.wallet_progress.set(0)
-        self.lbl_available_wallet = ctk.CTkLabel(stats_in, text="₹10,000 (100%) Available", font=("Roboto", 9), text_color="#666")
+        self.lbl_available_wallet = ctk.CTkLabel(stats_in, text="₹10,000 (100%) Available", font=("Roboto", 11, "bold"), text_color="#2c3e50")
         self.lbl_available_wallet.pack(anchor="w", pady=(0, 8))
         
-        # 📈 Today's P&L
-        ctk.CTkLabel(stats_in, text="📈 TODAY'S P&L", font=("Roboto", 10), text_color="#AAA").pack(anchor="w")
-        self.lbl_pnl = ctk.CTkLabel(stats_in, text="₹0.00", font=("Roboto", 20, "bold"), text_color=COLOR_SUCCESS)
+        # 📈 Today's P&L (Consolidated & Bot-Specific)
+        ctk.CTkLabel(stats_in, text="📈 CONSOLIDATED P&L (ALL)", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        self.lbl_pnl = ctk.CTkLabel(stats_in, text="₹0.00", font=("Roboto", 22, "bold"), text_color=COLOR_SUCCESS)
         self.lbl_pnl.pack(anchor="w", pady=(0, 3))
-        self.lbl_trade_count = ctk.CTkLabel(stats_in, text="0 trades today", font=("Roboto", 9), text_color="#666")
+        
+        self.lbl_bot_pnl = ctk.CTkLabel(stats_in, text="BOT P&L: ₹0.00", font=("Roboto", 12, "bold"), text_color="#333")
+        self.lbl_bot_pnl.pack(anchor="w", pady=(0, 3))
+
+        self.lbl_trade_count = ctk.CTkLabel(stats_in, text="0 trades today", font=("Roboto", 11, "bold"), text_color="#333")
         self.lbl_trade_count.pack(anchor="w", pady=(0, 8))
         
         # 🎯 Win Rate
-        ctk.CTkLabel(stats_in, text="🎯 WIN RATE", font=("Roboto", 10), text_color="#AAA").pack(anchor="w")
-        self.lbl_win_rate = ctk.CTkLabel(stats_in, text="--% (0W / 0L)", font=("Roboto", 14, "bold"), text_color="white")
+        ctk.CTkLabel(stats_in, text="🎯 WIN RATE", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        self.lbl_win_rate = ctk.CTkLabel(stats_in, text="--% (0W / 0L)", font=("Roboto", 16, "bold"), text_color="#1a1a1a")
         self.lbl_win_rate.pack(anchor="w", pady=(0, 8))
         
         # 🔄 Recent Trades (Last 5)
-        ctk.CTkLabel(stats_in, text="🔄 RECENT TRADES", font=("Roboto", 10), text_color="#AAA").pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(stats_in, text="🔄 RECENT TRADES", font=("Roboto", 10, "bold"), text_color="#1a1a1a").pack(anchor="w", pady=(0, 2))
         self.recent_trades_frame = ctk.CTkFrame(stats_in, fg_color="transparent")
         self.recent_trades_frame.pack(fill="x", pady=(0, 5))
         
         # Placeholder for trades - will be populated by refresh_quick_monitor
-        self.lbl_last_trade = ctk.CTkLabel(self.recent_trades_frame, text="Waiting for trades...", font=("Roboto", 10), text_color="#666")
+        self.lbl_last_trade = ctk.CTkLabel(self.recent_trades_frame, text="Waiting for trades...", font=("Roboto", 11, "bold"), text_color="#333")
         self.lbl_last_trade.pack(anchor="w")
 
         # 2. Engine Commander (Compact)
@@ -384,6 +659,26 @@ class DashboardV2:
         
         self.lbl_engine_status = ctk.CTkLabel(ctrl_in, text="STOPPED 🔴", font=("Roboto", 10, "bold"), text_color=COLOR_DANGER)
         self.lbl_engine_status.pack()
+        
+        # 3. Engine Heartbeat (Visual confirmation of activity)
+        self.lbl_heartbeat = ctk.CTkLabel(ctrl_in, text="Engine Idle", font=("Roboto", 11, "bold"), text_color="gray")
+        self.lbl_heartbeat.pack(pady=(5, 5))
+        
+        # 4. PANIC BUTTON (v2.4.0 - Family-Ready UX)
+        # Styled to be visible but requires confirmation to prevent accidental clicks
+        self.btn_panic = ctk.CTkButton(
+            ctrl_in, 
+            text="🛑 STOP EVERYTHING", 
+            command=self.panic_stop_confirm,
+            fg_color="#8B0000",  # Dark red - serious but not alarming
+            hover_color=COLOR_DANGER,
+            height=32,
+            font=("Roboto", 12, "bold"),
+            text_color="white",
+            border_width=2,
+            border_color="#FF6B6B"
+        )
+        self.btn_panic.pack(fill="x", pady=(10, 0))
 
         # === RIGHT COLUMN: TABS ===
         right_col = ctk.CTkFrame(self.view_dashboard, fg_color="transparent")
@@ -392,10 +687,10 @@ class DashboardV2:
         self.dash_tabs = ctk.CTkTabview(right_col, fg_color=COLOR_CARD, 
                                       segmented_button_selected_color=COLOR_ACCENT,
                                       segmented_button_selected_hover_color=COLOR_ACCENT,
-                                      segmented_button_unselected_color=COLOR_BG,
-                                      text_color="white")
+                                      segmented_button_unselected_color="#D1D5DB",
+                                      text_color="black")
         self.dash_tabs.pack(fill="both", expand=True)
-        self.dash_tabs._segmented_button.configure(font=("Roboto", 13, "bold"), height=35)
+        self.dash_tabs._segmented_button.configure(font=("Roboto", 15, "bold"), height=38)
         self.dash_tabs._segmented_button.grid(sticky="ew", padx=10, pady=5)
         
         self.dash_tabs.add("ACTIVE POSITIONS")
@@ -415,14 +710,14 @@ class DashboardV2:
         counters_frame.pack(fill="x", pady=10, padx=10)
         
         def make_big_counter(parent, label, value, color):
-            f = ctk.CTkFrame(parent, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
+            f = ctk.CTkFrame(parent, fg_color="#F3F4F6", corner_radius=8, border_width=1, border_color="#D1D5DB")
             f.pack(side="left", fill="x", expand=True, padx=5)
-            ctk.CTkLabel(f, text=label, font=("Roboto", 11, "bold"), text_color="#AAA").pack(pady=(10,0))
-            lbl = ctk.CTkLabel(f, text=str(value), font=("Roboto", 32, "bold"), text_color=color)
+            ctk.CTkLabel(f, text=label, font=("Roboto", 13, "bold"), text_color="#4B5563").pack(pady=(10,0))
+            lbl = ctk.CTkLabel(f, text=str(value), font=("Roboto", 34, "bold"), text_color=color)
             lbl.pack(pady=(0,10))
             return lbl
 
-        self.lbl_attempt_count = make_big_counter(counters_frame, "TOTAL ATTEMPTS", "0", "white")
+        self.lbl_attempt_count = make_big_counter(counters_frame, "TOTAL ATTEMPTS", "0", "#1a1a1a")
         self.lbl_success_count = make_big_counter(counters_frame, "SUCCESSFUL", "0", COLOR_SUCCESS)
         self.lbl_fail_count = make_big_counter(counters_frame, "FAILED", "0", COLOR_DANGER)
         
@@ -438,6 +733,125 @@ class DashboardV2:
         self.root.after(1000, self.refresh_quick_monitor)
 
 
+    def download_trades_csv(self):
+        """Handle CSV download request"""
+        if not DATABASE_AVAILABLE or not db:
+            messagebox.showerror("Error", "Database not available")
+            return
+
+        start_date = self.entry_start_date.get()
+        end_date = self.entry_end_date.get()
+
+        # Simple validation
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+            datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Invalid Date", "Please use YYYY-MM-DD format")
+            return
+
+        try:
+            # Create exports directory in user's Documents or project root
+            # Using project root 'exports' for simplicity as per plan
+            output_dir = os.path.join(os.getcwd(), "exports")
+            
+            filepath = db.export_trades_csv(start_date, end_date, output_dir)
+            
+            if filepath:
+                messagebox.showinfo("Export Success", f"Trades exported successfully!\n\nLocation:\n{filepath}")
+                # Optional: Open the folder
+                try:
+                    os.startfile(output_dir)
+                except: pass
+            else:
+                messagebox.showinfo("Export Empty", "No trades found for the selected date range.")
+                
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"An error occurred:\n{str(e)}")
+
+    def build_positions_table(self, parent):
+        # Market context header
+        market_header_frame = ctk.CTkFrame(parent, fg_color="transparent", height=25)
+        market_header_frame.pack(fill="x", padx=10, pady=(5, 2))
+
+        self.lbl_market_context = ctk.CTkLabel(
+            market_header_frame,
+            text="📍 Market: India (INR) - NSE",
+            font=("Roboto", 10, "bold"),
+            text_color="#479FB6"
+        )
+        self.lbl_market_context.pack(side="left", padx=(5, 10))
+
+        # Filter/View Toggle
+        filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
+        filter_frame.pack(fill="x", padx=10, pady=(5, 0))
+
+        ctk.CTkLabel(filter_frame, text="Show:", font=("Roboto", 10, "bold"), text_color="#AAA").pack(side="left", padx=(5, 10))
+
+        self.holdings_filter_var = ctk.StringVar(value="ALL")
+        filter_segment = ctk.CTkSegmentedButton(
+            filter_frame,
+            values=["ALL", "BOT", "MANUAL"],
+            variable=self.holdings_filter_var,
+            command=self.filter_positions_display,
+            font=("Roboto", 13, "bold"),
+            height=32,
+            fg_color="#333",
+            selected_color=COLOR_ACCENT,
+            selected_hover_color="#00E5FF",
+            unselected_color="#222",
+            unselected_hover_color="#444",
+            corner_radius=6
+        )
+        filter_segment.pack(side="left")
+
+        # Summary Stats
+        self.lbl_position_stats = ctk.CTkLabel(
+            filter_frame,
+            text="Positions: 0 • Bot: 0 • Manual: 0",
+            font=("Roboto", 11),
+            text_color="#CCC"
+        )
+        self.lbl_position_stats.pack(side="right", padx=10)
+
+        # Table Frame
+        table_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=0)
+        table_frame.pack(fill="both", expand=True, padx=2, pady=5)
+
+        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "P&L", "P&L %")
+
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview", background="#111", foreground="white", fieldbackground="#111", rowheight=35, borderwidth=0, font=("Roboto", 10))
+        style.configure("Treeview.Heading", background="#1A1A1A", foreground="#DDD", font=("Roboto", 9, "bold"), borderwidth=0)
+        style.map("Treeview", background=[('selected', COLOR_ACCENT)], foreground=[('selected', '#000')])
+
+        self.pos_table = ttk.Treeview(table_frame, columns=cols, show="headings", height=8)
+        for col in cols:
+            self.pos_table.heading(col, text=col.upper())
+            self.pos_table.column(col, anchor="center")
+
+        self.pos_table.column("Source", width=70)
+        self.pos_table.column("Symbol", width=100)
+        self.pos_table.column("Qty", width=60)
+        self.pos_table.column("Entry", width=80)
+        self.pos_table.column("LTP", width=80)
+        self.pos_table.column("P&L", width=90)
+        self.pos_table.column("P&L %", width=70)
+
+        self.pos_table.pack(fill="both", expand=True)
+        self.pos_table.tag_configure("green", foreground=COLOR_SUCCESS)
+        self.pos_table.tag_configure("red", foreground=COLOR_DANGER)
+        self.pos_table.tag_configure("bot", background="#0A2A0A") 
+        self.pos_table.tag_configure("manual", background="#2A2A0A") 
+
+        # Loading Skeleton / Indicator
+        self.lbl_pos_loading = ctk.CTkLabel(table_frame, text="⏳ Loading Positions...", font=("Roboto", 16, "bold"), text_color="#AAA")
+        self.lbl_pos_loading.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Store all positions for filtering
+        self.all_positions_data = {}
+
     def build_trades_view(self):
         """Dedicated view for monitoring LIVE trade requests and execution stats"""
         # Header
@@ -448,7 +862,45 @@ class DashboardV2:
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
         title_frame.pack(side="left")
         ctk.CTkFrame(title_frame, width=4, height=24, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
-        ctk.CTkLabel(title_frame, text=" TRADE HISTORY & METRICS", font=("Roboto", 20, "bold"), text_color="white").pack(side="left", padx=10)
+        ctk.CTkLabel(title_frame, text=" TRADE HISTORY & METRICS", font=("Roboto", 20, "bold"), text_color="#1a1a1a").pack(side="left", padx=10)
+
+        # 0. Export Controls
+        export_frame = ctk.CTkFrame(self.view_trades, fg_color="transparent")
+        export_frame.pack(fill="x", pady=(0, 20), padx=20)
+        
+        ctk.CTkLabel(export_frame, text="Export Data:", font=("Roboto", 12, "bold"), text_color="#AAA").pack(side="left", padx=(5, 10))
+        
+        # Simple Date Entry fields (YYYY-MM-DD)
+        # Default: Last 30 days
+        now = datetime.now()
+        start_def = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        end_def = now.strftime("%Y-%m-%d")
+        
+        self.entry_start_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
+        self.entry_start_date.pack(side="left", padx=5)
+        self.entry_start_date.insert(0, start_def)
+        # Bind for reactive refresh
+        self.entry_start_date.bind("<Return>", lambda e: self.refresh_trades_history())
+        self.entry_start_date.bind("<FocusOut>", lambda e: self.refresh_trades_history())
+        
+        ctk.CTkLabel(export_frame, text="to", text_color="#666").pack(side="left", padx=5)
+        
+        self.entry_end_date = ctk.CTkEntry(export_frame, width=100, placeholder_text="YYYY-MM-DD")
+        self.entry_end_date.pack(side="left", padx=5)
+        self.entry_end_date.insert(0, end_def)
+        # Bind for reactive refresh
+        self.entry_end_date.bind("<Return>", lambda e: self.refresh_trades_history())
+        self.entry_end_date.bind("<FocusOut>", lambda e: self.refresh_trades_history())
+        
+        ctk.CTkButton(
+            export_frame, 
+            text="📥 DOWNLOAD CSV", 
+            command=self.download_trades_csv,
+            fg_color="#333", 
+            hover_color=COLOR_ACCENT,
+            width=140,
+            height=32
+        ).pack(side="left", padx=20)
 
         # 1. Counter Row
         counter_row = ctk.CTkFrame(self.view_trades, fg_color="transparent")
@@ -473,8 +925,10 @@ class DashboardV2:
         # Create Treeview for Trades
         style = ttk.Style()
         style.theme_use("default")
-        style.configure("Treeview", background="#111", foreground="white", fieldbackground="#111", rowheight=30, borderwidth=0)
-        style.map("Treeview", background=[('selected', COLOR_ACCENT)], foreground=[('selected', '#000')])
+        # Glassy Table Appearance
+        style.configure("Treeview", background="#FFF", foreground="#1a1a1a", fieldbackground="#FFF", rowheight=35, borderwidth=0, font=("Arial", 12))
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[('selected', COLOR_ACCENT)], foreground=[('selected', '#FFF')])
         
         cols = ("TIME", "SYMBOL", "ACTION", "QTY", "PRICE", "RSI", "P&L", "STRATEGY")
         self.trades_table = ttk.Treeview(log_card, columns=cols, show="headings", style="Treeview")
@@ -487,6 +941,11 @@ class DashboardV2:
         self.trades_table.column("STRATEGY", width=150)
         
         self.trades_table.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Configure tags for colors and headers
+        self.trades_table.tag_configure("header", background="#F3F4F6", font=("Roboto", 11, "bold"))
+        self.trades_table.tag_configure("green", foreground=COLOR_SUCCESS)
+        self.trades_table.tag_configure("red", foreground=COLOR_DANGER)
 
     def build_stocks_view(self):
         """Promoted Top-Level Stocks Configuration View"""
@@ -516,7 +975,7 @@ class DashboardV2:
             table_frame = ctk.CTkFrame(table_card, fg_color="transparent")
             table_frame.pack(fill="both", expand=True, padx=15, pady=15)
             
-            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Qty", "Target %", "Status")
+            columns=("Symbol", "Exchange", "Enabled", "Strategy", "Timeframe", "Buy RSI", "Sell RSI", "Skip RSI", "Qty", "Target %", "Price", "Status")
             self.settings_gui_instance.stock_table = ttk.Treeview(
                 table_frame,
                 columns=columns,
@@ -525,7 +984,9 @@ class DashboardV2:
                 style="Treeview"
             )
             for col in columns:
-                self.settings_gui_instance.stock_table.heading(col, text=col)
+                text = col
+                if col == "Skip RSI": text = "Skip rsi"
+                self.settings_gui_instance.stock_table.heading(col, text=text)
                 self.settings_gui_instance.stock_table.column(col, width=80, anchor="center")
             self.settings_gui_instance.stock_table.column("Symbol", width=120)
             self.settings_gui_instance.stock_table.pack(side="left", fill="both", expand=True)
@@ -541,63 +1002,156 @@ class DashboardV2:
             btn_row = ctk.CTkFrame(container, fg_color="transparent")
             btn_row.pack(fill="x", pady=10)
             
-            ctk.CTkButton(btn_row, text="+ ADD NEW STOCK", command=self.settings_gui_instance.on_add_stock, fg_color=COLOR_SUCCESS, font=("Roboto", 12, "bold"), height=35).pack(side="left", padx=5)
-            ctk.CTkButton(btn_row, text="✏ EDIT SELECTED", command=self.settings_gui_instance.on_edit_stock, fg_color="#3498DB", font=("Roboto", 12, "bold"), height=35).pack(side="left", padx=5)
-            ctk.CTkButton(btn_row, text="🗑 DELETE", command=self.settings_gui_instance.on_delete_stock, fg_color=COLOR_DANGER, font=("Roboto", 12), height=35).pack(side="right", padx=5)
-            ctk.CTkButton(btn_row, text="🔍 VALIDATE SYMBOLS", command=self.settings_gui_instance.on_validate_symbols, fg_color="#555", font=("Roboto", 12), height=35).pack(side="right", padx=20)
+            ctk.CTkButton(btn_row, text="+ ADD", command=self.settings_gui_instance.on_add_stock, fg_color=COLOR_SUCCESS, font=("Roboto", 11, "bold"), height=32, width=80).pack(side="left", padx=2)
+            ctk.CTkButton(btn_row, text="✏ EDIT", command=self.settings_gui_instance.on_edit_stock, fg_color="#3498DB", font=("Roboto", 11, "bold"), height=32, width=80).pack(side="left", padx=2)
+            ctk.CTkButton(btn_row, text="🗑 DEL", command=self.settings_gui_instance.on_delete_stock, fg_color=COLOR_DANGER, font=("Roboto", 11), height=32, width=80).pack(side="left", padx=2)
             
-        else:
-            ctk.CTkLabel(container, text="Error: Could not link to settings module.").pack()
-        
+            ctk.CTkButton(btn_row, text="🔍 SMART VALIDATE", command=self.settings_gui_instance.on_validate_symbols, fg_color="#555", font=("Roboto", 11, "bold"), height=32).pack(side="right", padx=5)
+            ctk.CTkButton(btn_row, text="🔄 FORCE REFRESH", command=lambda: self.settings_gui_instance.on_validate_symbols(force=True), fg_color="#777", font=("Roboto", 11), height=32).pack(side="right", padx=5)
+            
         # Refresh Button
         ctk.CTkButton(header, text="🔄 REFRESH DATA", command=self.settings_gui_instance.refresh_stock_table if hasattr(self, 'settings_gui_instance') else None, height=30, 
-                     fg_color=COLOR_CARD, border_width=1, border_color=COLOR_ACCENT, text_color=COLOR_ACCENT).pack(side="right")
+                      fg_color=COLOR_CARD, border_width=1, border_color=COLOR_ACCENT, text_color=COLOR_ACCENT).pack(side="right")
+
+        # --- STATUS BAR INTEGRATION ---
+        # Add a status label to the bottom of the Stocks view
+        self.stocks_status_label = ctk.CTkLabel(container, text="Ready", font=("Consolas", 11), text_color="gray", anchor="w")
+        self.stocks_status_label.pack(side="bottom", fill="x", pady=(10, 0))
+        
+        # Divert SettingsGUI status updates to this label
+        if hasattr(self, 'settings_gui_instance'):
+            def diverted_update(msg, color="gray"):
+                try:
+                    if hasattr(self, 'stocks_status_label') and self.stocks_status_label.winfo_exists():
+                        self.stocks_status_label.configure(text=msg, text_color=color)
+                        self.stocks_status_label.update()
+                except: pass
+            
+            # Monkey-patch the instance method
+            self.settings_gui_instance.update_status = diverted_update
 
     def refresh_trades_history(self):
-        """Fetch recent trades from DB and populate table"""
+        """Fetch recent trades from DB and populate table with temporal grouping"""
         if not DATABASE_AVAILABLE or not db:
             return
             
         try:
+            # 1. Get date range from UI
+            start_val = self.entry_start_date.get()
+            end_val = self.entry_end_date.get()
+            
             # Clear table
             for item in self.trades_table.get_children():
                 self.trades_table.delete(item)
-                
-            trades = db.get_recent_trades(limit=50) # Use DB method
             
+            # Use specialized export-style query if dates are provided, or fallback to generic recent
+            # For the live view, we'll try to get all trades in the range
+            query = """
+                SELECT * FROM trades 
+                WHERE DATE(timestamp) >= DATE(?) AND DATE(timestamp) <= DATE(?)
+                ORDER BY timestamp DESC
+            """
+            cursor = db.conn.cursor()
+            cursor.execute(query, (start_val, end_val))
+            trades = [dict(row) for row in cursor.fetchall()]
+            cursor.close()
+                
             pnl_wins = 0
             pnl_loss = 0
             
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+            yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            buckets = {
+                "TODAY": [],
+                "YESTERDAY": [],
+                "LAST WEEK": [],
+                "OLDER": []
+            }
+            
+            last_week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+            
             for t in trades:
-                ts = t.get('timestamp', '').replace('T', ' ')[:19]
-                sym = t.get('symbol')
-                action = t.get('action')
-                qty = t.get('quantity')
-                price = t.get('price')
-                rsi = t.get('rsi', 0)
-                rsi_str = f"{rsi:.1f}" if rsi and rsi > 0 else "-"
-                pnl = t.get('pnl_net', 0)
-                strat = t.get('strategy', 'Manual')
+                ts_raw = t.get('timestamp', '')
+                t_date = ts_raw[:10]
                 
-                if pnl > 0: pnl_wins += 1
-                elif pnl < 0: pnl_loss += 1
+                if t_date == today_str:
+                    buckets["TODAY"].append(t)
+                elif t_date == yesterday_str:
+                    buckets["YESTERDAY"].append(t)
+                elif t_date >= last_week_start:
+                    buckets["LAST WEEK"].append(t)
+                else:
+                    buckets["OLDER"].append(t)
+
+            for bucket_name, bucket_trades in buckets.items():
+                if not bucket_trades:
+                    continue
                 
-                pnl_str = f"₹{pnl:.2f}" if pnl != 0 else "-"
-                tag = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+                # Insert Header Row
+                self.trades_table.insert("", END, values=(f"📅 {bucket_name}", "", "", "", "", "", "", ""), tags=("header",))
                 
-                self.trades_table.insert("", END, values=(ts, sym, action, qty, f"₹{price:.2f}", rsi_str, pnl_str, strat), tags=(tag,))
+                for t in bucket_trades:
+                    ts = t.get('timestamp', '').replace('T', ' ')[:19]
+                    relative_time = self._get_relative_time(t.get('timestamp', ''))
+                    
+                    # We'll use the relative time in the TIME column or as a suffix
+                    display_time = f"{ts[11:16]} ({relative_time})" if bucket_name == "TODAY" else ts
+                    
+                    sym = t.get('symbol')
+                    action = t.get('action')
+                    qty = t.get('quantity')
+                    price = t.get('price')
+                    try:
+                        rsi_raw = t.get('rsi')
+                        rsi = float(rsi_raw) if rsi_raw is not None else 0.0
+                    except: rsi = 0.0
+                    
+                    rsi_str = f"{rsi:.1f}" if rsi > 0 else "-"
+                    
+                    try:
+                        pnl_raw = t.get('pnl_net')
+                        pnl = float(pnl_raw) if pnl_raw is not None else 0.0
+                    except: pnl = 0.0
+
+                    strat = t.get('strategy', 'Manual')
+                    
+                    if pnl > 0: pnl_wins += 1
+                    elif pnl < 0: pnl_loss += 1
+                    
+                    pnl_str = f"₹{pnl:.2f}" if pnl != 0 else "-"
+                    tag = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+                    
+                    self.trades_table.insert("", END, values=(display_time, sym, action, qty, f"₹{price:.2f}", rsi_str, pnl_str, strat), tags=(tag,))
             
             # Update counters
             self.lbl_trades_attempts.configure(text=str(len(trades)))
             self.lbl_trades_success.configure(text=str(pnl_wins))
             self.lbl_trades_failed.configure(text=str(pnl_loss))
             
-            # Configure tags
-            self.trades_table.tag_configure("green", foreground=COLOR_SUCCESS)
-            self.trades_table.tag_configure("red", foreground=COLOR_DANGER)
-            
         except Exception as e:
             self.write_log(f"Error refreshing trades history: {e}\n")
+
+    def _get_relative_time(self, timestamp_str):
+        """Helper to return humanized relative time"""
+        try:
+            # ISO format: 2026-03-05T14:30:00.000000
+            if 'T' in timestamp_str:
+                dt = datetime.fromisoformat(timestamp_str.split('.')[0])
+            else:
+                dt = datetime.strptime(timestamp_str[:19], "%Y-%m-%d %H:%M:%S")
+            
+            diff = datetime.now() - dt
+            seconds = int(diff.total_seconds())
+            
+            if seconds < 60: return "just now"
+            if seconds < 3600: return f"{seconds // 60}m ago"
+            if seconds < 86400: return f"{seconds // 3600}h ago"
+            if seconds < 604800: return f"{seconds // 86400}d ago"
+            return dt.strftime("%d %b")
+        except:
+            return ""
 
     def build_strategies_view(self):
         """Strategies View Content - Baskets & Strategies"""
@@ -621,12 +1175,12 @@ class DashboardV2:
             card.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
             
             # Stats Placeholder
-            ctk.CTkLabel(card, text="Exposure: ₹0", font=("Roboto", 11), text_color="#AAA").pack(anchor="w", padx=15, pady=(5,0))
-            ctk.CTkLabel(card, text="PnL: 0.0%", font=("Roboto", 14, "bold"), text_color="white").pack(anchor="w", padx=15, pady=2)
+            ctk.CTkLabel(card, text="Exposure: ₹0", font=("Roboto", 11, "bold"), text_color="#333").pack(anchor="w", padx=15, pady=(5,0))
+            ctk.CTkLabel(card, text="PnL: 0.0%", font=("Roboto", 14, "bold"), text_color="#1a1a1a").pack(anchor="w", padx=15, pady=2)
             
             btn_frame = ctk.CTkFrame(card, fg_color="transparent")
             btn_frame.pack(fill="x", padx=15, pady=10)
-            ctk.CTkSwitch(btn_frame, text="Trade", width=40).pack(side="right")
+            ctk.CTkSwitch(btn_frame, text="Trade", width=40, text_color="#1a1a1a").pack(side="right")
             ctk.CTkButton(btn_frame, text="Sell All", width=60, height=20, fg_color=COLOR_DANGER, hover_color="#B71C1C", 
                           command=lambda: self.sell_sector_positions(title)).pack(side="left")
 
@@ -676,12 +1230,12 @@ class DashboardV2:
             card = TitanCard(parent, title=title, height=150)
             card.grid(row=row, column=col, padx=10, pady=10, sticky="ew")
             
-            ctk.CTkLabel(card, text=desc, font=("Roboto", 12), text_color="#CCC", wraplength=300, justify="left").pack(anchor="w", padx=15, pady=5)
+            ctk.CTkLabel(card, text=desc, font=("Roboto", 12), text_color="#333", wraplength=300, justify="left").pack(anchor="w", padx=15, pady=5)
             
             btn_frame = ctk.CTkFrame(card, fg_color="transparent")
             btn_frame.pack(fill="x", padx=15, pady=10)
             
-            ctk.CTkSwitch(btn_frame, text="Active").pack(side="right")
+            ctk.CTkSwitch(btn_frame, text="Active", text_color="#1a1a1a").pack(side="right")
             ctk.CTkButton(btn_frame, text="Configure", width=80, height=24, fg_color="#333", hover_color="#444").pack(side="left")
 
         # Strategies
@@ -704,7 +1258,7 @@ class DashboardV2:
         scroll = ctk.CTkScrollableFrame(self.view_knowledge, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=20, pady=20)
         
-        ctk.CTkLabel(scroll, text="🧠 KNOWLEDGE INTELLIGENCE", font=("Roboto", 24, "bold"), text_color="white").pack(anchor="w", pady=(0, 20))
+        ctk.CTkLabel(scroll, text="🧠 KNOWLEDGE INTELLIGENCE", font=("Roboto", 24, "bold"), text_color="#1a1a1a").pack(anchor="w", pady=(0, 20))
         
         # Load Tips
         tips = []
@@ -722,20 +1276,20 @@ class DashboardV2:
         tip_card = TitanCard(scroll, title=f"💡 TIP OF THE DAY: {daily_tip['title']}", height=150, border_color="#FFD700")
         tip_card.pack(fill="x", pady=10)
         
-        ctk.CTkLabel(tip_card, text=daily_tip['content'], font=("Roboto", 14), text_color="#EEE", 
+        ctk.CTkLabel(tip_card, text=daily_tip['content'], font=("Roboto", 14), text_color="#333", 
                      wraplength=800, justify="left").pack(padx=20, pady=20, anchor="w")
                      
         # Library
-        ctk.CTkLabel(scroll, text="TRADING LIBRARY", font=("Roboto", 18, "bold"), text_color="#AAA").pack(anchor="w", pady=(20, 10))
+        ctk.CTkLabel(scroll, text="TRADING LIBRARY", font=("Roboto", 18, "bold"), text_color="#333").pack(anchor="w", pady=(20, 10))
         
         for tip in tips:
             if tip == daily_tip: continue
             
-            card = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=6, border_width=1, border_color="#333")
+            card = ctk.CTkFrame(scroll, fg_color=COLOR_CARD, corner_radius=6, border_width=1, border_color="#D1D5DB")
             card.pack(fill="x", pady=5)
             
-            ctk.CTkLabel(card, text=tip['title'], font=("Roboto", 12, "bold"), text_color="white").pack(anchor="w", padx=10, pady=(10,0))
-            ctk.CTkLabel(card, text=tip['content'], font=("Roboto", 11), text_color="#888", wraplength=800, justify="left").pack(anchor="w", padx=10, pady=(0,10))
+            ctk.CTkLabel(card, text=tip['title'], font=("Roboto", 12, "bold"), text_color="#1a1a1a").pack(anchor="w", padx=10, pady=(10,0))
+            ctk.CTkLabel(card, text=tip['content'], font=("Roboto", 11), text_color="#333", wraplength=800, justify="left").pack(anchor="w", padx=10, pady=(0,10))
 
     def build_logs_view(self):
         """Technical Logs View"""
@@ -772,14 +1326,15 @@ class DashboardV2:
         except Exception as e:
             self.log_viewer.insert("end", f"\nError reading logs: {e}")
 
+
     def build_start_here_view(self):
         """Onboarding Guide Tab"""
         # Header
         header = ctk.CTkFrame(self.view_start, fg_color="transparent")
         header.pack(fill="x", pady=(0, 20))
         
-        ctk.CTkLabel(header, text="🚀 START HERE: Quick Setup Guide", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(pady=10)
-        ctk.CTkLabel(header, text="Follow these 4 simple steps to get your bot running!", font=("Roboto", 14), text_color="#AAA").pack()
+        ctk.CTkLabel(header, text="🚀 START HERE: Quick Setup Guide", font=("Roboto", 24, "bold"), text_color="#1a1a1a").pack(pady=10)
+        ctk.CTkLabel(header, text="Follow these 4 simple steps to get your bot running!", font=("Roboto", 14, "bold"), text_color="#333").pack()
         
         # Steps Container
         steps_frame = ctk.CTkScrollableFrame(self.view_start, fg_color="transparent")
@@ -792,10 +1347,10 @@ class DashboardV2:
         row1 = ctk.CTkFrame(s1, fg_color="transparent")
         row1.pack(fill="both", expand=True, padx=20, pady=10)
         
-        ctk.CTkLabel(row1, text="1️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(row1, text="Configure API Credentials", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row1, text="1️⃣", font=("Arial", 30), text_color="#1a1a1a").pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row1, text="Configure API Credentials", font=("Roboto", 16, "bold"), text_color="#1a1a1a").pack(anchor="w")
         ctk.CTkLabel(row1, text="Go to Settings > Broker tab. Enter your API Key, Secret, and User ID.\nEnable 'Auto-Login' by adding your TOTP secret (recommended).",
-                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+                     font=("Arial", 12, "bold"), text_color="#333", justify="left").pack(anchor="w", pady=5)
         ctk.CTkButton(row1, text="Go to Broker Settings", width=150, fg_color="#3498DB", 
                       command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
 
@@ -806,10 +1361,10 @@ class DashboardV2:
         row2 = ctk.CTkFrame(s2, fg_color="transparent")
         row2.pack(fill="both", expand=True, padx=20, pady=10)
         
-        ctk.CTkLabel(row2, text="2️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(row2, text="Set Capital Limits (Safety Box)", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row2, text="2️⃣", font=("Arial", 30), text_color="#1a1a1a").pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row2, text="Set Capital Limits (Safety Box)", font=("Roboto", 16, "bold"), text_color="#1a1a1a").pack(anchor="w")
         ctk.CTkLabel(row2, text="Go to Settings > Capital tab.\nSet 'Allocated Capital' (e.g., ₹50,000). This is the maximum the bot can touch.\nYour main broker balance remains safe.",
-                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+                     font=("Arial", 12, "bold"), text_color="#333", justify="left").pack(anchor="w", pady=5)
         ctk.CTkButton(row2, text="Go to Capital Settings", width=150, fg_color="#2ECC71", 
                       command=lambda: self.nav_bar.set("SETTINGS") or self.show_view("SETTINGS")).pack(side="right")
 
@@ -820,10 +1375,10 @@ class DashboardV2:
         row3 = ctk.CTkFrame(s3, fg_color="transparent")
         row3.pack(fill="both", expand=True, padx=20, pady=10)
         
-        ctk.CTkLabel(row3, text="3️⃣", font=("Arial", 30)).pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(row3, text="Select Strategy & Stocks", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row3, text="3️⃣", font=("Arial", 30), text_color="#1a1a1a").pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row3, text="Select Strategy & Stocks", font=("Roboto", 16, "bold"), text_color="#1a1a1a").pack(anchor="w")
         ctk.CTkLabel(row3, text="Review 'Strategies' tab to see active logic (e.g., RSI).\nGo to Settings > Stocks to add/remove symbols you want to trade.",
-                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+                     font=("Arial", 12, "bold"), text_color="#333", justify="left").pack(anchor="w", pady=5)
         ctk.CTkButton(row3, text="Go to Strategies", width=150, fg_color="#9B59B6", 
                       command=lambda: self.nav_bar.set("STRATEGIES") or self.show_view("STRATEGIES")).pack(side="right")
 
@@ -834,143 +1389,598 @@ class DashboardV2:
         row4 = ctk.CTkFrame(s4, fg_color="transparent")
         row4.pack(fill="both", expand=True, padx=20, pady=10)
         
-        ctk.CTkLabel(row4, text="🚀", font=("Arial", 30)).pack(side="left", padx=(0, 20))
-        ctk.CTkLabel(row4, text="Start the Engine", font=("Roboto", 16, "bold")).pack(anchor="w")
+        ctk.CTkLabel(row4, text="🚀", font=("Arial", 30), text_color="#1a1a1a").pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(row4, text="Start the Engine", font=("Roboto", 16, "bold"), text_color="#1a1a1a").pack(anchor="w")
         ctk.CTkLabel(row4, text="Go to DASHBOARD tab.\nClick 'START ENGINE' (Green Button).\nMonitor the 'Market Regime' and 'Logs' for activity.",
-                     font=("Arial", 12), text_color="#CCC", justify="left").pack(anchor="w", pady=5)
+                     font=("Arial", 12, "bold"), text_color="#333", justify="left").pack(anchor="w", pady=5)
         ctk.CTkButton(row4, text="Go to Dashboard", width=150, fg_color=COLOR_ACCENT, text_color="black", 
                       font=("Arial", 12, "bold"), command=lambda: self.nav_bar.set("DASHBOARD") or self.show_view("DASHBOARD")).pack(side="right")
 
-    def build_positions_table(self, parent):
-        # Filter/View Toggle
-        filter_frame = ctk.CTkFrame(parent, fg_color="transparent", height=35)
-        filter_frame.pack(fill="x", padx=10, pady=(5, 0))
+    # --- Scanner Methods (Integrated from Patch v2.0.1) ---
 
-        ctk.CTkLabel(filter_frame, text="Show:", font=("Roboto", 10), text_color="#AAA").pack(side="left", padx=(5, 10))
+    def build_scanner_view(self):
+        """
+        MACD SCANNER TAB - Modern UI v3.0 with Track-to-Stocks feature
+        """
+        # Import scanner engine
+        try:
+            from scanner_engine import MACDScanner
+            self.scanner_available = True
+        except ImportError as e:
+            self.scanner_available = False
+            error_msg = str(e)
 
-        self.holdings_filter_var = ctk.StringVar(value="ALL")
-        filter_segment = ctk.CTkSegmentedButton(
-            filter_frame,
-            values=["ALL", "BOT", "MANUAL"],
-            variable=self.holdings_filter_var,
-            command=self.filter_positions_display,
-            font=("Roboto", 13, "bold"),
-            height=32,
-            fg_color="#222",
-            selected_color=COLOR_ACCENT,
-            selected_hover_color="#00E5FF",
-            unselected_color="#111",
-            unselected_hover_color="#333",
-            corner_radius=6
+        # ── HEADER ──────────────────────────────────────────────────
+        header = ctk.CTkFrame(self.view_scanner, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 8), padx=20)
+
+        title_left = ctk.CTkFrame(header, fg_color="transparent")
+        title_left.pack(side="left")
+        ctk.CTkFrame(title_left, width=4, height=28, fg_color=COLOR_ACCENT, corner_radius=2).pack(side="left")
+        ctk.CTkLabel(title_left, text=" Market Scanner", font=("Roboto", 22, "bold"), text_color="#1a1a1a").pack(side="left", padx=8)
+        ctk.CTkLabel(title_left, text="MACD + Confluence", font=("Roboto", 13), text_color="#6B7280").pack(side="left", padx=(0, 10), pady=(4, 0))
+
+        # Compact hint (replaces verbose info card)
+        hint_frame = ctk.CTkFrame(header, fg_color="#EFF6FF", corner_radius=8, border_width=1, border_color="#BFDBFE")
+        hint_frame.pack(side="right", padx=5)
+        ctk.CTkLabel(hint_frame, text="  Scans 1200+ stocks for MACD bullish crossovers + MA confluence  ", font=("Roboto", 11), text_color="#1E40AF").pack(padx=10, pady=6)
+
+        # ── CONTROL BAR ────────────────────────────────────────────
+        control_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=10, border_width=1, border_color="#E5E7EB")
+        control_card.pack(fill="x", padx=20, pady=(0, 8))
+
+        control_inner = ctk.CTkFrame(control_card, fg_color="transparent")
+        control_inner.pack(fill="x", padx=16, pady=12)
+
+        # Mode selector
+        self.scan_mode_var = ctk.StringVar(value="FULL")
+        ctk.CTkLabel(control_inner, text="Mode", font=("Roboto", 12, "bold"), text_color="#6B7280").pack(side="left", padx=(0, 8))
+        ctk.CTkSegmentedButton(
+            control_inner,
+            values=["QUICK (300)", "FULL (1200+)"],
+            variable=self.scan_mode_var,
+            font=("Roboto", 13), height=36,
+            fg_color="#F3F4F6", selected_color=COLOR_ACCENT, text_color="#1a1a1a"
+        ).pack(side="left")
+
+        # Separator
+        ctk.CTkFrame(control_inner, width=1, height=30, fg_color="#D1D5DB").pack(side="left", padx=16)
+
+        # Start button
+        self.btn_start_scan = ctk.CTkButton(
+            control_inner, text="START SCAN", command=self.start_scanner,
+            fg_color=COLOR_SUCCESS, hover_color="#059669",
+            height=38, width=160, font=("Roboto", 14, "bold"), text_color="white", corner_radius=8
         )
-        filter_segment.pack(side="left")
+        self.btn_start_scan.pack(side="left", padx=(0, 8))
 
-        # Summary Stats
-        self.lbl_position_stats = ctk.CTkLabel(
-            filter_frame,
-            text="Positions: 0 • Bot: 0 • Manual: 0",
-            font=("Roboto", 9),
-            text_color="#666"
+        # Stop button (hidden initially)
+        self.btn_stop_scan = ctk.CTkButton(
+            control_inner, text="STOP", command=self.stop_scanner,
+            fg_color=COLOR_DANGER, hover_color="#DC2626",
+            height=38, width=100, font=("Roboto", 14, "bold"), text_color="white", corner_radius=8
         )
-        self.lbl_position_stats.pack(side="right", padx=10)
 
-        # Table Frame
-        table_frame = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=0)
-        table_frame.pack(fill="both", expand=True, padx=2, pady=5)
+        # Last scan info
+        self.lbl_last_scan = ctk.CTkLabel(control_inner, text="No scans run yet", font=("Roboto", 12), text_color="#9CA3AF")
+        self.lbl_last_scan.pack(side="right", padx=5)
 
-        cols = ("Symbol", "Source", "Qty", "Entry", "LTP", "P&L", "P&L %")
+        # ── PROGRESS BAR (hidden initially) ─────────────────────────
+        self.progress_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=8, border_width=1, border_color="#BFDBFE")
+        self.progress_card.pack(fill="x", padx=20, pady=(0, 6))
+        self.progress_card.pack_forget()
+
+        progress_inner = ctk.CTkFrame(self.progress_card, fg_color="transparent")
+        progress_inner.pack(fill="x", padx=16, pady=10)
+
+        self.scan_progress_bar = ctk.CTkProgressBar(progress_inner, height=10, progress_color=COLOR_ACCENT, fg_color="#E5E7EB", corner_radius=5)
+        self.scan_progress_bar.pack(fill="x", side="left", expand=True, padx=(0, 12))
+        self.scan_progress_bar.set(0)
+
+        self.lbl_scan_status = ctk.CTkLabel(progress_inner, text="Preparing...", font=("Roboto", 12), text_color="#1a1a1a", width=200)
+        self.lbl_scan_status.pack(side="right")
+
+        # ── RESULTS SECTION ─────────────────────────────────────────
+        results_card = ctk.CTkFrame(self.view_scanner, fg_color=COLOR_CARD, corner_radius=10, border_width=1, border_color="#E5E7EB")
+        results_card.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        # Top bar: title + filter + stats
+        top_bar = ctk.CTkFrame(results_card, fg_color="transparent")
+        top_bar.pack(fill="x", padx=16, pady=(12, 6))
+
+        # Results title
+        ctk.CTkLabel(top_bar, text="Scan Results", font=("Roboto", 15, "bold"), text_color="#1a1a1a").pack(side="left")
+
+        # Stats badges (right side)
+        stats_frame = ctk.CTkFrame(top_bar, fg_color="transparent")
+        stats_frame.pack(side="right")
+
+        self.lbl_strong_buy_badge = ctk.CTkLabel(
+            stats_frame, text=" 0 STRONG BUY ", font=("Roboto", 11, "bold"),
+            fg_color="#D1FAE5", text_color="#065F46", corner_radius=12
+        )
+        self.lbl_strong_buy_badge.pack(side="left", padx=4)
+
+        self.lbl_buy_badge = ctk.CTkLabel(
+            stats_frame, text=" 0 BUY ", font=("Roboto", 11, "bold"),
+            fg_color="#FEF3C7", text_color="#92400E", corner_radius=12
+        )
+        self.lbl_buy_badge.pack(side="left", padx=4)
+
+        # Filter row
+        filter_frame = ctk.CTkFrame(results_card, fg_color="transparent")
+        filter_frame.pack(fill="x", padx=16, pady=(0, 6))
+
+        ctk.CTkLabel(filter_frame, text="Filter:", font=("Roboto", 12), text_color="#9CA3AF").pack(side="left", padx=(0, 8))
+
+        self.scanner_filter_var = ctk.StringVar(value="ALL")
+        ctk.CTkSegmentedButton(
+            filter_frame, values=["ALL", "STRONG BUY", "BUY"],
+            variable=self.scanner_filter_var, command=self.filter_scanner_results,
+            font=("Roboto", 12), height=30,
+            fg_color="#F3F4F6", selected_color=COLOR_ACCENT, text_color="#1a1a1a"
+        ).pack(side="left")
+
+        # Legacy stats label (kept for handler compatibility)
+        self.lbl_scanner_stats = ctk.CTkLabel(filter_frame, text="", font=("Roboto", 1))
+        self.lbl_scanner_stats.pack_forget()
+
+        # ── TABLE ───────────────────────────────────────────────────
+        table_frame = ctk.CTkFrame(results_card, fg_color="#FAFBFC", corner_radius=6)
+        table_frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+
+        cols = ("Symbol", "Price", "Signal", "Cross Date", "20 DMA", "50 DMA", "Action")
 
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview", background="#111", foreground="white", fieldbackground="#111", rowheight=35, borderwidth=0, font=("Roboto", 10))
-        style.configure("Treeview.Heading", background="#1A1A1A", foreground="#888", font=("Roboto", 9, "bold"), borderwidth=0)
+        style.configure(
+            "Scanner.Treeview",
+            background="#FFFFFF", foreground="#1a1a1a", fieldbackground="#FFFFFF",
+            rowheight=38, font=("Roboto", 13)
+        )
+        style.configure(
+            "Scanner.Treeview.Heading",
+            background="#F8FAFC", foreground="#374151",
+            font=("Roboto", 13, "bold"), relief="flat"
+        )
+        style.map("Scanner.Treeview", background=[("selected", "#DBEAFE")], foreground=[("selected", "#1E40AF")])
 
-        self.pos_table = ttk.Treeview(table_frame, columns=cols, show="headings", height=8)
+        v_scroll = ttk.Scrollbar(table_frame, orient="vertical")
+
+        self.scanner_table = ttk.Treeview(
+            table_frame, columns=cols, show="headings",
+            style="Scanner.Treeview", yscrollcommand=v_scroll.set
+        )
+        v_scroll.config(command=self.scanner_table.yview)
+
+        col_config = {
+            "Symbol": (130, "w"), "Price": (100, "center"), "Signal": (130, "center"),
+            "Cross Date": (110, "center"), "20 DMA": (70, "center"), "50 DMA": (70, "center"),
+            "Action": (70, "center")
+        }
         for col in cols:
-            self.pos_table.heading(col, text=col.upper())
-            self.pos_table.column(col, anchor="center")
+            w, anchor = col_config.get(col, (80, "center"))
+            heading_text = "TRACK" if col == "Action" else col.upper()
+            self.scanner_table.heading(col, text=heading_text)
+            self.scanner_table.column(col, anchor=anchor, width=w, minwidth=50)
 
-        self.pos_table.column("Source", width=70)
-        self.pos_table.column("Symbol", width=100)
-        self.pos_table.column("Qty", width=60)
-        self.pos_table.column("Entry", width=80)
-        self.pos_table.column("LTP", width=80)
-        self.pos_table.column("P&L", width=90)
-        self.pos_table.column("P&L %", width=70)
+        self.scanner_table.grid(row=0, column=0, sticky="nsew")
+        v_scroll.grid(row=0, column=1, sticky="ns")
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
 
-        self.pos_table.pack(fill="both", expand=True)
-        self.pos_table.tag_configure("green", foreground=COLOR_SUCCESS)
-        self.pos_table.tag_configure("red", foreground=COLOR_DANGER)
-        self.pos_table.tag_configure("bot", background="#0A2A0A")  # Dark green tint for BOT
-        self.pos_table.tag_configure("manual", background="#2A2A0A")  # Dark yellow tint for MANUAL
+        # Row colors
+        self.scanner_table.tag_configure("strong_buy", background="#ECFDF5", foreground="#065F46")
+        self.scanner_table.tag_configure("buy", background="#FFFBEB", foreground="#92400E")
+        self.scanner_table.tag_configure("tracked", background="#EFF6FF", foreground="#1E40AF")
 
-        # Store all positions for filtering
-        self.all_positions_data = {}
+        # Bind click for Track action
+        self.scanner_table.bind("<ButtonRelease-1>", self.on_scanner_track_click)
+
+        # Empty state label (shown when no results)
+        self.lbl_scanner_empty = ctk.CTkLabel(
+            results_card, text="Run a scan to discover opportunities",
+            font=("Roboto", 14), text_color="#9CA3AF"
+        )
+        self.lbl_scanner_empty.pack(pady=20)
+
+        # Toast notification label (hidden, shown on track)
+        self.lbl_scanner_toast = ctk.CTkLabel(
+            results_card, text="", font=("Roboto", 12, "bold"),
+            fg_color="#D1FAE5", text_color="#065F46", corner_radius=8
+        )
+
+        # Check if scanner available
+        if not self.scanner_available:
+            self.btn_start_scan.configure(state="disabled", text="Scanner Not Available")
+            error_frame = ctk.CTkFrame(self.view_scanner, fg_color="#FEF2F2", corner_radius=8, border_width=1, border_color="#FECACA")
+            error_frame.pack(fill="x", padx=20, pady=10)
+            ctk.CTkLabel(
+                error_frame, text="Scanner engine not found. Ensure scanner_engine.py is in the project folder.",
+                font=("Roboto", 13), text_color="#991B1B"
+            ).pack(padx=16, pady=12)
+
+    def start_scanner(self):
+        """Start background scanner (Non-blocking)"""
+        if self.scanner_running:
+            return
+
+        try:
+            from scanner_engine import MACDScanner
+
+            # Get scan mode
+            mode_str = self.scan_mode_var.get()
+            if "300" in mode_str:
+                mode = "QUICK"
+                max_stocks = None  # Let scanner handle it
+            else:
+                mode = "FULL"  # 1200+ stocks (RECOMMENDED)
+                max_stocks = None
+
+            # UI updates
+            self.scanner_running = True
+            self.btn_start_scan.pack_forget()
+            self.btn_stop_scan.pack(side="left", padx=10)
+            self.progress_card.pack(fill="x", padx=20, pady=(0, 10))
+
+            # Clear previous results
+            for item in self.scanner_table.get_children():
+                self.scanner_table.delete(item)
+
+            self.write_log(f"🔍 Starting market scan ({mode_str} mode)...\n")
+
+            # Create scanner instance and store reference for stop propagation
+            scanner = MACDScanner(progress_callback=self.scanner_progress_update)
+            self.active_scanner = scanner
+
+            # Run in background thread (NON-BLOCKING)
+            def scan_worker():
+                try:
+                    results = scanner.scan_market(max_stocks=max_stocks, mode=mode)
+                    self.root.after(0, lambda: self.scanner_complete(results))
+                except Exception as e:
+                    self.root.after(0, lambda: self.scanner_error(str(e)))
+
+            self.scanner_thread = threading.Thread(target=scan_worker, daemon=True)
+            self.scanner_thread.start()
+
+        except Exception as e:
+            self.write_log(f"❌ Scanner start error: {e}\n")
+            self.scanner_running = False
+
+    def stop_scanner(self):
+        """Stop running scanner — propagates stop to scanner engine"""
+        self.scanner_running = False
+        if hasattr(self, 'active_scanner') and self.active_scanner:
+            self.active_scanner.stop()
+        self.write_log("⏹ Stopping scanner...\n")
+
+        # Reset UI
+        self.btn_stop_scan.pack_forget()
+        self.btn_start_scan.pack(side="left", padx=10)
+        self.progress_card.pack_forget()
+
+    def scanner_progress_update(self, current, total, message):
+        """Progress callback from scanner (Thread-safe)"""
+        def update_ui():
+            try:
+                # Store total for final report
+                self.last_scan_total = total
+                
+                # Ensure total is not zero to avoid division error
+                if total > 0:
+                    progress = current / total
+                    self.scan_progress_bar.set(progress)
+                    pct = int(progress * 100)
+                    self.lbl_scan_status.configure(text=f"[{pct}%] {message}")
+                else:
+                    self.lbl_scan_status.configure(text=message)
+            except Exception as e:
+                # Log UI update errors rather than passing silently
+                print(f"DEBUG: Scanner UI update error: {e}")
+
+        # Schedule the update on the main thread
+        self.root.after(0, update_ui)
+
+    def scanner_complete(self, results):
+        """Scanner finished successfully"""
+        self.scanner_running = False
+
+        # Store results
+        self.scanner_results = results
+
+        # Update UI
+        self.btn_stop_scan.pack_forget()
+        self.btn_start_scan.pack(side="left", padx=10)
+        self.progress_card.pack_forget()
+
+        # Update last scan timestamp
+        self.lbl_last_scan.configure(
+            text=f"Last scan: {datetime.now().strftime('%d-%b %H:%M')} • Found {len(results)} opportunities (scanned {self.last_scan_total} stocks)"
+        )
+
+        # Populate table
+        self.populate_scanner_results(results)
+
+        # Log
+        self.write_log(f"✅ Scan complete! Found {len(results)} actionable stocks.\n")
+
+        # Show summary
+        strong_buy = len([r for r in results if r.get('SIGNAL') == 'STRONG BUY'])
+        buy = len([r for r in results if r.get('SIGNAL') == 'BUY'])
+        self.write_log(f"   🟢 STRONG BUY: {strong_buy} | 🟡 BUY: {buy}\n")
+
+    def scanner_error(self, error_msg):
+        """Scanner failed"""
+        self.scanner_running = False
+        self.btn_stop_scan.pack_forget()
+        self.btn_start_scan.pack(side="left", padx=10)
+        self.progress_card.pack_forget()
+
+        self.write_log(f"❌ Scanner error: {error_msg}\n")
+
+    def _get_tracked_symbols(self):
+        """Get set of symbols already in stock config for quick lookup"""
+        try:
+            stocks = self.settings_mgr.get_stock_configs()
+            return {s.get('symbol', '').upper() for s in stocks}
+        except:
+            return set()
+
+    def populate_scanner_results(self, results):
+        """Populate scanner table with results + Track action column"""
+        # Clear table
+        for item in self.scanner_table.get_children():
+            self.scanner_table.delete(item)
+
+        # Hide empty state if we have results
+        if results:
+            self.lbl_scanner_empty.pack_forget()
+        else:
+            self.lbl_scanner_empty.pack(pady=20)
+
+        # Get tracked symbols for action column
+        tracked = self._get_tracked_symbols()
+
+        # Sort so STRONG BUY is first
+        sorted_results = sorted(results, key=lambda x: 0 if x.get('SIGNAL') == "STRONG BUY" else 1)
+
+        # Apply filter
+        filter_val = self.scanner_filter_var.get() if hasattr(self, 'scanner_filter_var') else "ALL"
+
+        strong_buy_count = 0
+        buy_count = 0
+
+        for r in sorted_results:
+            signal = r.get('SIGNAL', 'WATCH')
+            symbol = r.get('SYMBOL', 'N/A')
+
+            # Filter
+            if filter_val != "ALL" and signal != filter_val:
+                continue
+
+            # Count
+            if signal == 'STRONG BUY':
+                strong_buy_count += 1
+            else:
+                buy_count += 1
+
+            # Tag for coloring
+            is_tracked = symbol.upper() in tracked
+            tag = "tracked" if is_tracked else ("strong_buy" if signal == "STRONG BUY" else "buy")
+            action_text = "⚡ Trade" # Always allow smart trade
+            
+            self.scanner_table.insert(
+                "", END,
+                values=(
+                    symbol,
+                    f"{r.get('LTP', 0):,.2f}",
+                    signal,
+                    r.get('CROSS DATE', '-'),
+                    r.get('20 DMA', '-'),
+                    r.get('50 DMA', '-'),
+                    action_text
+                ),
+                tags=(tag,)
+            )
+
+        # Update badge counts
+        total = strong_buy_count + buy_count
+        self.lbl_strong_buy_badge.configure(text=f" {strong_buy_count} STRONG BUY ")
+        self.lbl_buy_badge.configure(text=f" {buy_count} BUY ")
+
+    def filter_scanner_results(self, value=None):
+        """Re-populate table with current filter"""
+        if hasattr(self, 'scanner_results'):
+            self.populate_scanner_results(self.scanner_results)
+
+    def on_scanner_track_click(self, event):
+        """Handle click on 'Trade' column to open Smart Trade Modal"""
+        # Identify which column was clicked
+        region = self.scanner_table.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+
+        col = self.scanner_table.identify_column(event.x)
+        # col returns "#1", "#2", ... "#7" — Action is column #7
+        if col != "#7":
+            return
+
+        item = self.scanner_table.identify_row(event.y)
+        if not item:
+            return
+
+        values = self.scanner_table.item(item, "values")
+        if not values or len(values) < 7:
+            return
+
+        symbol = values[0]
+        
+        # Find Result Dict
+        result_dict = None
+        if hasattr(self, 'scanner_results') and self.scanner_results:
+             result_dict = next((r for r in self.scanner_results if r['SYMBOL'] == symbol), None)
+        
+        if not result_dict:
+             self._show_scanner_toast(f"Details not found for {symbol}")
+             return
+             
+        # Extract data
+        ltp = result_dict.get('LTP', 0)
+        support = result_dict.get('SUPPORT', 0)
+        resistance = result_dict.get('RESISTANCE', 0)
+
+        # Success Callback
+        def on_trade_success():
+             # Add to Tracking Config automatically
+             try:
+                 new_stock = {
+                    "symbol": symbol.upper(),
+                    "exchange": "NSE",
+                    "enabled": True,
+                    "strategy": "TRADE",
+                    "timeframe": "15T",
+                    "buy_rsi": 40, 
+                    "sell_rsi": 70,
+                    "Ignore_RSI": False,
+                    "quantity": 0, 
+                    "profit_target_pct": 10.0
+                }
+                 self.settings_mgr.add_stock_config(new_stock)
+                 self.write_log(f"➕ {symbol} added to monitoring (Post-Trade).\n")
+                 
+                 # Refresh tables
+                 self.populate_scanner_results(self.scanner_results) 
+                 if hasattr(self, 'settings_gui_instance'):
+                     try: self.settings_gui_instance.refresh_stock_table()
+                     except: pass
+                 
+                 # Show Toast
+                 self._show_scanner_toast(f"Trade Executed & Monitored for {symbol}")
+                 
+             except Exception as e:
+                 self.write_log(f"⚠️ Tracking add error: {e}\n")
+
+        # Open Modal
+        SmartTradeModal(self.root, symbol, ltp, support, resistance, self.settings_mgr, on_success_callback=on_trade_success)
+
+
+    def _show_scanner_toast(self, message):
+        """Show brief toast notification in scanner results"""
+        self.lbl_scanner_toast.configure(text=f"  {message}  ")
+        self.lbl_scanner_toast.pack(pady=(0, 8))
+        # Auto-hide after 3 seconds
+        self.root.after(3000, lambda: self.lbl_scanner_toast.pack_forget())
+
+    # Note: Holdings filter & positions table are built in build_dashboard_view() (line ~490)
 
     def filter_positions_display(self, filter_value=None):
-        """Filter positions table by source (ALL/BOT/MANUAL)"""
+        """BUG-014 Fix: Filter positions by source (ALL/BOT/MANUAL) AND by market"""
         try:
+            # Hide Loading Indicator if it exists
+            if hasattr(self, 'lbl_pos_loading') and self.lbl_pos_loading.winfo_exists():
+                self.lbl_pos_loading.place_forget()
+
             filter_val = self.holdings_filter_var.get()
 
             # Clear table
             for item in self.pos_table.get_children():
                 self.pos_table.delete(item)
 
+            # Get configured stocks for current market (BUG-014: market filtering)
+            market_configs = self.settings_mgr.get_stock_configs(market=self.current_market) if hasattr(self.settings_mgr, 'get_stock_configs') else []
+            market_symbols = {cfg.get('symbol', '').upper() for cfg in market_configs} if market_configs else set()
+
             # Re-populate based on filter
             total_pnl = 0
             bot_count = 0
             manual_count = 0
+            market_filtered_count = 0
 
             for sym, pos in self.all_positions_data.items():
-                source = pos.get("source", "BOT")
+                symbol_str = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
 
-                # Apply filter
-                if filter_val != "ALL" and source != filter_val:
+                # BUG-014: Filter by market - only show positions configured for this market
+                if market_symbols and symbol_str.upper() not in market_symbols:
+                    market_filtered_count += 1
+                    continue
+
+                source = str(pos.get("source", "BOT")).upper()
+
+                # Determine if this is a Bot position (includes SETTLING)
+                is_bot = "BOT" in source
+                is_manual = not is_bot
+
+                # Apply source filter
+                if filter_val == "BOT" and not is_bot:
+                    continue
+                if filter_val == "MANUAL" and not is_manual:
                     continue
 
                 # Count
-                if source == "BOT":
+                if is_bot:
                     bot_count += 1
                 else:
                     manual_count += 1
 
-                s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
                 pnl = pos.get("pnl", 0)
                 qty = pos.get("qty", 0)
                 avg = pos.get("price", 0)
                 ltp = pos.get("ltp", 0)
+                if ltp is None: ltp = 0
 
                 # Calculate P&L percentage
                 pnl_pct = ((ltp - avg) / avg * 100) if avg > 0 else 0
 
                 total_pnl += pnl
                 tag = "green" if pnl >= 0 else "red"
-                source_tag = "bot" if source == "BOT" else "manual"
-
                 # Icon prefix for source
-                source_icon = "🤖" if source == "BOT" else "👤"
+                source_icon = "[BOT]" if is_bot else "[MANUAL]"
+                source_tag = "bot" if is_bot else "manual"
 
                 self.pos_table.insert(
                     "", END,
-                    values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
+                    values=(symbol_str, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
                     tags=(tag, source_tag)
                 )
 
-            # Update stats
+            # Update stats with market info (BUG-014)
             total_positions = bot_count + manual_count
-            self.lbl_position_stats.configure(
-                text=f"Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
-            )
-
+            market_name = self.current_market_config.name if hasattr(self, 'current_market_config') else self.current_market
+            stats_text = f"[{market_name}] Positions: {total_positions} • Bot: {bot_count} • Manual: {manual_count}"
+            if market_filtered_count > 0:
+                stats_text += f" (Hidden from other markets: {market_filtered_count})"
+            self.lbl_position_stats.configure(text=stats_text)
         except Exception as e:
-            self.write_log(f"❌ Filter error: {e}\n")
+            print(f"Filter error: {e}")
+
+    def update_positions(self, positions):
+        """Update positions data and refresh view"""
+        self.all_positions_data = positions
+        self.filter_positions_display()
 
     def build_hybrid_view(self):
         """View for managing existing holdings with the "Butler" toggle"""
         scroll = ctk.CTkScrollableFrame(self.view_hybrid, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=20, pady=20)
         
-        ctk.CTkLabel(scroll, text="🤝 HYBRID PORTFOLIO TAKE-OVER", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(anchor="w", pady=(0, 10))
+        header_row = ctk.CTkFrame(scroll, fg_color="transparent")
+        header_row.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(header_row, text="🤝 HYBRID PORTFOLIO TAKE-OVER", font=("Roboto", 24, "bold"), text_color=COLOR_ACCENT).pack(side="left")
+        
+        self.btn_select_all = ctk.CTkButton(
+            header_row, 
+            text="✅ SELECT ALL", 
+            command=self.toggle_all_butler,
+            fg_color="#333", 
+            hover_color=COLOR_ACCENT,
+            width=120,
+            height=32,
+            font=("Roboto", 12, "bold")
+        )
+        self.btn_select_all.pack(side="right")
+        
         ctk.CTkLabel(scroll, text="Let the bot manage your manual holdings. Enable 'Butler Mode' to apply RSI/Profit rules to existing stocks.", font=("Roboto", 13), text_color="#AAA").pack(anchor="w", pady=(0, 20))
         
         self.hybrid_list_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -984,27 +1994,31 @@ class DashboardV2:
             widget.destroy()
             
         try:
-            # Get latest positions
-            positions = self.all_positions_data or safe_get_live_positions_merged()
+            # Get latest positions (Non-blocking: use cached data only)
+            positions = self.all_positions_data
+            if not positions:
+                # If no data yet, don't block. The positions_worker will update all_positions_data soon.
+                ctk.CTkLabel(self.hybrid_list_frame, text="Loading portfolio data...", font=("Roboto", 14), text_color="#666").pack(pady=50)
+                return
             
-            # Group by manual vs bot (Butler mode typically applies to MANUAL)
-            manual_stocks = {k: v for k, v in positions.items() if v.get('source') == 'MANUAL'}
+            # Group by manual vs bot (Butler mode typically applies to MANUAL or already managed BUTLER)
+            manual_stocks = {k: v for k, v in positions.items() if v.get('source') in ['MANUAL', 'BUTLER']}
             
             if not manual_stocks:
                 ctk.CTkLabel(self.hybrid_list_frame, text="No manual holdings found in mStock portfolio.", font=("Roboto", 14), text_color="#666").pack(pady=50)
                 return
 
             # Header
-            header = ctk.CTkFrame(self.hybrid_list_frame, fg_color="#1A1A1A", height=40)
+            header = ctk.CTkFrame(self.hybrid_list_frame, fg_color="#F3F4F6", height=45, border_width=1, border_color="#D1D5DB")
             header.pack(fill="x", pady=(0, 10))
-            ctk.CTkLabel(header, text="STOCK", font=("Roboto", 11, "bold"), width=150, anchor="w").pack(side="left", padx=20)
-            ctk.CTkLabel(header, text="UNITS", font=("Roboto", 11, "bold"), width=100).pack(side="left")
-            ctk.CTkLabel(header, text="AVG PRICE", font=("Roboto", 11, "bold"), width=120).pack(side="left")
-            ctk.CTkLabel(header, text="BUTLER MODE (AUTO-SELL)", font=("Roboto", 11, "bold")).pack(side="right", padx=20)
+            ctk.CTkLabel(header, text="STOCK", font=("Roboto", 13, "bold"), text_color="#374151", width=150, anchor="w").pack(side="left", padx=20)
+            ctk.CTkLabel(header, text="UNITS", font=("Roboto", 13, "bold"), text_color="#374151", width=100).pack(side="left")
+            ctk.CTkLabel(header, text="AVG PRICE", font=("Roboto", 13, "bold"), text_color="#374151", width=120).pack(side="left")
+            ctk.CTkLabel(header, text="BUTLER MODE (AUTO-SELL)", font=("Roboto", 13, "bold"), text_color="#374151").pack(side="right", padx=20)
 
             # Rows
             for key, pos in manual_stocks.items():
-                row = TitanCard(self.hybrid_list_frame, border_color="#333", height=50)
+                row = TitanCard(self.hybrid_list_frame, border_color="#D1D5DB", height=55)
                 row.pack(fill="x", pady=2)
                 
                 sym = key[0] if isinstance(key, tuple) else str(key)
@@ -1017,9 +2031,9 @@ class DashboardV2:
                 inner = ctk.CTkFrame(row, fg_color="transparent")
                 inner.pack(fill="both", expand=True, padx=20)
                 
-                ctk.CTkLabel(inner, text=sym, font=("Roboto", 14, "bold"), width=150, anchor="w").pack(side="left")
-                ctk.CTkLabel(inner, text=str(qty), font=("Roboto", 13), width=100).pack(side="left")
-                ctk.CTkLabel(inner, text=f"₹{avg:,.2f}", font=("Roboto", 13), width=120).pack(side="left")
+                ctk.CTkLabel(inner, text=sym, font=("Roboto", 16, "bold"), text_color="#1a1a1a", width=150, anchor="w").pack(side="left")
+                ctk.CTkLabel(inner, text=str(qty), font=("Roboto", 15), text_color="#333", width=100).pack(side="left")
+                ctk.CTkLabel(inner, text=f"₹{avg:,.2f}", font=("Roboto", 15), text_color="#333", width=120).pack(side="left")
                 
                 sw = ctk.CTkSwitch(inner, text="Enabled" if is_managed else "Disabled", 
                                   command=lambda s=key, v=is_managed: self.toggle_butler_mode(s),
@@ -1051,6 +2065,46 @@ class DashboardV2:
         except Exception as e:
             self.write_log(f"❌ butler toggle error: {e}\n")
 
+    def toggle_all_butler(self):
+        """Enable or Disable all manual holdings for Butler Mode"""
+        try:
+            # Get latest positions
+            positions = self.all_positions_data or safe_get_live_positions_merged()
+            manual_stocks = {k: v for k, v in positions.items() if v.get('source') in ['MANUAL', 'BUTLER']}
+            
+            if not manual_stocks:
+                return
+
+            current_managed = state_mgr.state.get('managed_holdings', {})
+            
+            # Determine if we should Enable all or Disable all
+            # If any are disabled, enable all. If all are enabled, disable all.
+            any_disabled = False
+            for key in manual_stocks.keys():
+                if not current_managed.get(str(key), False):
+                    any_disabled = True
+                    break
+            
+            target_state = any_disabled # True if we want to enable all
+            
+            for key in manual_stocks.keys():
+                current_managed[str(key)] = target_state
+            
+            state_mgr.state['managed_holdings'] = current_managed
+            state_mgr.save()
+            
+            action = "ENABLED" if target_state else "DISABLED"
+            self.write_log(f"🤝 Bulk Butler Mode: {action} all manual holdings\n")
+            
+            # Update button text
+            self.btn_select_all.configure(text="❌ DESELECT ALL" if target_state else "✅ SELECT ALL")
+            
+            # Redraw
+            self.refresh_hybrid_holdings()
+            
+        except Exception as e:
+            self.write_log(f"❌ bulk butler error: {e}\n")
+
     # --- DRAWING UTILS (Stubbed for v2) ---
     def draw_mock_graph(self, canvas, color):
         pass
@@ -1064,26 +2118,55 @@ class DashboardV2:
         else: self.stop_bot()
 
     def start_bot(self):
-        import kickstart
-        kickstart.reset_stop_flag()
-        kickstart.set_log_callback(self.write_log)  # Connect logs to UI
-        kickstart.initialize_from_csv()             # Load Symbols!
-        
-        self.running = True
-        self.stop_update_flag.clear()
-        self.btn_start.configure(text="🛑 STOP ENGINE", fg_color=COLOR_DANGER, hover_color="#D50000")
-        self.write_log("--- Trade Execution Monitor Initialized ---\n")
-        # Force scroll to monitor tab if possible (needs specialized logic, but at least ensure log sees it)
-        try: 
-            if hasattr(self, 'trade_log'): self.trade_log.see("0.0") 
-        except: pass
+        try:
+            import kickstart
+            self.write_log("DEBUG: Calling reset_stop_flag...\n")
+            kickstart.reset_stop_flag()
+            
+            self.write_log("DEBUG: Setting log callback...\n")
+            kickstart.set_log_callback(self.write_log)  # Connect logs to UI
+            
+            self.write_log("DEBUG: Initializing stock configs...\n")
+            kickstart.initialize_stock_configs()             # Load Symbols (Migrated from CSV)
+            
+            self.running = True
+            self.stop_update_flag.clear()
+            self.btn_start.configure(text="STOP ENGINE", fg_color=COLOR_DANGER, hover_color="#D50000")
+            
+            self.write_log("--- Trade Execution Monitor Initialized ---\n")
+            
+            # REMOVED: trade_log.see("0.0") - Potential cause of silent TclError handling issues
+            # try: 
+            #     if hasattr(self, 'trade_log'): self.trade_log.see("0.0") 
+            # except: pass
 
-        if hasattr(self, 'lbl_engine_status'):
-             self.lbl_engine_status.configure(text="STATUS: RUNNING 🟢", text_color=COLOR_SUCCESS)
-        
-        self.write_log("🚀 ENGINE STARTED. Waiting for data...\n")
-        threading.Thread(target=self.engine_loop, daemon=True).start()
-        threading.Thread(target=self.rsi_worker, daemon=True).start()
+            try:
+                self.write_log("DEBUG: Updating status label...\n")
+                if hasattr(self, 'lbl_engine_status'):
+                     self.lbl_engine_status.configure(text="STATUS: RUNNING", text_color=COLOR_SUCCESS)
+            except Exception as e_lbl:
+                 print(f"Status Label Update Failed: {e_lbl}")
+
+            self.write_log("ENGINE STARTED. Waiting for data...\n")
+            
+            self.write_log("DEBUG: Starting threads...\n")
+            
+            t1 = threading.Thread(target=self.engine_loop, daemon=True)
+            t1.start()
+            
+            t2 = threading.Thread(target=self.rsi_worker, daemon=True)
+            t2.start()
+
+            # Start Connectivity Monitor (Missing piece for Offline Recovery)
+            # This thread will now run in background and keep OFFLINE status updated
+            t3 = threading.Thread(target=kickstart.connectivity_monitor, daemon=True)
+            t3.start()
+            
+        except Exception as e:
+            import traceback
+            err = traceback.format_exc()
+            self.write_log(f"CRITICAL ERROR IN START_BOT: {e}\n{err}\n")
+            print(f"CRITICAL ERROR IN START_BOT: {e}\n{err}") # Also print to console
 
     def stop_bot(self):
         if messagebox.askyesno("STOP", "Stop Trading Engine?"):
@@ -1101,14 +2184,29 @@ class DashboardV2:
             self.write_log("--- Trade Execution Monitor Stopped ---\n")
 
     def engine_loop(self):
-        import kickstart
+        msg = f"DEBUG: engine_loop thread STARTED. Parent running={self.running}, stop_event={self.stop_update_flag.is_set()}\n"
+        self.write_log(msg)
+        
+        try:
+            import kickstart
+            import sys
+            self.write_log(f"DEBUG: Kickstart imported from: {kickstart.__file__}\n")
+        except Exception as import_err:
+            self.write_log(f"CRITICAL: Failed to import kickstart: {import_err}\n")
+            return
+        
         while not self.stop_update_flag.is_set():
             try:
-                if not self.running: break
+                if not self.running:
+                    break
                 kickstart.run_cycle()
             except Exception as e:
-                self.write_log(f"Engine Cycle Error: {e}\n")
-            time.sleep(0.5) # High-frequency heartbeat (Restoring base behavior)
+                import traceback
+                self.write_log(f"❌ Engine Cycle Error: {e}\n")
+            
+            # Use dynamic beat frequency from settings
+            beat = getattr(kickstart, 'ENGINE_BEAT_SECONDS', 2.0)
+            time.sleep(beat)
 
     def rsi_worker(self):
         # ... logic similar to previous ...
@@ -1121,7 +2219,7 @@ class DashboardV2:
             
     def _rsi_task(self, symbol, exchange, tf_map):
          try:
-            from kickstart import get_stabilized_rsi, config_dict
+            from kickstart import get_stabilized_rsi, config_dict, fetch_market_data
             conf = config_dict.get((symbol, exchange), {})
             timeframe = conf.get("Timeframe", "15T")
             instrument_token = conf.get("instrument_token")
@@ -1135,7 +2233,7 @@ class DashboardV2:
             
             ts, rsi_val = get_stabilized_rsi(symbol, exchange, timeframe, instrument_token, live_price=ltp)
             if rsi_val: 
-                self.data_queue.put(("rsi", (symbol, rsi_val)))
+                self.data_queue.put(("rsi", (symbol, rsi_val, ltp)))
          except Exception as e:
             # print(f"RSI Task Error for {symbol}: {e}")
             pass
@@ -1154,11 +2252,27 @@ class DashboardV2:
                 dtype, data = self.data_queue.get_nowait()
                 if dtype == "positions": self.update_positions(data)
                 elif dtype == "sentiment": self.update_sentiment(data)
-                elif dtype == "rsi": pass # Update rsi list if we had one
+                elif dtype == "rsi": 
+                    # data = (symbol, rsi_val, ltp)
+                    sym, rsi_val, ltp = data
+                    # Update LTP in all_positions_data if it exists
+                    updated = False
+                    for key in self.all_positions_data:
+                        if (isinstance(key, tuple) and key[0] == sym) or str(key) == sym:
+                            self.all_positions_data[key]['ltp'] = ltp
+                            updated = True
+                    
+                    if updated:
+                        # Refresh display (throttled/batched)
+                        self.filter_positions_display(self.holdings_filter_var.get() if hasattr(self, 'holdings_filter_var') else "ALL")
         except queue.Empty: pass
         finally: self.root.after(1000, self.update_ui_loop)
 
     def update_positions(self, data):
+        """Update the positions table and summary stats"""
+        # DEBUG: Print to console
+        print(f"🔄 Dashboard Update: Received {len(data)} positions. Filter: {self.holdings_filter_var.get() if hasattr(self, 'holdings_filter_var') else 'N/A'}")
+        
         # Store all positions data for filtering
         self.all_positions_data = data
 
@@ -1167,66 +2281,76 @@ class DashboardV2:
             self.pos_table.delete(item)
 
         total_pnl = 0
-        used_capital = 0
-        bot_count = 0
-        manual_count = 0
+        total_bot = 0
+        total_manual = 0
+        bot_total_pnl = 0
+        
+        # Determine current filter (Case-insensitive)
+        filter_val = self.holdings_filter_var.get().upper() if hasattr(self, 'holdings_filter_var') else "ALL"
 
-        filter_val = self.holdings_filter_var.get()
-
+        # 1. First pass: Count everything (Totals)
+        used_capital = 0.0
         for sym, pos in data.items():
-            source = pos.get("source", "BOT")
-
-            # Apply filter
-            if filter_val != "ALL" and source != filter_val:
-                continue
-
-            # Count
-            if source == "BOT":
-                bot_count += 1
+            source = str(pos.get("source", "BOT")).upper()
+            if "BOT" in source:
+                total_bot += 1
+                bot_total_pnl += pos.get("pnl", 0)
+                # Calculate capital used by bot
+                qty = pos.get("qty", 0)
+                avg_price = pos.get("price", 0)
+                used_capital += qty * avg_price
             else:
-                manual_count += 1
+                total_manual += 1
+            total_pnl += pos.get("pnl", 0)
 
+        # 2. Second pass: Populate table based on filter
+        for sym, pos in data.items():
+            source = str(pos.get("source", "BOT")).upper()
+            is_bot = "BOT" in source
+            
+            # Apply Filter
+            if filter_val == "BOT" and not is_bot: continue
+            if filter_val == "MANUAL" and is_bot: continue
+
+            # Format data for display
             s = f"{sym[0]}" if isinstance(sym, tuple) else str(sym)
             pnl = pos.get("pnl", 0)
             qty = pos.get("qty", 0)
             avg = pos.get("price", 0)
             ltp = pos.get("ltp", 0)
-
-            # Calculate P&L percentage
             pnl_pct = ((ltp - avg) / avg * 100) if avg > 0 else 0
-
-            # Calculate metrics
-            invested = qty * avg
-            if source == "BOT":
-                used_capital += invested
-
-            total_pnl += pnl
+            
             tag = "green" if pnl >= 0 else "red"
-            source_tag = "bot" if source == "BOT" else "manual"
-
-            # Icon prefix for source
-            source_icon = "🤖" if source == "BOT" else "👤"
+            source_icon = "🤖" if is_bot else "👤"
 
             self.pos_table.insert(
                 "", END,
                 values=(s, f"{source_icon} {source}", qty, f"₹{avg:.2f}", f"₹{ltp:.2f}", f"₹{pnl:.2f}", f"{pnl_pct:+.1f}%"),
-                tags=(tag, source_tag)
+                tags=(tag, "bot" if is_bot else "manual")
             )
 
-        # Update Summary Stats Label
+        # 3. Update Summary Stats Label
         if hasattr(self, 'lbl_position_stats'):
+            now_str = datetime.now().strftime("%H:%M")
             self.lbl_position_stats.configure(
-                text=f"Positions: {len(data)} • Bot: {bot_count} • Manual: {manual_count}"
+                text=f"🕘 Dashboard Sync {now_str} • Bot: {total_bot} • Manual: {total_manual}"
             )
 
-        # Update position stats with Live indicator
-        total_positions = bot_count + manual_count
-        now_str = datetime.now().strftime("%H:%M")
-        self.lbl_position_stats.configure(
-            text=f"🟢 Live {now_str} • {total_positions} positions (Bot: {bot_count} | Manual: {manual_count})"
-        )
-
-        self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
+        # 4. Update Main P&L
+        if hasattr(self, 'lbl_pnl'):
+            self.lbl_pnl.configure(text=f"₹{total_pnl:,.2f}", text_color=COLOR_SUCCESS if total_pnl >= 0 else COLOR_DANGER)
+        
+        # 5. Update Bot P&L
+        if hasattr(self, 'lbl_bot_pnl'):
+            color = COLOR_SUCCESS if bot_total_pnl >= 0 else COLOR_DANGER
+            prefix = "+" if bot_total_pnl > 0 else ""
+            self.lbl_bot_pnl.configure(text=f"BOT P&L: {prefix}₹{bot_total_pnl:,.2f}", text_color=color)
+        
+        # Update Bot P&L
+        if hasattr(self, 'lbl_bot_pnl'):
+            color = COLOR_SUCCESS if bot_total_pnl >= 0 else COLOR_DANGER
+            prefix = "+" if bot_total_pnl > 0 else ""
+            self.lbl_bot_pnl.configure(text=f"BOT P&L: {prefix}₹{bot_total_pnl:,.2f}", text_color=color)
         
         # Update Safety Box Bar
         try:
@@ -1234,8 +2358,10 @@ class DashboardV2:
             limit = ALLOCATED_CAPITAL
             if limit > 0:
                 pct = min(1.0, used_capital / limit)
-                self.cap_bar.set(pct)
-                self.lbl_cap_usage.configure(text=f"₹{used_capital:,.0f} / ₹{limit:,.0f}")
+                if hasattr(self, 'wallet_progress'):
+                    self.wallet_progress.set(pct)
+                if hasattr(self, 'lbl_deployed'):
+                    self.lbl_deployed.configure(text=f"Used: ₹{used_capital:,.0f} ({pct*100:.0f}%)")
         except: pass
 
     def update_sentiment(self, data):
@@ -1274,8 +2400,8 @@ class DashboardV2:
                     positions = safe_get_live_positions_merged()
                     deployed = 0.0
                     for sym, pos in positions.items():
-                        source = pos.get("source", "BOT")
-                        if source == "BOT":
+                        source = pos.get("source", "BOT").upper()
+                        if "BOT" in source:
                             qty = pos.get("qty", 0)
                             avg_price = pos.get("price", 0)
                             deployed += qty * avg_price
@@ -1327,28 +2453,35 @@ class DashboardV2:
         """Update Bot Wallet Breakdown Card"""
         try:
             # Update total allocated
-            self.lbl_total_allocated.configure(text=f"₹{allocated:,.0f}")
+            if hasattr(self, 'lbl_total_allocated'):
+                self.lbl_total_allocated.configure(text=f"₹{allocated:,.0f}")
 
             # Calculate percentages
             if allocated > 0:
                 pct_deployed = (deployed / allocated) * 100
-                pct_available = 100 - pct_deployed
-                available = allocated - deployed
+                
+                # Logic Fix: Available cannot be negative
+                available = max(0, allocated - deployed)
+                
+                # Pct available is based on the clamped available amount relative to allocated
+                pct_available = (available / allocated) * 100
 
                 # Update progress bar
-                self.wallet_progress.set(min(1.0, deployed / allocated))
+                if hasattr(self, 'wallet_progress'):
+                    self.wallet_progress.set(min(1.0, deployed / allocated))
+
+                    # Dynamic color
+                    color = COLOR_SUCCESS
+                    if pct_deployed > 90: color = COLOR_DANGER
+                    elif pct_deployed > 70: color = COLOR_WARN
+                    self.wallet_progress.configure(progress_color=color)
 
                 # Update labels
-                self.lbl_deployed.configure(text=f"₹{deployed:,.0f} ({pct_deployed:.0f}%)")
-                self.lbl_available_wallet.configure(text=f"₹{available:,.0f} ({pct_available:.0f}%) Available")
-
-                # Change color based on usage
-                if pct_deployed > 90:
-                    self.wallet_progress.configure(progress_color=COLOR_DANGER)
-                elif pct_deployed > 70:
-                    self.wallet_progress.configure(progress_color=COLOR_WARN)
-                else:
-                    self.wallet_progress.configure(progress_color=COLOR_SUCCESS)
+                if hasattr(self, 'lbl_deployed'):
+                    self.lbl_deployed.configure(text=f"Used: ₹{deployed:,.0f} ({pct_deployed:.0f}%)")
+                    
+                if hasattr(self, 'lbl_available_wallet'):
+                    self.lbl_available_wallet.configure(text=f"₹{available:,.0f} ({pct_available:.0f}%) Available")
 
         except Exception as e:
             self.write_log(f"❌ Wallet update error: {e}\n")
@@ -1373,7 +2506,7 @@ class DashboardV2:
                 
                 if DATABASE_AVAILABLE and db:
                     perf_data = db.get_performance_summary(days=1)
-                    recent_trades_list = db.get_recent_trades(limit=5)
+                    recent_trades_list = db.get_recent_trades(limit=10)
                     today_trades_list = db.get_today_trades()
 
                 # 3. Fetch Positions (API - Shared with engine)
@@ -1387,6 +2520,13 @@ class DashboardV2:
                 self.root.after(0, lambda: self._update_quick_monitor_ui(
                     wallet_balance, perf_data, recent_trades_list, today_trades_list, live_pos_data
                 ))
+                
+                # 5. Check for unmanaged holdings
+                self.root.after(0, lambda: self.check_unmanaged_holdings(live_pos_data))
+
+                # 6. Check Setup Status (New)
+                self.root.after(0, self.check_setup_status)
+
             except Exception as e:
                 # self.write_log(f"Quick Monitor Fetch Error: {e}\n")
                 pass
@@ -1402,6 +2542,11 @@ class DashboardV2:
             # 1. Update Positions Table
             if live_pos:
                 self.update_positions(live_pos)
+            
+            # 1b. Update Trades History Table (Live Sync - only if not empty)
+            if recent_trades:
+                self.refresh_trades_history()
+
                 
             # 2. Update Wallet Balance with change detection
             if balance != -1 and hasattr(self, 'lbl_total_balance'):
@@ -1418,44 +2563,19 @@ class DashboardV2:
                 if allocated <= 0:
                     allocated = self.settings_mgr.get("capital.total_capital", 50000.0)
                 
-                # Calculate currently deployed (BOT only)
+                # Calculate currently deployed (BOT only - Strict Summation)
                 deployed = 0.0
                 if live_pos:
                     for sym, pos in live_pos.items():
-                        if pos.get("source") == "BOT":
+                        # Only sum positions that are strictly tagged as BOT or BOT (SETTLING)
+                        # This excludes BUTLER (Managed) and MANUAL positions from capital usage.
+                        src = str(pos.get("source", "BOT")).upper()
+                        if src == "BOT" or "SETTLING" in src:
                             deployed += pos.get("qty", 0) * pos.get("price", 0)
 
-                # Update Bot Capital labels with change detection
-                if hasattr(self, 'lbl_total_allocated'):
-                    new_alloc_txt = f"₹{allocated:,.0f}"
-                    if getattr(self.lbl_total_allocated, "_current_text", "") != new_alloc_txt:
-                        self.lbl_total_allocated.configure(text=new_alloc_txt)
-                        self.lbl_total_allocated._current_text = new_alloc_txt
-
-                if hasattr(self, 'lbl_deployed'):
-                    new_dep_txt = f"Used: ₹{deployed:,.0f}"
-                    if getattr(self.lbl_deployed, "_current_text", "") != new_dep_txt:
-                        self.lbl_deployed.configure(text=new_dep_txt)
-                        self.lbl_deployed._current_text = new_dep_txt
-
-                if hasattr(self, 'wallet_progress') and allocated > 0:
-                    new_prog = min(1.0, deployed / allocated)
-                    if getattr(self, "_current_prog", -1) != new_prog:
-                        self.wallet_progress.set(new_prog)
-                        self._current_prog = new_prog
-                        
-                        # Dynamic color
-                        pct = new_prog * 100
-                        color = COLOR_SUCCESS if pct < 70 else COLOR_WARN if pct < 90 else COLOR_DANGER
-                        self.wallet_progress.configure(progress_color=color)
-
-                if hasattr(self, 'lbl_available_wallet') and allocated > 0:
-                    avail = max(0, allocated - deployed)
-                    avail_pct = max(0, 100 - (deployed/allocated*100))
-                    new_avail_txt = f"₹{avail:,.0f} ({avail_pct:.0f}%) Available"
-                    if getattr(self.lbl_available_wallet, "_current_text", "") != new_avail_txt:
-                        self.lbl_available_wallet.configure(text=new_avail_txt)
-                        self.lbl_available_wallet._current_text = new_avail_txt
+                # UNIFIED UPDATE: Use common method
+                self.update_wallet_display(allocated, deployed)
+                
             except: pass
 
             # 4. Update P&L
@@ -1470,11 +2590,17 @@ class DashboardV2:
             
             # 5. Update Trade Count
             if hasattr(self, 'lbl_trade_count'):
-                count = len(today_trades) if today_trades is not None else 0
+                count = 0
+                if today_trades is not None:
+                    if hasattr(today_trades, 'empty'):
+                        count = len(today_trades.index)
+                    else:
+                        count = len(today_trades)
+                
                 new_text = f"{count} trades today"
-                if getattr(self.lbl_trade_count, "_current_text", "") != new_text:
-                    self.lbl_trade_count.configure(text=new_text)
-                    self.lbl_trade_count._current_text = new_text
+                if getattr(self, "_current_trade_count_text", "") != new_text:
+                    self.lbl_trade_count.configure(text=new_text, text_color="#333")
+                    self.lbl_trade_count._current_trade_count_text = new_text
             
             # 6. Update Win Rate
             if hasattr(self, 'lbl_win_rate'):
@@ -1483,48 +2609,170 @@ class DashboardV2:
                 rate = perf.get('win_rate', 0)
                 new_text = f"{rate}% ({win}W / {lose}L)"
                 if getattr(self.lbl_win_rate, "_current_text", "") != new_text:
-                    self.lbl_win_rate.configure(text=new_text)
+                    self.lbl_win_rate.configure(text=new_text, text_color="#1a1a1a")
                     self.lbl_win_rate._current_text = new_text
             
-            # 7. Update Recent Trades (Smart Refresh)
-            if hasattr(self, 'recent_trades_frame') and recent_trades:
-                current_top_id = f"{recent_trades[0].get('symbol')}_{recent_trades[0].get('timestamp')}"
-                if getattr(self, "_prev_top_trade_id", "") != current_top_id:
-                    for widget in self.recent_trades_frame.winfo_children():
-                        widget.destroy()
+                    # 7. Update Recent Trades (Temporal Grouping)
+                    now = datetime.now()
+                    today_str = now.strftime("%Y-%m-%d")
+                    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+                    last_week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
                     
-                    for trade in recent_trades:
-                        action = trade.get('action', '?').upper()
-                        symbol = trade.get('symbol', '?')
-                        qty = trade.get('quantity', 0)
-                        price = trade.get('price', 0)
+                    buckets = {"TODAY": [], "YESTERDAY": [], "LAST WEEK": [], "OLDER": []}
+                    for t in recent_trades:
+                        t_date = t.get('timestamp', '')[:10]
+                        if t_date == today_str: buckets["TODAY"].append(t)
+                        elif t_date == yesterday_str: buckets["YESTERDAY"].append(t)
+                        elif t_date >= last_week_start: buckets["LAST WEEK"].append(t)
+                        else: buckets["OLDER"].append(t)
+
+                    for b_name, b_trades in buckets.items():
+                        if not b_trades: continue
                         
-                        action_icon = "🟢" if action == "BUY" else "🔴"
-                        color = COLOR_SUCCESS if action == "BUY" else COLOR_DANGER
+                        # Header
+                        h_row = ctk.CTkFrame(self.recent_trades_frame, fg_color="#F3F4F6", corner_radius=4)
+                        h_row.pack(fill="x", pady=(2, 1))
+                        ctk.CTkLabel(h_row, text=f" {b_name}", font=("Roboto", 9, "bold"), text_color="#666").pack(side="left", padx=5)
                         
-                        row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
-                        row.pack(fill="x", pady=1)
-                        ctk.CTkLabel(row, text=f"{action_icon} {action}", font=("Roboto", 10, "bold"), text_color=color).pack(side="left")
-                        ctk.CTkLabel(row, text=f" {symbol} {qty} @ ₹{price:.1f}", font=("Roboto", 10), text_color="#CCC").pack(side="left")
+                        for t in b_trades:
+                            # Row
+                            row = ctk.CTkFrame(self.recent_trades_frame, fg_color="transparent")
+                            row.pack(fill="x", pady=1)
+                            
+                            sym = t.get('symbol', '???')
+                            action = t.get('action', 'BUY')
+                            price = float(t.get('price', 0))
+                            
+                            # Relative Time
+                            rel_time = self._get_relative_time(t.get('timestamp', ''))
+                            
+                            # Color based on action
+                            color = "#10B981" if action == "BUY" else "#EF4444"
+                            
+                            ctk.CTkLabel(row, text=sym, font=("Roboto", 10, "bold"), width=60, anchor="w").pack(side="left", padx=5)
+                            ctk.CTkLabel(row, text=action, font=("Roboto", 9), text_color=color, width=40).pack(side="left")
+                            ctk.CTkLabel(row, text=f"₹{price:,.1f}", font=("Roboto", 10), anchor="e", width=60).pack(side="left", padx=5)
+                            ctk.CTkLabel(row, text=rel_time, font=("Roboto", 9), text_color="#888", anchor="e").pack(side="right", padx=5)
                     
                     self._prev_top_trade_id = current_top_id
 
-            # 8. Update Live Execution Counters
+            # 8. Update Live Execution Counters from StateManager (Source of Truth)
             try:
+                from state_manager import state as state_mgr
+                
+                # Use StateManager as source of truth for execution counters
                 counters = state_mgr.get_trade_counters()
-                for key, attr in [('attempts', 'lbl_attempt_count'), ('success', 'lbl_success_count'), ('failed', 'lbl_fail_count')]:
+                attempts = counters.get('attempts', 0)
+                success = counters.get('success', 0)
+                failed = counters.get('failed', 0)
+
+                # Sync local trade_stats for consistency
+                self.trade_stats['attempts'] = attempts
+                self.trade_stats['success'] = success
+                self.trade_stats['failed'] = failed
+
+                # Update UI labels
+                for val_to_set, attr in [(attempts, 'lbl_attempt_count'), (success, 'lbl_success_count'), (failed, 'lbl_fail_count')]:
                     if hasattr(self, attr):
                         lbl = getattr(self, attr)
-                        val = str(counters.get(key, 0))
-                        if getattr(lbl, "_current_val", "") != val:
-                            lbl.configure(text=val)
-                            lbl._current_val = val
-            except: pass
+                        val_str = str(val_to_set)
+                        if getattr(lbl, "_current_val", "") != val_str:
+                            lbl.configure(text=val_str)
+                            lbl._current_val = val_str
+                
+                # 9. Update Engine Heartbeat
+                if hasattr(self, 'lbl_heartbeat') and self.running:
+                    # We can use state.get('last_update') which is updated every cycle
+                    last_upd = state_mgr.state.get('last_update')
+                    if last_upd:
+                        # Extract time component: 2026-02-02T13:28:26.123 -> 13:28:26
+                        t_part = last_upd.split('T')[-1].split('.')[0]
+                        self.lbl_heartbeat.configure(text=f"Last Cycle: {t_part}", text_color=COLOR_ACCENT)
+                    else:
+                        self.lbl_heartbeat.configure(text="Engine Active... 💓", text_color=COLOR_ACCENT)
+                elif hasattr(self, 'lbl_heartbeat'):
+                    self.lbl_heartbeat.configure(text="Engine Idle", text_color="gray")
+
+            except Exception as e:
+                import sys
+                print(f"DEBUG: Counter Sync Error: {e}", file=sys.__stderr__)
         except Exception as e:
             pass # Silent fail to prevent UI lockup in loop
             
         except Exception as e:
             print(f"UI Update Error: {e}")
+
+    def check_setup_status(self):
+        """Check if essential settings are missing and show a dashboard notice"""
+        try:
+            # Hot-reload settings 
+            # (Note: we use self.settings_mgr which is initialized in __init__)
+            self.settings_mgr.load()
+            
+            api_key = self.settings_mgr.get("broker.api_key")
+            client_code = self.settings_mgr.get("broker.client_code")
+            
+            # If settings are missing, show alert
+            if not api_key or not client_code:
+                if hasattr(self, 'lbl_warning_banner'):
+                    self.lbl_warning_banner.configure(
+                        text="⚠️ SETUP INCOMPLETE: API Key or Client Code is missing.\nTrading is disabled. Go to Settings to configure.",
+                        text_color="#EF4444" # Red
+                    )
+                    self.lbl_warning_banner.pack(fill="x", pady=(0, 10), before=self.lbl_total_balance)
+                    
+            # If settings ARE present, we check for unmanaged (which overrides this slot if present)
+            # The 'check_unmanaged_holdings' method runs after this and manages the SAME banner widget.
+            # So if unmanaged holdings exist, they will take precedence or overwrite this message.
+            # To fix this conflict:
+            # 1. We let check_unmanaged_holdings run only if setup is complete.
+            # 2. Or we make check_unmanaged_holdings smarter.
+            
+            # Since check_unmanaged_holdings is called SEPARATELY in the thread loop,
+            # we need to coordinate.
+            # See check_unmanaged_holdings modification below.
+            
+        except Exception: 
+            pass
+
+    def check_unmanaged_holdings(self, positions):
+        """Alert user if there are holdings not being managed for risk"""
+        # PRIORITY CHECK: If Setup is incomplete, don't overwrite the Setup Warning
+        api_key = self.settings_mgr.get("broker.api_key")
+        if not api_key:
+            # check_setup_status handles the warning
+            return
+
+        if not positions:
+            if hasattr(self, 'lbl_warning_banner'):
+                 self.lbl_warning_banner.pack_forget()
+            return
+
+        unmanaged = []
+        managed_keys = state_mgr.state.get('managed_holdings', {})
+        
+        for key, pos in positions.items():
+            source = str(pos.get("source", "BOT")).upper()
+            is_bot = "BOT" in source
+            is_settling = "SETTLING" in source
+            
+            # If not BOT, not SETTLING, and not enabled in Butler Mode, it's unmanaged
+            if not is_bot and not is_settling:
+                is_butler = managed_keys.get(str(key), False)
+                if not is_butler:
+                    sym = key[0] if isinstance(key, tuple) else str(key)
+                    unmanaged.append(sym)
+                    
+        if unmanaged and hasattr(self, 'lbl_warning_banner'):
+            count = len(unmanaged)
+            stocks_str = ", ".join(unmanaged[:3]) + ("..." if count > 3 else "")
+            self.lbl_warning_banner.configure(
+                text=f"⚠️ {count} UNMANAGED HOLDINGS\n({stocks_str})\nRisk triggers are OFF for these.",
+                text_color=COLOR_WARN # Orange/Amber
+            )
+            self.lbl_warning_banner.pack(fill="x", pady=(0, 10), before=self.lbl_total_balance)
+        elif hasattr(self, 'lbl_warning_banner'):
+            self.lbl_warning_banner.pack_forget()
 
     def write_log(self, text):
         """Redirect print/logs to UI Console and Alert Box (Thread-Safe)"""
@@ -1544,52 +2792,44 @@ class DashboardV2:
         
         # 1. Technical Log (Bottom/Logs Tab) - Show Everything
         try:
-            if hasattr(self, 'log_area'):
-                self.log_area.configure(state="normal")
-                self.log_area.insert("end", formatted + "\n")
-                self.log_area.see("end")
-                self.log_area.configure(state="disabled")
+            # Use log_viewer (defined at 897) or log_area (legacy reference)
+            target_log = getattr(self, 'log_viewer', getattr(self, 'log_area', None))
+            if target_log and target_log.winfo_exists():
+                target_log.configure(state="normal")
+                target_log.insert("end", formatted + "\n")
+                target_log.see("end")
+                target_log.configure(state="disabled")
         except: pass
         
         # 2. Trade Activity Monitor (Tab 2) - LIVE EXECUTION TRACKING
         text_lower = text.lower()
         
-        # Check for trade-related keywords include RSI
-        is_trade_event = any(x in text_lower for x in ["buy", "sell", "order", "triggered", "executing", "simulation", "rsi", "signal"])
-        is_failure = any(x in text_lower for x in ["failed", "rejected", "error", "insufficient", "circuit", "cycle error"])
-        is_success = any(x in text_lower for x in ["placed", "success", "executed", "filled"])
+        # ONLY show actual trade actions: BUY, SELL, Orders placed/executed
+        # Exclude: debug messages, allocation settings, engine status, RSI readings
+        is_trade_action = any(x in text_lower for x in [
+            "attempting buy", "attempting sell",  # Trade attempts
+            "buy order", "sell order",             # Order placement
+            "executed", "filled", "placed",        # Successful trades
+            "order rejected", "order failed",      # Failed trades
+            "stop loss triggered", "profit target hit",  # Exit conditions
+            "⚡ signal",                            # Trade signals
+            "initialized", "status", "bot started", "monitoring", # System Status
+            "paper trade", "buy", "sell",          # Explicit Actions
+            "market closed", "heartbeat", "engine started", "loop", "wait", "online" # ADDED: Vital Status Updates
+        ])
+        is_failure = any(x in text_lower for x in ["failed", "rejected", "insufficient"])
+        is_success = any(x in text_lower for x in ["placed", "executed", "filled"])
         
-        # Force show RSI logs
-        if "RSI" in text or "signal" in text:
-             is_trade_event = True
-
-        if is_trade_event or is_failure:
+        # Skip debug messages, engine status, allocation settings
+        is_noise = any(x in text_lower for x in ["debug", "allocation", "module", "cycle start"])
+        
+        if is_trade_action and not is_noise:
             try:
-                # Update Counters
-                if "BUY" in text or "BC" in text: 
-                    self.trade_stats['attempts'] += 1 if "Triggered" in text else 0
-                if is_success: self.trade_stats['success'] += 1
-                if is_failure: self.trade_stats['failed'] += 1
-                
-                # Update UI Counters (Safe Check with Anti-Flicker)
-                if hasattr(self, 'lbl_attempt_count'):
-                    att_val = str(self.trade_stats['attempts'])
-                    if getattr(self.lbl_attempt_count, "_current_val", "") != att_val:
-                        self.lbl_attempt_count.configure(text=att_val)
-                        self.lbl_attempt_count._current_val = att_val
-                        
-                    succ_val = str(self.trade_stats['success'])
-                    if getattr(self.lbl_success_count, "_current_val", "") != succ_val:
-                        self.lbl_success_count.configure(text=succ_val)
-                        self.lbl_success_count._current_val = succ_val
-                        
-                    fail_val = str(self.trade_stats['failed'])
-                    if getattr(self.lbl_fail_count, "_current_val", "") != fail_val:
-                        self.lbl_fail_count.configure(text=fail_val)
-                        self.lbl_fail_count._current_val = fail_val
+                # UPDATE: Counters are now synchronized directly with StateManager in _update_quick_monitor_ui
+                # to ensure data integrity across components and restarts.
                 
                 # Update Activity Log Textbox
-                if hasattr(self, 'trade_log'):
+                if hasattr(self, 'trade_log') and self.trade_log.winfo_exists():
                     self.trade_log.configure(state="normal")
                     prefix = "❌ " if is_failure else "✅ " if is_success else "ℹ "
                     self.trade_log.insert("0.0", f"{timestamp} {prefix} {text}\n") # Insert at top
@@ -1601,7 +2841,7 @@ class DashboardV2:
         should_alert = False
         is_tech_error = any(x in text for x in ["Exception", "Expecting value", "No price data"])
         
-        if is_trade_event and not is_tech_error:
+        if is_trade_action and not is_tech_error:
              should_alert = True
         elif "⚠" in text and not is_tech_error:
              should_alert = True
@@ -1615,6 +2855,49 @@ class DashboardV2:
                     if len(content.splitlines()) > 50:
                         self.alert_box.delete("50.0", "end")
             except: pass
+    
+    def panic_stop_confirm(self):
+        """Family-friendly STOP EVERYTHING confirmation (v2.4.0)"""
+        # Clear, non-alarming message explaining what happens
+        confirm_message = (
+            "This will STOP the trading engine immediately.\n\n"
+            "What happens:\n"
+            "• Bot stops monitoring the market\n"
+            "• No new trades will be placed\n"
+            "• All pending orders will be cancelled\n\n"
+            "What stays safe:\n"
+            "• Your existing stocks remain in your account\n"
+            "• Your money is NOT withdrawn\n"
+            "• You can restart anytime\n\n"
+            "Do you want to stop the bot?"
+        )
+        
+        if messagebox.askyesno("Stop Trading Bot?", confirm_message, icon="warning"):
+            try:
+                # Import and call request_stop from kickstart
+                from kickstart import request_stop
+                request_stop()
+                
+                # Update UI to show stopped state
+                self.running = False
+                if hasattr(self, 'btn_start'):
+                    self.btn_start.configure(text="▶ START", fg_color=COLOR_SUCCESS)
+                if hasattr(self, 'lbl_engine_status'):
+                    self.lbl_engine_status.configure(text="STOPPED 🔴", text_color=COLOR_DANGER)
+                if hasattr(self, 'lbl_heartbeat'):
+                    self.lbl_heartbeat.configure(text="Engine stopped by user", text_color=COLOR_DANGER)
+                    
+                self.write_log("🛑 ENGINE STOPPED - User pressed emergency stop\n")
+                
+                messagebox.showinfo(
+                    "Bot Stopped",
+                    "The trading bot has been stopped safely.\n\n"
+                    "Your existing positions are still open.\n"
+                    "Click 'START' when you're ready to resume."
+                )
+            except Exception as e:
+                self.write_log(f"❌ Stop error: {e}\n")
+                messagebox.showerror("Error", f"Failed to stop engine: {e}")
     
     def emergency_exit(self):
         if messagebox.askyesno("CONFIRM", "Panic Sell All?"):
@@ -1633,32 +2916,58 @@ def check_single_instance():
         except: pass
 
 def show_disclaimer(root, on_accept):
-    """Shows disclaimer on the provided root window"""
+    """Shows disclaimer on the provided root window using stable Tkinter"""
+    import tkinter as tk
+    from tkinter import ttk
+    
     # Clear root
     for widget in root.winfo_children():
         widget.destroy()
         
     root.title("⚠️ Important Disclaimer")
-    root.geometry("650x550")
+    root.geometry("800x700")
     
-    # Center logic (roughly)
+    # Center logic
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    x = (screen_width // 2) - (600 // 2)
-    y = (screen_height // 2) - (500 // 2)
+    x = (screen_width // 2) - 400
+    y = (screen_height // 2) - 350
     root.geometry(f"+{int(x)}+{int(y)}")
 
-    ctk.CTkLabel(root, text="⚠️ ARUN TRADING BOT", font=("Arial", 24, "bold"), text_color="#E74C3C").pack(pady=(30, 10))
-    ctk.CTkLabel(root, text="User Responsibility Agreement", font=("Arial", 16)).pack(pady=(0, 20))
+    # Style
+    style = ttk.Style()
+    try:
+        style.theme_use('clam')
+    except:
+        pass
+        
+    style.configure("Disclaimer.TFrame", background="#F8F9FA")
+    style.configure("DTitle.TLabel", font=("Segoe UI", 28, "bold"), foreground="#DC3545", background="#F8F9FA")
+    style.configure("DSub.TLabel", font=("Segoe UI", 16), background="#F8F9FA")
+    
+    main_frame = ttk.Frame(root, style="Disclaimer.TFrame", padding=30)
+    main_frame.pack(fill="both", expand=True)
+    
+    ttk.Label(main_frame, text="⚠️ ORBIT TRADING", style="DTitle.TLabel").pack()
+    ttk.Label(main_frame, text="User Responsibility Agreement", style="DSub.TLabel").pack(pady=(5, 20))
 
-    text_frame = ctk.CTkFrame(root, fg_color="#2B2B2B")
-    text_frame.pack(fill="both", expand=True, padx=30, pady=10)
+    text_container = ttk.Frame(main_frame)
+    text_container.pack(fill="both", expand=True)
+
+    textbox = tk.Text(text_container, wrap="word", font=("Segoe UI", 14), 
+                      padx=20, pady=20, bg="white", fg="#212529", 
+                      relief="flat", highlightthickness=1, highlightbackground="#DEE2E6")
+    scrollbar = ttk.Scrollbar(text_container, orient="vertical", command=textbox.yview)
+    textbox.configure(yscrollcommand=scrollbar.set)
+    
+    scrollbar.pack(side="right", fill="y")
+    textbox.pack(side="left", fill="both", expand=True)
 
     disclaimer_text = """
     ⚠️ CRITICAL WARNING - READ BEFORE PROCEEDING ⚠️
 
     1. NOT FINANCIAL ADVICE
-    The ARUN Trading Bot is a SOFTWARE TOOL ONLY. It does NOT provide investment, financial, legal, or tax advice.
+    ORBIT TRADING is a SOFTWARE TOOL ONLY. It does NOT provide investment, financial, legal, or tax advice.
     
     2. HIGH RISK - POTENTIAL TOTAL LOSS
     Trading stocks and derivatives involves significant risk. You could lose SOME or ALL of your invested capital.
@@ -1671,16 +2980,13 @@ def show_disclaimer(root, on_accept):
     4. PAPER TRADING FIRST
     You MUST test your strategies in "Paper Trading" mode before risking real money.
     
-    By clicking "I ACCEPT", you confirm you understand these risks.
+    By clicking "I ACCEPT", you confirm you understand these risks and accept full responsibility for your trading activities.
     """
     
-    textbox = ctk.CTkTextbox(text_frame, wrap="word", font=("Arial", 12))
-    textbox.insert("0.0", disclaimer_text)
+    textbox.insert("1.0", disclaimer_text)
     textbox.configure(state="disabled")
-    textbox.pack(fill="both", expand=True, padx=10, pady=10)
 
     def accept():
-        # Clear disclaimer widgets
         for widget in root.winfo_children():
             widget.destroy()
         on_accept()
@@ -1688,12 +2994,310 @@ def show_disclaimer(root, on_accept):
     def decline():
         sys.exit(0)
 
-    btn_frame = ctk.CTkFrame(root, fg_color="transparent")
-    btn_frame.pack(pady=20)
+    btn_frame = ttk.Frame(main_frame, style="Disclaimer.TFrame")
+    btn_frame.pack(fill="x", pady=(20, 0))
     
-    ctk.CTkButton(btn_frame, text="I ACCEPT", command=accept, fg_color="#27AE60", font=("Arial", 14, "bold"), width=200).grid(row=0, column=0, padx=10)
-    ctk.CTkButton(btn_frame, text="DECLINE", command=decline, fg_color="#C0392B", font=("Arial", 14, "bold"), width=150).grid(row=0, column=1, padx=10)
+    # Custom styles for buttons
+    style.configure("Accept.TButton", font=("Segoe UI", 16, "bold"), padding=15, foreground="white", background="#28A745")
+    style.map("Accept.TButton", background=[('active', '#218838'), ('!disabled', '#28A745')])
+    
+    style.configure("Decline.TButton", font=("Segoe UI", 16, "bold"), padding=15, foreground="white", background="#DC3545")
+    style.map("Decline.TButton", background=[('active', '#C82333'), ('!disabled', '#DC3545')])
 
+    ttk.Button(btn_frame, text="I ACCEPT & UNDERSTAND RISKS", command=accept, style="Accept.TButton").pack(side="left", fill="x", expand=True, padx=(0, 10))
+    ttk.Button(btn_frame, text="DECLINE (EXIT)", command=decline, style="Decline.TButton").pack(side="right", fill="x", expand=True)
+
+
+def check_single_instance():
+    """
+    Ensure only one instance of the dashboard is running via lock file.
+    Handles stale locks by checking process existence.
+    """
+    lock_file = os.path.join(tempfile.gettempdir(), "sensei_v1.lock")
+    
+    if os.path.exists(lock_file):
+        try:
+            with open(lock_file, "r") as f:
+                pid = int(f.read().strip())
+            
+            # Check if process is still running
+            if psutil:
+                is_running = psutil.pid_exists(pid)
+            else:
+                # Fallback to os.kill if psutil is somehow missing later
+                if os.name == 'nt':
+                    try:
+                        # On Windows, os.kill(pid, 0) can fail with WinError 87
+                        # if the PID is invalid or already half-dead.
+                        # We use a broader try-except.
+                        os.kill(pid, 0) 
+                        is_running = True
+                    except (OSError, SystemError):
+                        is_running = False
+                else:
+                    try:
+                        os.kill(pid, 0)
+                        is_running = True
+                    except OSError:
+                        is_running = False
+            
+            if is_running:
+                # Check if it's OUR process (paranoid check) - skipped for simplicity
+                # Alert user and exit
+                root = ctk.CTk()
+                root.withdraw() # Hide main window
+                messagebox.showerror("Already Running", "An instance of Sensei Dashboard is already open.")
+                sys.exit(0)
+            else:
+                # Stale lock, remove it
+                try:
+                    os.remove(lock_file)
+                except: pass
+                
+        except (ValueError, OSError):
+            # Corrupt lock file or other error, remove it
+            try:
+                os.remove(lock_file)
+            except: pass
+
+    # Create new lock
+    try:
+        with open(lock_file, "w") as f:
+            f.write(str(os.getpid()))
+        
+        # Register cleanup
+        def cleanup_lock():
+            try:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+            except: pass
+            
+        atexit.register(cleanup_lock)
+        
+        
+    except Exception as e:
+        print(f"Failed to create lock file: {e}")
+
+# -----------------------------------------------------------------------------
+# SMART TRADE MODAL (New Feature)
+# Note: Using tk.Toplevel for compatibility
+# -----------------------------------------------------------------------------
+try:
+    # Try to use CTkToplevel if available
+    _ToplevelBase = ctk.CTkToplevel
+except AttributeError:
+    # Fallback to tk.Toplevel
+    import tkinter as tk
+    _ToplevelBase = tk.Toplevel
+
+class SmartTradeModal(_ToplevelBase):
+    def __init__(self, parent, symbol, ltp, support, resistance, settings_mgr, on_success_callback=None):
+        super().__init__(parent)
+        self.title(f"⚡ Smart Trade: {symbol}")
+        self.geometry("420x680")
+        self.resizable(False, False)
+        self.attributes("-topmost", True)
+        
+        self.symbol = symbol
+        self.ltp = float(ltp)
+        self.support = float(support)
+        self.resistance = float(resistance)
+        self.settings_mgr = settings_mgr
+        self.on_success = on_success_callback
+        
+        # Defaults
+        self.risk_pct = 2.0  # Default 2% Risk
+        self.capital = 100000.0 # Default Capital (should fetch from settings/live)
+        
+        # Fetch Capital from Settings if available
+        try:
+            self.capital = float(settings_mgr.get("risk.max_capital", 100000.0))
+        except: pass
+        
+        # UI Layout
+        self._build_ui()
+        self._calculate_quantity() # Initial calculation
+        
+    def _build_ui(self):
+        # Header
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=20)
+        
+        ctk.CTkLabel(header, text=f"{self.symbol}", font=("Roboto", 24, "bold"), text_color="#1a1a1a").pack(anchor="w")
+        ctk.CTkLabel(header, text=f"LTP: ₹{self.ltp:,.2f}", font=("Roboto", 16), text_color=COLOR_ACCENT).pack(anchor="w")
+        
+        # Form Container
+        form = ctk.CTkFrame(self, fg_color="#F9FAFB", corner_radius=10)
+        form.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # 1. Entry Price (Editable)
+        self._add_input(form, "Entry Price (₹)", self.ltp, "entry_var")
+        
+        # 2. Stop Loss (Auto-filled from Support)
+        self._add_input(form, "Stop Loss (₹)", self.support, "sl_var")
+        ctk.CTkLabel(form, text=f"Support: {self.support}", font=("Arial", 10), text_color="gray").pack(anchor="w", padx=20, pady=(0, 5))
+        
+        # 3. Target (Auto-filled 1:2)
+        risk_per_share = self.ltp - self.support
+        target_price = self.ltp + (risk_per_share * 2) if risk_per_share > 0 else self.ltp * 1.05
+        self._add_input(form, "Target Price (₹)", target_price, "target_var")
+        
+        # 4. Risk % Slider
+        ctk.CTkLabel(form, text="Risk Per Trade (%)", font=("Roboto", 12, "bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(10, 0))
+        self.risk_slider = ctk.CTkSlider(form, from_=0.5, to=5.0, number_of_steps=9, command=self._on_risk_change)
+        self.risk_slider.set(self.risk_pct)
+        self.risk_slider.pack(fill="x", padx=20, pady=5)
+        self.lbl_risk_pct = ctk.CTkLabel(form, text=f"{self.risk_pct}%", font=("Roboto", 12, "bold"), text_color=COLOR_ACCENT)
+        self.lbl_risk_pct.pack(anchor="e", padx=20)
+        
+        # 5. Quantity (Calculated)
+        self._add_input(form, "Quantity (Calc)", 1, "qty_var", readonly=False) # Editable but auto-calcs also
+        
+        # Stats Box
+        self.stats_frame = ctk.CTkFrame(self, fg_color="#EFF6FF", corner_radius=8, border_width=1, border_color="#BFDBFE")
+        self.stats_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self.lbl_risk_amt = ctk.CTkLabel(self.stats_frame, text="Risk: ₹1000", font=("Roboto", 13), text_color="#1E40AF")
+        self.lbl_risk_amt.pack(side="left", padx=15, pady=10)
+        
+        self.lbl_rr = ctk.CTkLabel(self.stats_frame, text="R:R: 1:2.0", font=("Roboto", 13, "bold"), text_color="#059669")
+        self.lbl_rr.pack(side="right", padx=15, pady=10)
+        
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        ctk.CTkButton(btn_frame, text="Cancel", fg_color="transparent", border_width=1, border_color="#D1D5DB", text_color="gray", command=self.destroy).pack(side="left", expand=True, fill="x", padx=(0, 10))
+        
+        self.btn_place = ctk.CTkButton(btn_frame, text="⚡ PLACE ORDER", fg_color=COLOR_ACCENT, font=("Roboto", 14, "bold"), command=self._place_order)
+        self.btn_place.pack(side="right", expand=True, fill="x", padx=(10, 0))
+
+        # Bind events for recalc
+        self.entry_var.trace_add("write", self._recalc)
+        self.sl_var.trace_add("write", self._recalc)
+        self.target_var.trace_add("write", self._recalc)
+        # Qty manual override check? Maybe later.
+
+    def _add_input(self, parent, label, value, var_name, readonly=False):
+        ctk.CTkLabel(parent, text=label, font=("Roboto", 12, "bold"), text_color="#374151").pack(anchor="w", padx=20, pady=(5, 0))
+        var = ctk.StringVar(value=f"{float(value):.2f}" if isinstance(value, float) else str(value))
+        setattr(self, var_name, var)
+        entry = ctk.CTkEntry(parent, textvariable=var, border_color="#E5E7EB")
+        entry.pack(fill="x", padx=20, pady=5)
+        if readonly: entry.configure(state="readonly")
+        
+    def _on_risk_change(self, value):
+        self.risk_pct = round(value, 1)
+        self.lbl_risk_pct.configure(text=f"{self.risk_pct}%")
+        self._calculate_quantity()
+        
+    def _recalc(self, *args):
+        # Triggered on manual entry change
+        # We need to distinguish between User Typing vs Auto-Calc to avoid loop
+        # For now, simplistic recalc on Entry/SL change
+        try:
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            
+            if entry <= 0 or sl <= 0 or entry <= sl:
+                return # Invalid for Long trade
+                
+            risk_per_share = entry - sl
+            total_risk = self.capital * (self.risk_pct / 100.0)
+            qty = int(total_risk / risk_per_share)
+            
+            # Update Qty var without triggering another trace?
+            # self.qty_var.set(str(qty)) # This might loop if we traced qty too. We didn't trace qty.
+            
+            # Logic: If user changes Entry/SL -> Recalc Qty.
+            # If user changes Qty manually -> Update Risk Stats (requires reverse logic)
+            # Simplification: Always drive Qty from Risk parameters for "Smart Buy"
+            
+            self._update_stats(qty, entry, sl, float(self.target_var.get()))
+            
+        except ValueError:
+            pass
+
+    def _calculate_quantity(self):
+        try:
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            
+            if entry > sl:
+                risk_per_share = entry - sl
+                total_risk = self.capital * (self.risk_pct / 100.0)
+                qty = max(1, int(total_risk / risk_per_share))
+                self.qty_var.set(str(qty))
+                self._update_stats(qty, entry, sl, float(self.target_var.get()))
+            else:
+                 self.qty_var.set("0")
+        except:
+             self.qty_var.set("0")
+
+    def _update_stats(self, qty, entry, sl, target):
+        risk_amt = (entry - sl) * qty
+        reward_amt = (target - entry) * qty
+        rr = reward_amt / risk_amt if risk_amt > 0 else 0
+        
+        self.lbl_risk_amt.configure(text=f"Risk: ₹{risk_amt:,.0f}")
+        self.lbl_rr.configure(text=f"R:R: 1:{rr:.1f}")
+
+    def _place_order(self):
+        try:
+            qty = int(self.qty_var.get())
+            entry = float(self.entry_var.get())
+            sl = float(self.sl_var.get())
+            target = float(self.target_var.get())
+            
+            # Call Backend
+            import kickstart
+            # We use Limit order if price specified, else Market? 
+            # Smart Buy implies Limit at Entry Price usually.
+            
+            # Place Order
+            success = kickstart.place_order(
+                symbol=self.symbol,
+                exchange="NSE",
+                qty=qty,
+                side="BUY",
+                instrument_token=None, # Will auto-resolve
+                price=entry # Limit Price
+            )
+            
+            if success:
+                # Add to DB
+                try:
+                    from database.trades_db import TradesDatabase
+                    db = TradesDatabase()
+                    db.insert_trade(
+                        symbol=self.symbol,
+                        exchange="NSE",
+                        action="BUY",
+                        quantity=qty,
+                        price=entry,
+                        gross_amount=entry*qty,
+                        total_fees=0,
+                        net_amount=entry*qty,
+                        strategy="Smart Buy (Scanner)",
+                        reason=f"Scanner Signal | Stop: {sl} | Target: {target}",
+                        broker="BOT"
+                    )
+                    
+                    # Log Info for Risk Manager (Optional: DB is enough usually)
+                    # We should also ensure the bot starts monitoring it.
+                    # kickstart.run_cycle() will pick it up from positions/orders merge.
+                    
+                    messagebox.showinfo("Success", f"Order Placed for {qty} x {self.symbol}")
+                    if self.on_success: self.on_success()
+                    self.destroy()
+                    
+                except Exception as db_e:
+                     messagebox.showwarning("Warning", f"Order Placed but DB Error: {db_e}")
+            else:
+                messagebox.showerror("Error", "Failed to place order via Broker API")
+                
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
 if __name__ == "__main__":
     try:
@@ -1702,10 +3306,26 @@ if __name__ == "__main__":
         # Initialize Root ONCE
         ctk.set_appearance_mode("dark")
         root = ctk.CTk()
-        root.title("ARUN TITAN V2 - Launcher")
+        root.title("ORBIT TRADING V2 - Launcher")
         
         def start_dashboard():
             # This runs after disclaimer accept
+            
+            # v2.4.0: Check if first-run wizard is needed
+            # v2.4.0: Check if first-run wizard is needed
+            # DISABLED per user request (relying on Dashboard Notice instead)
+            # try:
+            #     from first_run_wizard import should_show_wizard, FirstRunWizard
+            #     if should_show_wizard():
+            #         print("🧙 First-run wizard detected - launching setup...")
+            #         wizard = FirstRunWizard(on_complete_callback=lambda: None)
+            #         wizard.run()  # Blocks until wizard completes
+            #         print("✅ Wizard complete - launching dashboard...")
+            # except ImportError:
+            #     print("⚠️ first_run_wizard.py not found, skipping wizard")
+            # except Exception as e:
+            #     print(f"⚠️ Wizard error: {e} - continuing to dashboard")
+            
             app = DashboardV2(root)
             # No need to call app.run() since we have root.mainloop() below
         

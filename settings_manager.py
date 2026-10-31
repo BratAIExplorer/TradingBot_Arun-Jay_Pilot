@@ -13,10 +13,22 @@ import base64
 
 class SettingsManager:
     """
-    Manages bot settings with validation and defaults
+    Manages bot settings with validation and defaults.
+    Singleton pattern — all SettingsManager() calls return the same instance
+    to prevent stale-data races between multiple copies.
     """
-    
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, settings_file: str = "settings.json"):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, settings_file: str = "settings.json"):
+        if SettingsManager._initialized:
+            return
+        SettingsManager._initialized = True
         self.settings_file = settings_file
         self.settings = {}
         self._encryption_key = self._get_or_create_encryption_key()
@@ -58,16 +70,48 @@ class SettingsManager:
     
     def save(self) -> bool:
         """
-        Save current settings to JSON file
+        Save current settings to JSON file and create a backup
         """
         try:
+            # Create backup before saving (or after, but let's do it on successful save)
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
+            
+            self._create_backup()
             print(f"✅ Settings saved to {self.settings_file}")
             return True
         except Exception as e:
             print(f"❌ Error saving settings: {e}")
             return False
+
+    def _create_backup(self):
+        """
+        Create a timestamped backup of settings.json in the logs directory.
+        Maintains only the last 5 backups.
+        """
+        try:
+            import shutil
+            from datetime import datetime
+            import glob
+
+            # Ensure logs directory exists
+            log_dir = "logs"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+
+            # Create new backup
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = os.path.join(log_dir, f"settings_backup_{timestamp}.json")
+            shutil.copy2(self.settings_file, backup_name)
+            
+            # Clean up old backups (keep last 5)
+            backups = sorted(glob.glob(os.path.join(log_dir, "settings_backup_*.json")))
+            if len(backups) > 5:
+                for old_backup in backups[:-5]:
+                    os.remove(old_backup)
+                    
+        except Exception as e:
+            print(f"⚠️ Settings backup failed: {e}")
     
     def get(self, key_path: str, default=None):
         """
@@ -90,9 +134,24 @@ class SettingsManager:
     
     def _get_or_create_encryption_key(self) -> bytes:
         """
-        Get or create encryption key for sensitive data
-        Stores key in .encryption_key file (should be added to .gitignore)
+        Get or create encryption key for sensitive data.
+        
+        Priority:
+        1. ARUN_ENCRYPTION_KEY environment variable (recommended for production)
+        2. .encryption_key file (legacy, for local development)
         """
+        # Check environment variable first (recommended for production)
+        env_key = os.environ.get("ARUN_ENCRYPTION_KEY")
+        if env_key:
+            # Ensure it's valid Fernet key (44 base64 chars)
+            try:
+                key_bytes = env_key.encode() if isinstance(env_key, str) else env_key
+                Fernet(key_bytes)  # Validate key format
+                return key_bytes
+            except Exception:
+                print("⚠️ Invalid ARUN_ENCRYPTION_KEY format, falling back to file")
+        
+        # Fall back to file-based key
         key_file = ".encryption_key"
         if os.path.exists(key_file):
             with open(key_file, 'rb') as f:
@@ -103,6 +162,7 @@ class SettingsManager:
             with open(key_file, 'wb') as f:
                 f.write(key)
             print("🔐 New encryption key generated for sensitive data")
+            print("💡 For production, set ARUN_ENCRYPTION_KEY environment variable")
             return key
     
     def _encrypt_value(self, value: str) -> str:
@@ -198,18 +258,121 @@ class SettingsManager:
         is_valid = len(errors) == 0
         return is_valid, errors
     
-    def get_stock_configs(self) -> list:
+    def get_stock_rule(self, symbol: str, exchange: str, key: str, default=None):
         """
-        Load stock configurations from CSV (backward compatibility)
-        TODO: Migrate to settings.json
+        Get per-stock rule with fallback to default.
+
+        Priority:
+        1. If stock exists and key is present: return stock value (even if None)
+        2. If stock exists but key missing: return default
+        3. If stock not found: return default
+
+        Example:
+            mgr.get_stock_rule("HDFCBANK", "NSE", "risk_tier", default="moderate")
+            # Returns "aggressive" if set per-stock, else "moderate"
+        """
+        stocks = self.get_stock_configs()
+
+        # Find matching stock by symbol and exchange
+        for stock in stocks:
+            if stock.get("symbol") == symbol and stock.get("exchange") == exchange:
+                # Stock found: return key value if it exists (even if None)
+                if key in stock:
+                    return stock[key]
+                # Key not in stock config: return default
+                return default
+
+        # Stock not found: return default
+        return default
+
+    def get_stock_configs(self, market: str = None) -> list:
+        """
+        Get stock configurations from settings.json
+        Optionally filter by market (IN or US)
+        Migrates from CSV if necessary
+        """
+        # Auto-migrate if stocks not in settings but CSV exists
+        if 'stocks' not in self.settings and os.path.exists('config_table.csv'):
+            self.migrate_stock_configs()
+
+        stocks = self.settings.get('stocks', [])
+
+        # Filter by market if specified (BUG-014: market filtering)
+        if market:
+            market_exchanges = {
+                'IN': ('NSE', 'BSE', 'NCDEX', 'MCX'),
+                'US': ('SMART', 'NYSE', 'NASDAQ', 'ARCA', 'ISLAND')
+            }
+
+            if market in market_exchanges:
+                valid_exchanges = market_exchanges[market]
+                stocks = [s for s in stocks if s.get('exchange', '').upper() in valid_exchanges]
+
+        return stocks
+
+    def migrate_stock_configs(self):
+        """
+        Migrate stocks from config_table.csv to settings.json
         """
         import pandas as pd
+        csv_path = 'config_table.csv'
+        if not os.path.exists(csv_path):
+            return
+
+        try:
+            df = pd.read_csv(csv_path)
+            stocks = []
+            for _, row in df.iterrows():
+                stock = {
+                    "symbol": str(row.get('Symbol', '')).upper(),
+                    "exchange": str(row.get('Exchange', 'NSE')).upper(),
+                    "enabled": str(row.get('Enabled', 'False')).lower() == 'true',
+                    "strategy": row.get('Strategy', 'TRADE'),
+                    "timeframe": row.get('Timeframe', '15T'),
+                    "buy_rsi": int(row.get('Buy RSI', 30)),
+                    "sell_rsi": int(row.get('Sell RSI', 70)),
+                    "Ignore_RSI": str(row.get('Skip RSI', 'False')).lower() in ('true', 'yes', '1'),
+                    "quantity": int(row.get('Quantity', 0)),
+                    "profit_target_pct": float(row.get('Profit Target %', 1.0))
+                }
+                stocks.append(stock)
+            
+            self.settings['stocks'] = stocks
+            self.save()
+            print(f"✅ Migrated {len(stocks)} stocks from CSV to settings.json")
+            
+            # Optional: Rename CSV to avoid confusion, but keeping it for safety for now
+            # os.rename(csv_path, csv_path + ".bak")
+            
+        except Exception as e:
+            print(f"❌ Migration failed: {e}")
+
+    def add_stock_config(self, stock_data: Dict[str, Any]) -> bool:
+        """
+        Add or update a stock configuration
+        """
+        stocks = self.get_stock_configs()
         
-        if os.path.exists('config_table.csv'):
-            df = pd.read_csv('config_table.csv')
-            return df.to_dict('records')
-        else:
-            return []
+        # Remove existing if present (update mode)
+        stocks = [s for s in stocks if not (s['symbol'] == stock_data['symbol'] and s['exchange'] == stock_data['exchange'])]
+        
+        stocks.append(stock_data)
+        self.settings['stocks'] = stocks
+        return self.save()
+
+    def delete_stock_config(self, symbol: str, exchange: str) -> bool:
+        """
+        Delete a stock configuration
+        """
+        stocks = self.get_stock_configs()
+        initial_count = len(stocks)
+        
+        stocks = [s for s in stocks if not (s['symbol'] == symbol and s['exchange'] == exchange)]
+        
+        if len(stocks) < initial_count:
+            self.settings['stocks'] = stocks
+            return self.save()
+        return False
     
     def get_capital_summary(self) -> Dict[str, float]:
         """
@@ -235,6 +398,41 @@ class SettingsManager:
             'catastrophic_stop_enabled': self.get('risk_controls.catastrophic_stop_enabled', True),
             'catastrophic_stop_pct': self.get('risk_controls.catastrophic_stop_pct', 20)
         }
+
+    def get_market_settings(self, market: str) -> Dict[str, Any]:
+        """
+        Get per-market trading settings including RSI thresholds.
+
+        Reads from settings.json under the 'markets.<code>' key.
+        Falls back to hard-coded sensible defaults when no market-specific
+        config is present so existing India-only deployments keep working
+        without any settings migration.
+
+        Args:
+            market: Market code ('IN' | 'US').
+
+        Returns:
+            Dict with at least rsi_threshold_buy, rsi_threshold_sell, currency.
+        """
+        _defaults: Dict[str, Dict[str, Any]] = {
+            "IN": {
+                "rsi_threshold_buy": 30,
+                "rsi_threshold_sell": 70,
+                "currency": "INR",
+                "exchange": "NSE",
+            },
+            "US": {
+                "rsi_threshold_buy": 35,
+                "rsi_threshold_sell": 65,
+                "currency": "USD",
+                "exchange": "SMART",
+            },
+        }
+        stored = self.get(f"markets.{market}", {})
+        base = _defaults.get(market, {}).copy()
+        if isinstance(stored, dict):
+            base.update(stored)
+        return base
 
 
 # Convenience instance

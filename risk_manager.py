@@ -13,16 +13,22 @@ class RiskManager:
     Manages risk controls: stop-loss, profit targets, daily loss limits
     """
     
-    def __init__(self, settings, database, market_data_fetcher):
+    def __init__(self, settings, database, market_data_fetcher, state_manager=None):
         self.settings = settings
         self.db = database
         self.fetch_market_data = market_data_fetcher
+        self.state_mgr = state_manager
         
         # Risk settings
-        self.stop_loss_pct = settings.get('risk_controls.default_stop_loss_pct', 5)
-        self.profit_target_pct = settings.get('risk_controls.default_profit_target_pct', 10)
-        self.catastrophic_stop_pct = settings.get('risk_controls.catastrophic_stop_pct', 20)
-        self.daily_loss_limit_pct = settings.get('capital.daily_loss_limit_pct', 10)
+        self.stop_loss_pct = settings.get('risk.stop_loss_pct', 5)
+        self.profit_target_pct = settings.get('risk.profit_target_pct', 10)
+        self.catastrophic_stop_pct = settings.get('risk.catastrophic_stop_loss_pct', 20)
+        self.daily_loss_limit_pct = settings.get('risk.daily_loss_limit_pct', 5)
+        
+        # Additional settings from risk config
+        risk_config = settings.get('risk', {})
+        self.hold_quality_stocks = risk_config.get('hold_quality_stocks', True)
+        self.quality_hold_days = risk_config.get('quality_stock_hold_days', 60)
         
         # Tracking
         self.daily_start_capital = settings.get('capital.total_capital', 0)
@@ -30,30 +36,81 @@ class RiskManager:
         
         logging.info(f"✅ RiskManager initialized: SL={self.stop_loss_pct}%, PT={self.profit_target_pct}%")
     
-    def check_all_positions(self) -> List[Dict]:
+    def check_all_positions(self, market_data_cache=None) -> List[Dict]:
         """
-        Check all open positions for stop-loss or profit target hits
+        Check all open positions for risk triggers.
         
-        Returns list of actions to take: [{'symbol': 'HDFC', 'action': 'SELL', 'reason': 'Stop Loss Hit'}]
+        Args:
+            market_data_cache: Optional dict of {(symbol, exchange): market_data_dict}
+                             Avoids redundant API calls if data was already fetched.
         """
         actions = []
         
         # Get open positions from database
-        positions = self.db.get_open_positions()
+        db_positions = self.db.get_open_positions()
         
-        if not positions:
+        # Get managed holdings from state manager (Butler Mode)
+        managed_positions = []
+        if self.state_mgr:
+            managed_holdings = self.state_mgr.state.get('managed_holdings', {})
+            cached_holdings = self.state_mgr.get_cached_holdings().get('data', {})
+            
+            for key_str, is_enabled in managed_holdings.items():
+                if not is_enabled:
+                    continue
+                
+                # key_str is likely "(symbol, exchange)" or "symbol:exchange" 
+                # depending on how StateManager serializes it.
+                # Let's try to parse it.
+                try:
+                    # state_manager.py line 271 uses "BAJFINANCE:NSE" format for serialization
+                    if ':' in key_str:
+                        symbol, exchange = key_str.split(':')
+                    else:
+                        # Fallback for old format or tuple string Repr
+                        import ast
+                        result = ast.literal_eval(key_str)
+                        if isinstance(result, (list, tuple)):
+                            symbol, exchange = result[0], result[1]
+                        else:
+                            symbol, exchange = str(result), 'NSE'
+                    
+                    symbol = symbol.upper()
+                    exchange = exchange.upper()
+                    
+                    # Fetch quantity and avg price from cached holdings
+                    pos_data = cached_holdings.get((symbol, exchange))
+                    if pos_data:
+                        managed_positions.append({
+                            'symbol': symbol,
+                            'exchange': exchange,
+                            'avg_entry_price': float(pos_data.get('price', 0)),
+                            'net_quantity': int(pos_data.get('qty', 0)),
+                            'source': 'BUTLER'
+                        })
+                except Exception as e:
+                    logging.warning(f"⚠️ Failed to parse managed holding key {key_str}: {e}")
+
+        all_positions = db_positions + managed_positions
+        
+        if not all_positions:
             return actions
         
-        logging.info(f"📊 Checking {len(positions)} open positions for risk triggers...")
+        logging.info(f"📊 Checking {len(all_positions)} positions (DB: {len(db_positions)}, Managed: {len(managed_positions)}) for risk triggers...")
         
-        for position in positions:
+        for position in all_positions:
             symbol = position['symbol']
             exchange = position['exchange']
             entry_price = position['avg_entry_price']
             quantity = position['net_quantity']
             
-            # Fetch current price
-            market_data = self.fetch_market_data(symbol, exchange)
+            # Fetch current price (use cache if available)
+            market_data = None
+            if market_data_cache:
+                market_data = market_data_cache.get((symbol, exchange))
+            
+            if not market_data:
+                market_data = self.fetch_market_data(symbol, exchange)
             
             if not market_data:
                 logging.warning(f"⚠️ Could not fetch price for {symbol}, skipping risk check")
@@ -70,8 +127,12 @@ class RiskManager:
             
             logging.info(f"  {symbol}: Entry ₹{entry_price:.2f} → Current ₹{current_price:.2f} = {pnl_pct:+.2f}%")
             
-            # Check catastrophic stop (ALWAYS takes priority)
-            if pnl_pct <=-self.catastrophic_stop_pct:
+            # Check catastrophic stop
+            if pnl_pct <= -self.catastrophic_stop_pct:
+                never_sell_at_loss = self.settings.get('risk.never_sell_at_loss', False)
+                if never_sell_at_loss:
+                    logging.warning(f"  🛡️ CATASTROPHIC STOP suppressed for {symbol} ({pnl_pct:.1f}%) — Never Sell at Loss is ON. HOLDING.")
+                    continue
                 actions.append({
                     'symbol': symbol,
                     'exchange': exchange,

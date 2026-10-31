@@ -1,0 +1,5 @@
+id,timestamp,symbol,exchange,action,quantity,price,gross_amount,brokerage_fee,stt_fee,exchange_fee,gst_fee,sebi_fee,stamp_duty_fee,total_fees,net_amount,strategy,pnl_gross,pnl_net,pnl_pct_gross,pnl_pct_net,reason,broker,source,entry_timestamp,hold_duration_days,rsi,market_trend,atr,adx,macd_val,macd_signal,macd_hist,date
+18,2026-01-28 18:30:15.995652,MICEL,BSE,SELL,5,38.94,194.7,20.0,0.19,0.01,3.6,0.0,0.0,23.8,170.9,RSI,16.099999999999994,-31.32999999999999,9.014557670772673,-15.492261286653806,RSI-based SELL,mstock,BOT,,,0.0,,,,,,,2026-01-28
+19,2026-01-28 18:30:27.029453,MICEL,BSE,SELL,5,38.94,194.7,20.0,0.19,0.01,3.6,0.0,0.0,23.8,170.9,RSI,16.099999999999994,-31.32999999999999,9.014557670772673,-15.492261286653806,RSI-based SELL,mstock,BOT,,,0.0,,,,,,,2026-01-28
+2,2026-01-21 14:11:13.842168,MOSCHIP,NSE,BUY,5,175.5,877.5,20.0,0.0,0.03,3.6,0.0,0.13,23.76,901.26,RSI,,,,,RSI-based BUY,mstock,BOT,,,,,,,,,,2026-01-21
+3,2026-01-21 14:11:31.443023,MOSCHIP,BSE,BUY,5,175.5,877.5,20.0,0.0,0.03,3.6,0.0,0.13,23.76,901.26,RSI,,,,,RSI-based BUY,mstock,BOT,,,,,,,,,,2026-01-21

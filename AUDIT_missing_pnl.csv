@@ -1,0 +1,2 @@
+id,timestamp,symbol,exchange,action,quantity,price,gross_amount,brokerage_fee,stt_fee,exchange_fee,gst_fee,sebi_fee,stamp_duty_fee,total_fees,net_amount,strategy,pnl_gross,pnl_net,pnl_pct_gross,pnl_pct_net,reason,broker,source,entry_timestamp,hold_duration_days,rsi,market_trend,atr,adx,macd_val,macd_signal,macd_hist,date
+51,2026-02-16 15:46:51.392296,CANBK,NSE,SELL,10,144.55,1445.5,20.0,1.45,0.05,3.6,0.0,0.0,25.1,1420.4,RSI,,,,,RSI-based SELL,mstock,BOT,,,0.0,,,,,,,2026-02-16

@@ -1,0 +1,10 @@
+[16:03:04] Sent BAJFINANCE.NS successfully!
+[16:03:04] Waiting 15m... (Publishing Next Alert)
+[16:18:05] Processing RELIANCE.NS... Fetching Research
+[16:18:06] Sending RELIANCE.NS to Telegram...
+[16:18:09] Sent RELIANCE.NS successfully!
+[16:18:10] Waiting 15m... (Publishing Next Alert)
+[16:33:11] Processing BAJAJFINSV.NS... Fetching Research
+[16:33:11] Sending BAJAJFINSV.NS to Telegram...
+[16:33:15] Sent BAJAJFINSV.NS successfully!
+[16:33:15] Waiting 15m... (Publishing Next Alert)

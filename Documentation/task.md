@@ -1,6 +1,8 @@
 # 🎯 Developer Task Scratchpad
 
 ## Immediate Focus
+- [x] Debug "Live Execution" log stream (Fixed filters, Log Frequency optimized)
+- [x] Fix Dashboard "Blank Screen" on startup (Fixed NameError)
 - [ ] Review `Documentation/Product/BACKLOG.md` for full requirements.
 - [ ] Prepare `kickstart.py` for headless extraction testing.
 

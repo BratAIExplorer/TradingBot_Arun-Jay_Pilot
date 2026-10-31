@@ -1,0 +1,22 @@
+[Unit]
+Description=Voyager spike logger (IBKR top-gainers -> CSV) — LOG ONLY, connects readonly, never sends orders
+After=network.target voyager-gateway.service
+# No Wants= on the gateway on purpose: starting it needs a phone 2FA approval and kicks other Gateway sessions.
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/voyager
+EnvironmentFile=-/opt/voyager/.env
+Environment=IBKR_PORT=4001
+Environment=IBKR_CLIENT_ID=11
+Environment=IBKR_READONLY=1
+ExecStart=/opt/voyager/venv/bin/python -m research.spike_logger
+Restart=on-failure
+RestartSec=30
+MemoryMax=300M
+StandardOutput=append:/opt/voyager/logs/spike_logger.log
+StandardError=append:/opt/voyager/logs/spike_logger.log
+
+[Install]
+WantedBy=multi-user.target

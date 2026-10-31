@@ -232,3 +232,15 @@ stop none/5/10/15%. Equal-capital benchmark: buy-and-hold returned **+27.4%**.
 - Whole shares only: at $100/buy, stocks above ~$100 can never fire (the card warns).
 - Quotes may be delayed depending on market-data subscriptions (not verified for this account).
 - `Documentation/VOYAGER_STATUS.html` was not regenerated from this file.
+
+## 9. Spike shadow test — log-only (added 2026-10-31)
+
+Tests whether "catch same-day +30/50/100% micro-cap spikes" has any edge, **without trading**. Frozen rules, verdict
+logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_logger.py`, `research/spike_scorer.py`,
+`tests/test_spike.py` (12 pass), `deploy/voyager-spike-logger.service`.
+- Runs on the existing Gateway (port 4001, clientId 11, `readonly=True` — it cannot send an order).
+- **Data gate:** logs events only when SPY's quote type is real-time; otherwise `gate_fail` rows. This account was
+  believed to have delayed data only (`brokers/ibkr_broker.py` `get_quote`) — the 3-week clock starts only once that is fixed.
+- Output `spike_log.csv` (git-ignored). Score: `python -m research.spike_scorer spike_log.csv`.
+- Stop: `systemctl stop voyager-spike-logger`. Log: `/opt/voyager/logs/spike_logger.log`.
+- Not yet built: gap-down-reversion re-check (its "passed testing" backtest was not found in the repo).

@@ -237,7 +237,7 @@ stop none/5/10/15%. Equal-capital benchmark: buy-and-hold returned **+27.4%**.
 
 Tests whether "catch same-day +30/50/100% micro-cap spikes" has any edge, **without trading**. Frozen rules, verdict
 logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_logger.py`, `research/spike_scorer.py`,
-`tests/test_spike.py` (12 pass), `deploy/voyager-spike-logger.service`.
+`tests/test_spike.py`, `deploy/voyager-spike-logger.service`.
 - Runs on the existing Gateway (port 4001, clientId 11, `readonly=True` — it cannot send an order).
 - **Data gate:** logs events only when SPY's quote type is real-time; otherwise `gate_fail` rows. This account was
   believed to have delayed data only (`brokers/ibkr_broker.py` `get_quote`) — the 3-week clock starts only once that is fixed.
@@ -286,3 +286,10 @@ logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_lo
 - Cleanup done 2026-11-02: `/root/set_ibc_pw.py` and `/opt/voyager-ibc/config.ini.bak-2026-11-02` (old password) deleted. Still on the VPS, harmless: `*.py.bak-2026-11-02` code backups and `/root/crontab.bak-2026-11-02` (root-only, contains a cron secret).
 - **Daily scorecard (live 2026-11-02):** `deploy/daily_summary.py` (+ `tests/test_daily_summary.py`), VPS cron `10 21 * * 1-5` (21:10 UTC = 16:10 ET while US is on standard time; **change to `10 20` when US daylight time starts, mid-March 2027**), log `/opt/voyager/logs/daily_summary.log`. Telegram message after each session: heartbeats x/71, gate_fail, down, events, ticks; "FULL DAY captured" if heartbeats >= 60 and no gate_fail, else "GAPS". Crontab backup: `/root/crontab.bak2-2026-11-02`.
 - A one-time review is scheduled in the Claude app for 2026-11-23 09:00 MYT (verdict + decide whether to keep paying USD 4.50/month for the three US data feeds).
+- **Progress dashboard (2026-11-02):** private Claude artifact "Voyager daily progress" https://claude.ai/artifact/B3VnY7PPEYEyPYQpy1zqtK. Data = `Documentation/voyager_progress.json` (one row per session, added by hand from the Telegram scorecard) and `Documentation/voyager_milestones.json`; re-upload both after editing. Not auto-updated yet.
+
+### 9.2 Update 2026-11-03 — pre-Day-1 scorer and logger amendment (built and tested locally; NOT yet deployed)
+- Full text and reasons: `Documentation/SPIKE_TEST_RULES.md`, "Amendment 2026-11-03". Short version: no trade is ever dropped (unresolved = counted), verdict must pass realized AND with unresolved at -50%, extra metrics (mean, total P&L, profit factor, worst-5%, premarket/regular), one 15% trailing-stop challenger (report only), `bid_size`/`ask_size` columns, scorecard shows `lines X/40`.
+- Files changed: `research/spike_scorer.py`, `research/spike_logger.py`, `deploy/daily_summary.py`, `tests/test_spike.py`, `tests/test_daily_summary.py`. Spike + scorecard + gateway tests pass (35). Whole-suite failures are the same 103 as before the change (old live-broker scripts), none in spike code.
+- **Deploy (user runs; do it after the Nov 2 session ends ~04:55 MYT and before Day 1 opens at 17:00 MYT on Nov 3):** copy the three files to `/opt/voyager/{research,deploy}/`, then `systemctl restart voyager-spike-logger` (the Gateway is not touched). The logger sets the old-header `spike_log.csv` aside by itself. Dashboard `voyager_progress.json` is still updated by hand.
+- Not built: auto-updating dashboard and a per-trade table (the scorer can now produce the numbers, but nothing exports them yet).

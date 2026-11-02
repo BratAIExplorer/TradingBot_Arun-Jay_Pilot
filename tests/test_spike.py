@@ -105,3 +105,110 @@ def test_verdict_continue_vs_retire():
     bad = summarize([mk(-2 - i % 3, day=f"d{i % 12}", sym=f"S{i}") for i in range(120)])
     assert verdict(good, good) == "continue paper"
     assert verdict(good, bad) == "retire or re-tune within budget"
+
+
+# ---- 2026-11-02 pre-Day-1 amendment: never drop a trade, report more, size columns ----
+import csv
+
+from research import spike_logger
+from research.spike_scorer import score_file
+
+
+def test_all_halted_after_entry_is_unresolved_not_dropped():
+    t = simulate_trade(10.0, [tick(9, halted=True), tick(9, halted=True)], slippage=0.0, commission_usd=0, notional=500)
+    assert t is not None and t["unresolved"] is True and t["halt_trapped"] is True and t["net_pct"] is None
+
+
+def test_still_halted_at_the_end_is_unresolved_with_best_case_recorded():
+    t = simulate_trade(10.0, [tick(11), tick(11, halted=True)], slippage=0.0, commission_usd=0, notional=500)
+    assert t["unresolved"] is True and t["exit"] == "unresolved"
+    assert abs(t["best_case_pct"] - 10.0) < 1e-6          # what the old code would have reported
+
+
+def test_no_bid_at_the_end_is_unresolved_too():
+    t = simulate_trade(10.0, [tick(11), {"bid": None, "ask": None, "halted": False}], slippage=0.0, commission_usd=0, notional=500)
+    assert t["unresolved"] is True
+
+
+def test_halt_that_reopens_lower_exits_at_the_reopen_bid():
+    t = simulate_trade(10.0, [tick(9.5, halted=True), tick(5.0)], slippage=0.0, commission_usd=0, notional=500)
+    assert t["exit"] == "stop" and t["net_pct"] == -50.0 and t["halt_trapped"] is True and not t.get("unresolved")
+
+
+def test_trailing_stop_locks_in_gains_the_fixed_stop_gives_back():
+    path = [tick(10), tick(14), tick(11.5), tick(9.0)]            # peak 14 -> trail 15% = 11.9
+    fixed = simulate_trade(10.0, path, slippage=0.0, commission_usd=0, notional=500)
+    trail = simulate_trade(10.0, path, slippage=0.0, commission_usd=0, notional=500, trail_pct=0.15)
+    assert fixed["exit"] == "stop" and abs(fixed["net_pct"] + 10.0) < 1e-9
+    assert trail["exit"] == "trail" and abs(trail["net_pct"] - 15.0) < 1e-6
+
+
+def test_summary_reports_unresolved_and_conservative_view():
+    trades = [mk(5, sym="A"), mk(3, sym="B"), {**mk(None, sym="C", halt=True), "unresolved": True}]
+    s = summarize(trades)
+    assert s["n"] == 3 and s["n_realized"] == 2 and s["n_unresolved"] == 1
+    assert s["median"] == 4 and s["halt_share"] == 1 / 3
+    assert s["median_cons"] == 3                                  # [-50, 3, 5]
+    assert s["stock_days"] == 3                                   # unresolved trades still count as evidence
+
+
+def test_summary_extra_metrics():
+    s = summarize([mk(10, sym="A"), mk(-5, sym="B"), mk(-5, sym="C"), mk(20, sym="D")])
+    assert s["mean"] == 5 and s["profit_factor"] == 3.0
+    assert abs(s["total_pnl_usd"] - 500 * 0.20) < 1e-9
+    assert s["worst5"] == -5
+
+
+def test_verdict_fails_when_only_the_conservative_view_is_negative():
+    good = summarize([mk(2, day=f"d{i % 12}", sym=f"S{i}") for i in range(120)])
+    hidden = summarize([mk(2, day=f"d{i % 12}", sym=f"S{i}") for i in range(60)] +
+                       [{**mk(None, day=f"d{i % 12}", sym=f"U{i}", halt=True), "unresolved": True} for i in range(60)])
+    assert hidden["median"] > 0 and hidden["median_cons"] < 0
+    assert verdict(good, hidden) == "retire or re-tune within budget"
+
+
+def _write_log(path, rows):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=spike_logger.FIELDS)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k, "") for k in spike_logger.FIELDS})
+
+
+def test_score_file_counts_skipped_unresolved_and_sessions(tmp_path):
+    p = str(tmp_path / "log.csv")
+    ev = lambda ts, sym, ask: {"ts_et": ts, "kind": "event", "symbol": sym, "level": "30", "ask": ask, "bid": 1}
+    tk = lambda ts, sym, bid, h=0: {"ts_et": ts, "kind": "tick", "symbol": sym, "bid": bid, "halted": h}
+    _write_log(p, [
+        ev("2026-11-03T05:00:00", "PRE", 10), tk("2026-11-03T05:00:05", "PRE", 11), tk("2026-11-03T05:00:10", "PRE", 12),
+        ev("2026-11-03T10:00:00", "REG", 10), tk("2026-11-03T10:00:05", "REG", 9, 1),      # halted to the end
+        ev("2026-11-03T11:00:00", "NOASK", ""),                                              # no ask -> skipped
+        ev("2026-11-03T12:00:00", "LOST", 10),                                               # logger gap: no ticks
+    ])
+    trades, skipped = score_file(p, 0.0, "30")
+    by = {t["symbol"]: t for t in trades}
+    assert skipped == 1 and set(by) == {"PRE", "REG", "LOST"}
+    assert by["PRE"]["session"] == "premarket" and by["REG"]["session"] == "regular"
+    assert by["REG"]["unresolved"] and by["LOST"]["unresolved"] and not by["PRE"].get("unresolved")
+
+
+# ---- logger: size columns and header safety ----
+def test_fields_include_sizes_and_keep_old_columns_in_order():
+    assert spike_logger.FIELDS[:12] == ["ts_et", "kind", "symbol", "level", "pct", "last", "bid", "ask", "volume", "halted", "mdtype", "note"]
+    assert spike_logger.FIELDS[12:] == ["bid_size", "ask_size"]
+
+
+def test_write_row_writes_sizes(tmp_path):
+    p = str(tmp_path / "log.csv")
+    spike_logger.write_row("tick", symbol="X", bid=1.0, ask=1.1, bid_size=300, ask_size=0, path=p)
+    row = next(csv.DictReader(open(p, newline="", encoding="utf-8")))
+    assert row["bid_size"] == "300" and row["ask_size"] == "0"
+
+
+def test_old_header_file_is_rotated_not_corrupted(tmp_path):
+    p = tmp_path / "log.csv"
+    p.write_text("ts_et,kind,symbol\n2026-11-02T10:00:00,tick,OLD\n", encoding="utf-8")
+    spike_logger.write_row("tick", symbol="NEW", bid_size=5, path=str(p))
+    rows = list(csv.DictReader(open(p, newline="", encoding="utf-8")))
+    assert [r["symbol"] for r in rows] == ["NEW"]
+    assert any(f.name.startswith("log.csv.pre-") for f in tmp_path.iterdir())     # old data kept

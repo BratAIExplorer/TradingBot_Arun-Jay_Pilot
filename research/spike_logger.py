@@ -16,7 +16,8 @@ ET = ZoneInfo("America/New_York")
 LEVELS = (30, 50, 100)
 OPEN, CLOSE = dtime(4, 0), dtime(15, 55)            # premarket through the forced-exit time
 LOG_PATH = os.environ.get("SPIKE_LOG", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "spike_log.csv"))
-FIELDS = ["ts_et", "kind", "symbol", "level", "pct", "last", "bid", "ask", "volume", "halted", "mdtype", "note"]
+FIELDS = ["ts_et", "kind", "symbol", "level", "pct", "last", "bid", "ask", "volume", "halted", "mdtype", "note",
+          "bid_size", "ask_size"]                           # sizes added 2026-11-02 (amendment): is a $500 fill plausible at the quote?
 MAX_LINES = 40                                      # ponytail: IBKR default is ~100 market-data lines; verify before raising
 POLL_SECS = 5
 SCAN_SECS = 30                                      # scanner snapshot refresh (a long-lived subscription died silently on a reconnect, 2026-11-02)
@@ -45,15 +46,36 @@ def _num(v):
     return None if v is None or v != v or v == -1 else v        # NaN / IBKR's -1 "no data"
 
 
+def _size(v):
+    n = _num(v)
+    return "" if n is None else n                               # 0 is a real size (empty book side), keep it
+
+
+_header_checked: set[str] = set()
+
+
+def _ensure_header(path: str) -> None:
+    """An existing file with an older header would silently swallow the new columns, so set it aside (data kept) once per run."""
+    if path in _header_checked:
+        return
+    _header_checked.add(path)
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            first = next(csv.reader(f), None)
+        if first != FIELDS:
+            os.replace(path, f"{path}.pre-{datetime.now(ET).strftime('%Y%m%dT%H%M%S')}")
+
+
 def write_row(kind: str, symbol: str = "", level="", pct="", last="", bid="", ask="", volume="", halted="",
-              mdtype="", note="", path: str = LOG_PATH) -> None:
+              mdtype="", note="", bid_size="", ask_size="", path: str = LOG_PATH) -> None:
+    _ensure_header(path)
     new = not os.path.exists(path)
     with open(path, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if new:
             w.writerow(FIELDS)
         w.writerow([datetime.now(ET).strftime("%Y-%m-%dT%H:%M:%S"), kind, symbol, level, pct, last, bid, ask,
-                    volume, halted, mdtype, note])
+                    volume, halted, mdtype, note, bid_size, ask_size])
 
 
 def _session(ib) -> None:
@@ -102,7 +124,8 @@ def _session(ib) -> None:
                 continue
             pct = (last / close - 1) * 100
             fields = dict(symbol=sym, pct=round(pct, 2), last=last, bid=_num(t.bid) or "", ask=_num(t.ask) or "",
-                          volume=_num(t.volume) or "", halted=int(bool(t.halted and t.halted > 0)), mdtype=t.marketDataType)
+                          volume=_num(t.volume) or "", halted=int(bool(t.halted and t.halted > 0)), mdtype=t.marketDataType,
+                          bid_size=_size(t.bidSize), ask_size=_size(t.askSize))
             for lv in crossed_levels(prev.get(sym), pct):
                 if (today, sym, lv) not in fired:
                     fired.add((today, sym, lv))

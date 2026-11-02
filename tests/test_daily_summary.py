@@ -19,3 +19,12 @@ def test_gaps_when_heartbeats_missing_or_gate_failed_and_other_days_ignored():
     assert "GAPS" in summarize(rows("2026-11-03", hb=40), "2026-11-03")
     assert "GAPS" in summarize(rows("2026-11-03", hb=70, gate=1), "2026-11-03")
     assert "Heartbeats 0/71" in summarize(rows("2026-11-02", hb=70), "2026-11-03")
+
+
+def test_max_lines_from_heartbeat_notes_is_reported_and_flags_a_full_cap():
+    from deploy.daily_summary import max_lines
+    hb = lambda n: {"ts_et": "2026-11-03T10:00:00", "kind": "hb", "symbol": "", "note": f"scan=50 lines={n}"}
+    assert max_lines([hb(3), hb(17), {"ts_et": "x", "kind": "tick", "symbol": ""}]) == 17
+    assert max_lines([{"ts_et": "x", "kind": "hb", "symbol": ""}]) == 0       # old rows without a note
+    msg = summarize(rows("2026-11-03", hb=70) + [hb(40)], "2026-11-03")
+    assert "lines 40/40" in msg and "CAP" in msg

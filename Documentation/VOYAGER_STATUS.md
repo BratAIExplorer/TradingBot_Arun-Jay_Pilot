@@ -244,3 +244,43 @@ logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_lo
 - Output `spike_log.csv` (git-ignored). Score: `python -m research.spike_scorer spike_log.csv`.
 - Stop: `systemctl stop voyager-spike-logger`. Log: `/opt/voyager/logs/spike_logger.log`.
 - Not yet built: gap-down-reversion re-check (its "passed testing" backtest was not found in the repo).
+
+### 9.1 Update 2026-11-02 — Gateway fixed, alert added
+- Gateway had been stuck on "Unrecognized Username or Password" since 2026-10-27; password in `/opt/voyager-ibc/config.ini`
+  was updated by the user (helper `/root/set_ibc_pw.py`), Gateway restarted once, phone 2FA approved, port 4001 open, logger connected.
+- **Data gate still unverified:** IBKR error 10089 on the SPY probe. Account subscriptions: only "US Real-Time Non Consolidated
+  Streaming Quotes" (no NYSE/NASDAQ/Arca consolidated). The real answer is the first `gate_fail` / event rows after 17:00 MYT.
+- **Finding 2026-11-02 22:47 MYT (logger NOT collecting):** scanner rejected (IBKR error 162, `STK.US.MAJOR`), so no stocks are
+  watched; and the data gate false-passes because `ib_insync` `Ticker.marketDataType` defaults to 1 when SPY's request fails
+  (error 10089). No `gate_fail` rows and no events since the 05:35 UTC `up` row. 3-week clock NOT started. Fix pending: gate must
+  require a real SPY tick; try other scanner locations; add a "nothing logged for 2 h in session" alert.
+- **Fixed 2026-11-02 22:52 MYT (deployed, verified live):** (1) gate = type 1 AND a valid SPY last (`is_realtime(mdt, last)`),
+  resubscribes SPY every 5 min while failing; (2) scanner is now a 30 s snapshot (`reqScannerData`) — a probe showed
+  `STK.US.MAJOR` and 5 other locations all return rows, the old long-lived subscription had died on an IBKR reconnect (1100/1102);
+  (3) logger writes an `hb` row every 10 min (scorer ignores it); (4) `gateway_watch.py` alerts if no non-`down` row for 30+ min
+  in session (once/day). Live result: `gate_fail` rows now written, Telegram "data gate FAILED" alert received at 09:55 ET.
+  **Probe facts:** SPY real-time (type 1) returns no price on this account (error 10089); delayed (type 3) returns last/close
+  only, bid = NaN. So the test cannot run on the current subscriptions: needs US Level 1 (NYSE/Arca/NASDAQ) or parking the test.
+  Backups on VPS: `research/spike_logger.py.bak-2026-11-02`, `deploy/gateway_watch.py.bak-2026-11-02`.
+- **PARKED 2026-11-02 ~23:00 MYT (user decision):** no real-time US data on this account. `voyager-spike-logger` stopped and
+  disabled; `/opt/voyager/logs/spike_parked` mutes the silent-logger alert (gate alert stops by itself). Gateway, dip engine,
+  dashboard and the Gateway-down alert are unchanged. **To resume:** buy US Level 1 feeds (NYSE, NASDAQ, NYSE American/Arca,
+  non-professional) in the IBKR portal, restart `voyager-gateway` (phone 2FA), then
+  `rm /opt/voyager/logs/spike_parked && systemctl enable --now voyager-spike-logger`; the 3-week clock starts at the first day
+  with no `gate_fail` rows.
+- **RESUMED 2026-11-02 ~23:38 MYT:** user subscribed to NASDAQ (Network C), NYSE (Network A) and Network B L1 (non-pro,
+  3 × $1.50/month, charged at activation; review/unsubscribe if the test shows no edge). Gateway restarted (phone 2FA),
+  probe: SPY type 1 with real last/bid/ask; all 6 scanner locations return rows. Parked flags removed, `voyager-spike-logger`
+  enabled and started; verified live: ticks with `mdtype=1` and real bid/ask, `event` rows, heartbeat, watcher `ok`.
+  **Day 1 of the 3 weeks = 2026-11-03** (today has `gate_fail` rows and the logger started mid-session at 10:36 ET, so today's
+  events are stale entries: score with `grep -v '^2026-11-02' spike_log.csv > scored.csv` first). Harmless log noise: IBKR
+  error 162 "scanner subscription cancelled" every 30 s (just the snapshot closing).
+- **Gateway deliberately stopped 2026-11-02 ~23:05 MYT** (now restored, see above) (user needed the single live IBKR session for the website/app).
+  `/opt/voyager/logs/gateway_parked` mutes every `gateway_watch.py` alert. **Restore:**
+  `rm /opt/voyager/logs/gateway_parked && systemctl start voyager-gateway`, then approve the phone 2FA (close web/app first).
+  Dashboard and dip engine show no live data while it is stopped.
+- **Telegram alert (live):** `deploy/gateway_watch.py` (+ `tests/test_gateway_watch.py`, 4 pass), cron `*/5` on the VPS, log
+  `/opt/voyager/logs/gateway_watch.log`. Alerts only in the US session: Gateway down (repeat 2 h, "back up" on recovery) and
+  data-gate failure (once/day). Bot @alerts_ibkr_bot; token+chat id in `/opt/voyager/alert.env` (chmod 600), written by
+  `deploy/setup_alert.py` (hidden prompt; token never passes through chat). Root crontab backup: `/root/crontab.bak-2026-11-02`.
+- Pending cleanup: `/root/set_ibc_pw.py` and `/opt/voyager-ibc/config.ini.bak-2026-11-02` (holds the old password).

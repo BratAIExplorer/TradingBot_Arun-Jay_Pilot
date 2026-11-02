@@ -37,3 +37,10 @@ Logged only if SPY's quote type is **real-time (1)**. Otherwise the logger write
 - Holidays are not modelled (no ticks arrive, so no rows).
 - 3 weeks is one market mood; spikes cluster in waves.
 - Capacity is tiny: micro-caps cannot absorb size.
+
+## Amendment 2026-11-02 (implementation fix, no rule change; logging had not started)
+- The data gate is now "marketDataType 1 **and** a valid SPY last price" — ib_insync defaults the type to 1, so the old check passed when the real-time request failed (IBKR error 10089). Same intent as the rule above.
+- Scanner is a 30 s snapshot instead of a long-lived subscription (it died silently on an IBKR reconnect). Same query: TOP_PERC_GAIN, STK.US.MAJOR, $1–20.
+- The logger also writes an `hb` heartbeat row every 10 min; the scorer ignores it.
+- Clock start (2026-11-02, after the real-time feeds were bought): **Day 1 = 2026-11-03.** 2026-11-02 rows are excluded from scoring (gate_fail earlier that day; logger started mid-session so its `event` rows are stale entries). Score with: `grep -v '^2026-11-02' spike_log.csv > scored.csv && python -m research.spike_scorer scored.csv`.
+- Known limitation: if the logger is down when a stock really crosses a level, the `event` is logged late (at the first poll after reconnect) with a later, higher ask. Keep downtime low (watch the Telegram alerts).

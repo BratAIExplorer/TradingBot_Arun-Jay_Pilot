@@ -19,15 +19,21 @@ LOG_PATH = os.environ.get("SPIKE_LOG", os.path.join(os.path.dirname(os.path.dirn
 FIELDS = ["ts_et", "kind", "symbol", "level", "pct", "last", "bid", "ask", "volume", "halted", "mdtype", "note"]
 MAX_LINES = 40                                      # ponytail: IBKR default is ~100 market-data lines; verify before raising
 POLL_SECS = 5
-log = logging.getLogger("spike_logger")
+SCAN_SECS = 30                                      # scanner snapshot refresh (a long-lived subscription died silently on a reconnect, 2026-11-02)
+log =logging.getLogger("spike_logger")
 
 
 def crossed_levels(prev_pct: float | None, pct: float, levels=LEVELS) -> list[int]:
     return [lv for lv in levels if pct >= lv and (prev_pct is None or prev_pct < lv)]
 
 
-def is_realtime(market_data_type) -> bool:
-    return market_data_type == 1
+def is_realtime(market_data_type, last=None) -> bool:
+    """Live type 1 AND a real SPY price. ib_insync's Ticker defaults to type 1, so a failed subscription (IBKR 10089) must not pass."""
+    return market_data_type == 1 and last is not None and last == last and last > 0
+
+
+def heartbeat_due(last_hb: float | None, now: float, secs: int = 600) -> bool:
+    return last_hb is None or now - last_hb >= secs
 
 
 def in_session(now: datetime) -> bool:
@@ -54,32 +60,42 @@ def _session(ib) -> None:
     """One connected session. Raises on disconnect; the caller logs the downtime and reconnects."""
     from ib_insync import ScannerSubscription, Stock
     ib.reqMarketDataType(1)
-    probe = ib.reqMktData(Stock("SPY", "SMART", "USD"), "", False, False)
-    scan = ib.reqScannerSubscription(ScannerSubscription(instrument="STK", locationCode="STK.US.MAJOR",
-                                                         scanCode="TOP_PERC_GAIN", abovePrice=1, belowPrice=20,
-                                                         numberOfRows=50))
+    spy = Stock("SPY", "SMART", "USD")
+    probe = ib.reqMktData(spy, "", False, False)
+    sub = ScannerSubscription(instrument="STK", locationCode="STK.US.MAJOR", scanCode="TOP_PERC_GAIN",
+                              abovePrice=1, belowPrice=20, numberOfRows=50)
     lines, prev, fired, day = {}, {}, set(), ""
+    contracts, last_scan, last_hb = {}, 0.0, None
     while True:
         ib.sleep(POLL_SECS)
         if not in_session(datetime.now(ET)):
             continue
-        if not is_realtime(probe.marketDataType):                # the data gate
-            write_row("gate_fail", mdtype=probe.marketDataType, note="quotes are not real-time; not logging events")
+        if not is_realtime(probe.marketDataType, _num(probe.last)):   # the data gate
+            write_row("gate_fail", mdtype=probe.marketDataType, last=_num(probe.last) or "",
+                      note="quotes are not real-time; not logging events")
+            ib.cancelMktData(spy)                                 # resubscribe so a newly bought feed is noticed without a restart
+            probe = ib.reqMktData(spy, "", False, False)
             ib.sleep(300)
             continue
+        if time.time() - last_scan >= SCAN_SECS:
+            rows = ib.reqScannerData(sub, [], [])                 # snapshot, not a subscription
+            contracts = {r.contractDetails.contract.symbol: r.contractDetails.contract for r in rows}
+            last_scan = time.time()
+        if heartbeat_due(last_hb, time.time()):                   # positive proof of life, read by deploy/gateway_watch.py
+            write_row("hb", last=_num(probe.last) or "", mdtype=probe.marketDataType,
+                      note=f"scan={len(contracts)} lines={len(lines)}")
+            last_hb = time.time()
         today = datetime.now(ET).date().isoformat()
         if today != day:                                          # new day: release every line, forget yesterday
             for t in lines.values():
                 ib.cancelMktData(t.contract)
             lines.clear(), prev.clear(), fired.clear()
             day = today
-        on_scan = {row.contractDetails.contract.symbol for row in scan}
-        for sym in [s for s in lines if s not in on_scan and not any(k[:2] == (today, s) for k in fired)]:
+        for sym in [s for s in lines if s not in contracts and not any(k[:2] == (today, s) for k in fired)]:
             ib.cancelMktData(lines.pop(sym).contract)             # free lines held by names that fell off, unless flagged
-        for row in scan:
-            sym = row.contractDetails.contract.symbol
+        for sym, contract in contracts.items():
             if sym not in lines and len(lines) < MAX_LINES:
-                lines[sym] = ib.reqMktData(row.contractDetails.contract, "", False, False)
+                lines[sym] = ib.reqMktData(contract, "", False, False)
         for sym, t in lines.items():
             last, close = _num(t.last), _num(t.close)
             if not last or not close:

@@ -1,5 +1,5 @@
 """Spike shadow test: pure logic only (no Gateway). Rules: Documentation/SPIKE_TEST_RULES.md"""
-from research.spike_logger import crossed_levels, is_realtime, in_session
+from research.spike_logger import crossed_levels, heartbeat_due, is_realtime, in_session
 from research.spike_scorer import simulate_trade, summarize, verdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,10 +19,24 @@ def test_crossed_levels_only_new_crossings():
     assert crossed_levels(None, 40, (30, 50, 100)) == [30]
 
 
-def test_data_gate_only_live_type_one_passes():
-    assert is_realtime(1)
+def test_data_gate_only_live_type_one_with_a_real_price_passes():
+    assert is_realtime(1, 759.47)
     for delayed in (2, 3, 4, None):
-        assert not is_realtime(delayed)
+        assert not is_realtime(delayed, 759.47)
+
+
+def test_data_gate_rejects_default_type_one_without_a_price():
+    # ib_insync's Ticker defaults to marketDataType 1; a failed subscription (IBKR error 10089) leaves last = nan
+    assert not is_realtime(1, float("nan"))
+    assert not is_realtime(1, None)
+    assert not is_realtime(1, -1)
+    assert not is_realtime(1, 0)
+
+
+def test_heartbeat_due_every_ten_minutes():
+    assert heartbeat_due(None, 1000.0)
+    assert not heartbeat_due(1000.0, 1000.0 + 599)
+    assert heartbeat_due(1000.0, 1000.0 + 600)
 
 
 def test_session_window_uses_eastern_time():

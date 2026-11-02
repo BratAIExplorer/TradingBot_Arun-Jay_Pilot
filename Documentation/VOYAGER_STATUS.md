@@ -298,3 +298,19 @@ logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_lo
 - **FINDING (Nov 2 data, scorecard now shows it): `lines 40/40 - CAP HIT`.** The 40-line cap was full during the partial Nov 2 session, so new spikes were unseen. Cause: flagged stocks keep their line all day. Decision needed before Day 1 (17:00 MYT): raise `MAX_LINES` (IBKR's real limit for this account is unverified; the SPY probe and the dip engine also use lines) or accept a biased sample. Not changed yet.
 - Nov 2 partial-day dry run, +30% trigger, 5% slippage (14 stocks, one partial day, **not evidence**): median -15.5%, 15% trailing challenger -19.5%. Also `down 70` rows that day (about 35 min of reconnect attempts while the Gateway was being fixed).
 - Not built: auto-updating dashboard and a per-trade table (the scorer can now produce the numbers, but nothing exports them yet).
+
+## 10. If something breaks - how to revive (added 2026-11-03)
+
+Each service restarts itself after a crash (`Restart=on-failure`). The one thing that cannot self-heal is the **Gateway
+login (needs your phone 2FA)**. Telegram tells you, only during the US session.
+
+| Symptom | Fix (on the VPS: `ssh root@76.13.179.32`) |
+|---|---|
+| Telegram "Gateway is DOWN" | `systemctl restart voyager-gateway`, approve IBKR phone 2FA, close the IBKR website/app first (one live login only). Port 4001 opens when it works: `ss -ltn \| grep 4001` |
+| Logger silent / "GAPS" scorecard | `systemctl restart voyager-spike-logger`. Missed minutes are not recoverable; a day with 60+ of 71 heartbeats still counts |
+| Engine shows "skipped" | Almost always the Gateway is down. Fix the Gateway; the engine resumes by itself next cycle |
+| Wrong password (stuck since 27 Oct) | edit `/opt/voyager-ibc/config.ini`, restart Gateway, approve 2FA |
+
+Health in one line: `systemctl is-active voyager-gateway voyager-engine voyager-spike-logger voyager-web` (all four = active).
+**clientIds must differ:** dashboard 9, spike logger 11, engine 12 (set by `VOYAGER_CLIENT_ID=12`; before 2026-11-03 the engine
+also used 11 and fought the logger for the connection). VPS venv also needs `pip install tzdata` (ib_insync reads `US/Eastern`).

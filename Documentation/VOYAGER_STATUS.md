@@ -283,4 +283,5 @@ logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_lo
   `/opt/voyager/logs/gateway_watch.log`. Alerts only in the US session: Gateway down (repeat 2 h, "back up" on recovery) and
   data-gate failure (once/day). Bot @alerts_ibkr_bot; token+chat id in `/opt/voyager/alert.env` (chmod 600), written by
   `deploy/setup_alert.py` (hidden prompt; token never passes through chat). Root crontab backup: `/root/crontab.bak-2026-11-02`.
-- Pending cleanup: `/root/set_ibc_pw.py` and `/opt/voyager-ibc/config.ini.bak-2026-11-02` (holds the old password).
+- Cleanup done 2026-11-02: `/root/set_ibc_pw.py` and `/opt/voyager-ibc/config.ini.bak-2026-11-02` (old password) deleted. Still on the VPS, harmless: `*.py.bak-2026-11-02` code backups and `/root/crontab.bak-2026-11-02` (root-only, contains a cron secret).
+- A one-time review is scheduled in the Claude app for 2026-11-23 09:00 MYT (verdict + decide whether to keep paying USD 4.50/month for the three US data feeds).

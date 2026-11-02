@@ -26,6 +26,8 @@ PORT = int(os.environ.get("IBKR_PORT", "4001"))
 GATEWAY_PARK = os.path.join(os.path.dirname(STATE), "gateway_parked")  # touch while the Gateway is deliberately stopped (e.g. user needs the IBKR login); mutes all alerts
 PARK_FLAG = os.path.join(os.path.dirname(STATE), "spike_parked")  # touch this when the spike logger is deliberately stopped; mutes the silent-logger alert
 REPEAT_SECS = 7200  # re-alert a persistent outage every 2 hours
+SKIP_LIMIT = 8  # consecutive failed engine cycles (15 min each = 2 h) before alerting
+ENGINE_STATE = os.environ.get("ENGINE_STATE", os.path.join(ROOT, "voyager_engine_state.json"))
 
 
 def decide(in_sess: bool, port_open: bool, gate_failing: bool, state: dict, now: float, today: str, silent: bool = False):
@@ -46,6 +48,25 @@ def decide(in_sess: bool, port_open: bool, gate_failing: bool, state: dict, now:
         msgs.append("Spike logger has written no rows for 30+ minutes while the market is open (Gateway is up): "
                     "it is not collecting data. Tell Claude.")
         s["silent_day"] = today
+    return msgs, s
+
+
+def engine_skips(eng: dict | None, state: dict, limit: int = SKIP_LIMIT):
+    """Pure, any hour: counts consecutive failed engine cycles (each new engine `ts` counted once).
+    One alert at `limit` skips in a row, one message when a cycle succeeds again. Stopped engine = quiet."""
+    s, msgs = dict(state), []
+    if not eng or not eng.get("running"):
+        return msgs, s
+    if eng.get("ts") != s.get("skip_ts"):
+        s["skip_ts"] = eng.get("ts")
+        s["skips"] = s.get("skips", 0) + 1 if eng.get("error") else 0
+    if s.get("skips", 0) >= limit and not s.get("skip_alert"):
+        msgs.append(f"Voyager dip engine has skipped {s['skips']} cycles in a row (last error: {str(eng.get('error'))[:120]}). "
+                    "Usually the Gateway is logged out. Orders are not affected.")
+        s["skip_alert"] = 1
+    if not s.get("skips") and s.get("skip_alert"):
+        msgs.append("Voyager dip engine is running cycles again.")
+        s["skip_alert"] = 0
     return msgs, s
 
 
@@ -112,6 +133,12 @@ def main() -> None:
         state = {}
     msgs, new = decide(in_session(now) and not os.path.exists(GATEWAY_PARK), port_open(PORT), gate_failing(LOG_CSV, now), state, time.time(),
                        now.date().isoformat(), logger_silent(LOG_CSV, now) and not os.path.exists(PARK_FLAG))
+    try:
+        eng = json.load(open(ENGINE_STATE))
+    except (OSError, ValueError):
+        eng = None
+    more, new = engine_skips(eng, new)
+    msgs += more
     for m in msgs:
         send(m)  # raises on failure -> state not saved -> retried next run
     if new != state:

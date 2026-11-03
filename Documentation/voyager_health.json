@@ -1,0 +1,8 @@
+[
+  {"part":"Broker connection (IB Gateway)","state":"ok","plain":"Logged in and connected since 2 Nov 23:34 MYT. If it drops, you get a Telegram alert and must approve your phone."},
+  {"part":"Spike logger (the test)","state":"ok","plain":"Running. It watches the US market from 22:30 MYT tonight and writes down every big jump. It cannot place orders."},
+  {"part":"Real-time US prices","state":"ok","plain":"Bought on 2 Nov (USD 4.50 a month). Without them the test is invalid."},
+  {"part":"Dip engine (practice mode)","state":"ok","plain":"Running, but no stock rules are switched on, so it does nothing. Fixed on 3 Nov: it was fighting the logger for the same connection slot."},
+  {"part":"Telegram alerts","state":"ok","plain":"Gateway down, logger silent and the daily scorecard all work. Alerts only come during the US market hours."},
+  {"part":"Real orders sent by Voyager","state":"ok","plain":"0. Practice mode and read-only mode are both on. Only your 3 manual one-share buys from September exist."}
+]

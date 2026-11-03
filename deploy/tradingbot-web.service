@@ -1,0 +1,18 @@
+[Unit]
+Description=TradingBot Web API — remote dashboard
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tradingbot
+EnvironmentFile=/opt/tradingbot/.env
+ExecStart=/opt/tradingbot/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8001 --workers 1
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/opt/tradingbot/logs/web.log
+StandardError=append:/opt/tradingbot/logs/web.log
+
+[Install]
+WantedBy=multi-user.target

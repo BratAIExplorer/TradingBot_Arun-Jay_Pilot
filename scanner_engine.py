@@ -100,6 +100,126 @@ class MACDScanner:
         # Add basic BSE check if needed, but primarily NSE
         return sorted(list(set(stocks)))
 
+    # --- Restored from the Voyager branch during the origin/main merge (2026-10-31) ---
+    # origin/main's batch rewrite dropped these; strategies/small_cap_dryrun.py and small_cap_universe.py still call them.
+    # Verbatim copy, additive only: nothing in main's batch path uses or changes them.
+    def calculate_macd(self, prices: pd.Series, fast=12, slow=26, signal=9) -> Tuple[Optional[pd.Series], Optional[pd.Series], Optional[pd.Series]]:
+        """Calculate MACD, Signal line, and Histogram"""
+        try:
+            if len(prices) < slow:
+                return None, None, None
+
+            ema_fast = prices.ewm(span=fast, adjust=False).mean()
+            ema_slow = prices.ewm(span=slow, adjust=False).mean()
+
+            macd_line = ema_fast - ema_slow
+            signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+            histogram = macd_line - signal_line
+
+            return macd_line, signal_line, histogram
+        except Exception as e:
+            return None, None, None
+
+    def detect_macd_crossover(self, macd_line: pd.Series, signal_line: pd.Series, dates: pd.DatetimeIndex, lookback_days=30) -> Tuple[Optional[str], Optional[int]]:
+        """
+        Detect LATEST bullish MACD crossover
+        Returns: (crossover_date, days_ago) or (None, None)
+        """
+        try:
+            if macd_line is None or signal_line is None:
+                return None, None
+
+            # Look at recent period
+            recent_macd = macd_line.tail(lookback_days)
+            recent_signal = signal_line.tail(lookback_days)
+            recent_dates = dates.tail(lookback_days)
+
+            crossovers = []
+            for i in range(1, len(recent_macd)):
+                # Bullish crossover: MACD crosses above Signal
+                if recent_macd.iloc[i-1] <= recent_signal.iloc[i-1] and recent_macd.iloc[i] > recent_signal.iloc[i]:
+                    crossover_date = recent_dates[i]
+                    crossovers.append(crossover_date)
+
+            if crossovers:
+                latest = crossovers[-1]
+                days_ago = (datetime.now() - latest).days
+                return latest.strftime('%d-%b-%Y'), days_ago
+
+            return None, None
+        except:
+            return None, None
+
+    def check_moving_averages(self, prices: pd.Series, current_price: float) -> Dict[str, any]:
+        """Check 20 DMA and 50 DMA"""
+        try:
+            ma_20 = prices.tail(20).mean() if len(prices) >= 20 else None
+            ma_50 = prices.tail(50).mean() if len(prices) >= 50 else None
+
+            above_20 = "Yes" if ma_20 and current_price > ma_20 else "No"
+            above_50 = "Yes" if ma_50 and current_price > ma_50 else "No"
+
+            return {
+                'above_20': above_20,
+                'above_50': above_50,
+                'ma_20': round(ma_20, 2) if ma_20 else 'N/A',
+                'ma_50': round(ma_50, 2) if ma_50 else 'N/A'
+            }
+        except:
+            return {'above_20': 'N/A', 'above_50': 'N/A', 'ma_20': 'N/A', 'ma_50': 'N/A'}
+
+    def get_rsi(self, prices: pd.Series, period=14) -> Optional[float]:
+        """Calculate RSI for confluence check"""
+        try:
+            if len(prices) < period + 1:
+                return None
+
+            delta = prices.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+
+            return round(rsi.iloc[-1], 2)
+        except:
+            return None
+
+    def calculate_confluence_score(self, above_20: str, above_50: str, rsi: Optional[float], days_ago: int) -> int:
+        """
+        Calculate confluence score (0-100)
+        Higher score = stronger signal
+        """
+        score = 0
+
+        # Base: MACD crossover (already confirmed)
+        score += 30
+
+        # Trend confirmation
+        if above_20 == "Yes" and above_50 == "Yes":
+            score += 30  # Strong trend
+        elif above_20 == "Yes" or above_50 == "Yes":
+            score += 15  # Moderate trend
+
+        # RSI filter (not overbought)
+        if rsi:
+            if 30 <= rsi <= 70:
+                score += 20  # Healthy range
+            elif rsi < 30:
+                score += 10  # Oversold (okay but risky)
+            # rsi > 70: add 0 (overbought = bad)
+
+        # Recency (fresher signal = better)
+        if days_ago <= 3:
+            score += 20  # Very fresh
+        elif days_ago <= 7:
+            score += 10  # Recent
+        elif days_ago <= 14:
+            score += 5   # Moderate
+        # > 14 days: add 0 (stale signal)
+
+        return min(100, score)  # Cap at 100
+
     def calculate_indicators_batch(self, df_dict):
         """
         Process the entire batch result from yf.download

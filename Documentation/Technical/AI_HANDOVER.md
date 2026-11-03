@@ -1,8 +1,8 @@
 # 🤖 AI Agent Handover Document
 
-**Project**: ARUN Trading Bot Titan V2.5.2
-**Last Updated**: February 16, 2026
-**Status**: v2.5.2 - Never Sell at Loss Hardening
+**Project**: ARUN Trading Bot Titan V2  
+**Last Updated**: September 10, 2026  
+**Status**: Phase 3 Complete (RSI & Stability); strategy-research track concluded — see session log  
 **Next Agent**: Please read this before making ANY code changes
 
 ---
@@ -16,7 +16,8 @@ Build a **safe, smart, and user-friendly** algorithmic trading bot for the India
 
 ### Core Features ✅
 1. **Trading Engine**: RSI Mean Reversion strategy in `kickstart.py`
-2. **Dashboard**: Titan V2 dark UI with Bento Grid (`dashboard_v2.py`)
+2. **Dashboard**: web dashboard at `backend/main.py` (`/dashboard`, port 8001) — the
+   old local Tkinter GUI (`dashboard_v2.py`) was removed 2026-09-17, superseded by this.
 3. **Safety Features**:
    - Capital Allocation ("Safety Box") - limits bot to specific funds
    - Position Tagging (BOT vs MANUAL trades)
@@ -30,7 +31,7 @@ Build a **safe, smart, and user-friendly** algorithmic trading bot for the India
 ### File Structure
 ```
 kickstart.py          → Core trading logic (headless-capable)
-sensei_v1_dashboard.py -> Main GUI (customtkinter) - CURRENT
+backend/main.py        → Web dashboard (FastAPI, port 8001) — replaces old dashboard_v2.py
 settings_gui.py       → Configuration panel (embedded in dashboard)
 market_sentiment.py   → Sentiment analysis (yfinance + fallback)
 database/trades_db.py → SQLite trade logging
@@ -81,8 +82,9 @@ strategies/          → sector_map.py, trading_tips.json
 **PURPOSE**: Headless trading engine  
 **ENTRY**: `run_cycle()` - fetches data, calculates RSI, places orders  
 
-### `dashboard_v2.py`
-**PURPOSE**: Main GUI window (Titan design)  
+### `backend/main.py`
+**PURPOSE**: Web dashboard (FastAPI) — mStock tabs + separate IBKR tab. Removed
+`dashboard_v2.py` (Tkinter) on 2026-09-17; this is now the only dashboard.
 
 ---
 
@@ -96,6 +98,35 @@ strategies/          → sector_map.py, trading_tips.json
 ---
 
 ## 📝 SESSION LOG (AI Collaboration Tracking)
+
+### Session: September 17, 2026 - Claude (Sonnet 5)
+**Objective:** Wrap up Voyager (IBKR) branch — docs, VPS deploy scripts, DB backups,
+stop-loss bracket script, graph refresh.
+
+**Work completed:**
+- Created `Voyager` branch, committed pending diff (brokers/, deploy/, strategy files).
+- Verified HANDOVER_HEADLESS_VPS.md Phases 1-2 already done in code; corrected the doc.
+- Added headless IB Gateway deploy scripts (Xvfb+IBC) — scripted, **not run on VPS yet**.
+- Added DB backup (`sqlite3 .backup`, 6h timer, 30-day retention) — safe, tested locally.
+- `brokers/ibkr_broker.py` gained STP order + OCA group support;
+  `brokers/add_protective_bracket.py` (CONFIRM-gated) places stop-loss brackets —
+  **not run against the live account.**
+- Removed `dashboard_v2.py` (dead, superseded by web dashboard).
+- 127/127 tests passing. `graphify-out/graph.json` refreshed (1483 nodes, 146 communities).
+
+**⚠️ Backlog for next session — see [VOYAGER_STATUS.md](../VOYAGER_STATUS.md) §7 for full detail:**
+1. **Rotate mStock credentials** — `settings.json` (password/API secret/access token)
+   is in git history on this branch. Rotate before pushing to GitHub, or scrub history first.
+2. **Confirm the real TradingBot VPS IP** — not written down anywhere in this repo.
+   Two SSH hosts found on this machine (`fortress` @ 76.13.179.32, unnamed @
+   95.111.233.155) — neither confirmed as TradingBot's. Get the right IP before deploying.
+3. Deploy `deploy/setup.sh` + `deploy/setup_ibgateway.sh` to the real VPS (human/SSH).
+4. Run `python -m brokers.add_protective_bracket` to actually place the stop-loss
+   orders on HL/PATH/FRSH (human — real money, CONFIRM-gated).
+5. Decide the IUIT/EQQQ direct-routing fee tradeoff (human decision).
+6. `kickstart.py` → `get_broker()` rewiring — do together, paper mode, watching logs.
+7. Flex Query token setup in the IBKR portal (human), then wire in code.
+8. Push `Voyager` branch to GitHub once #1 is resolved.
 
 ### Session: January 26, 2026 - Google Gemini (Antigravity)
 **Objective:** RSI Logic Integration, Dashboard Enhancements, and Stability Fixes
@@ -175,6 +206,21 @@ strategies/          → sector_map.py, trading_tips.json
 3.  Verify no regression in existing tabs
 4.  Optional: Implement Strategy Orchestrator (Phase 2 - see architectural review)
 
+### Session: September 10, 2026 — opencode (deepseek-v4-pro)
+
+**Objective:** After the small-cap MACD/rope strategy was ruled out (21 backtests, no edge), find a "winning" strategy for US + India stocks and ETFs by testing the highest-evidence factor/rotation alternatives.
+
+**Work Completed:**
+1.  **Built two new backtest engines**, kept separate from the live small-cap strategy:
+    -   `strategies/factor_backtest.py` — monthly trend-timing (Faber) + dual-momentum (Antonacci).
+    -   `strategies/xs_momentum.py` — cross-sectional momentum (Jegadeesh-Titman) with regime filter.
+2.  **Tested on 15y clean data (2011-10 → 2026-09), both markets, net of costs.** Result: **no active strategy beat buy-and-hold.** Faber gave up ~436 pts (US) for barely better drawdown (monthly signals too slow for the 2020 crash); dual momentum trailed on Sharpe; cross-sectional momentum on Nifty 50 lost to static equal-weight buy-and-hold.
+3.  **Conclusion recorded in `strategies/BACKTEST_FINDINGS.md` (§8–§11):** the winning answer is boring — diversified, low-cost buy-and-hold. The real edge is behavioural (holding through drawdowns) + cost control, not a signal.
+4.  **Domicile decision:** confirmed Irish UCITS ETFs (CSPX/CNDX) deliver identical beta to US ETFs (SPY/QQQ) with a better tax home — no US estate tax, 15% vs 30% dividend WHT. Recommendation: NIFTYBEES (India) + Irish accumulators (CSPX/VWRA) for international.
+
+**Status:** Strategy research **concluded**. Recommendation = passive buy-and-hold; do not deploy an active stock-picking/timing strategy on the evidence gathered. The small-cap dry-run may continue log-only for forward data, but no signal tested has shown edge.
+
+**New files:** `strategies/factor_backtest.py`, `strategies/xs_momentum.py` (plus the existing `strategies/backtest_smallcap.py`, `backtest_summary.py`, `BACKTEST_FINDINGS.md` from the prior session).
 
 ### Session: January 28, 2026 - Google Gemini (Antigravity)
 **Objective:** Fix "No Data" Validation, Dashboard Price Updates, and Duplicate Sells

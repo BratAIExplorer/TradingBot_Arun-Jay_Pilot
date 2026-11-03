@@ -70,8 +70,9 @@ class TestBrokerInterfaceConformance:
         assert isinstance(broker, BrokerAPI), "IN market should route to BrokerAPI"
 
     def test_factory_routes_to_stub_for_us(self):
-        """get_broker('US') returns IBKR stub conforming to interface."""
-        broker = get_broker("US")
+        """get_broker('US', **cfg) returns the IBKR stub (the path kickstart.py uses). A credential-less
+        get_broker('US') returns the real IBKRBroker for Voyager's dashboard — see brokers/factory.py."""
+        broker = get_broker("US", host="127.0.0.1", port=4002)
 
         assert isinstance(broker, BrokerInterface)
         assert isinstance(broker, IBKRBroker), "US market should route to IBKRBroker"

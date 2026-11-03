@@ -18,7 +18,7 @@ OPEN, CLOSE = dtime(4, 0), dtime(15, 55)            # premarket through the forc
 LOG_PATH = os.environ.get("SPIKE_LOG", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "spike_log.csv"))
 FIELDS = ["ts_et", "kind", "symbol", "level", "pct", "last", "bid", "ask", "volume", "halted", "mdtype", "note",
           "bid_size", "ask_size"]                           # sizes added 2026-11-02 (amendment): is a $500 fill plausible at the quote?
-MAX_LINES = 40                                      # ponytail: IBKR default is ~100 market-data lines; verify before raising
+MAX_LINES = 90                                      # was 40 (filled by 11-02: flagged names hold a line all day). IBKR default ~100; SPY probe + dip engine use a few. Raised 2026-11-03, before Day 1
 POLL_SECS = 5
 SCAN_SECS = 30                                      # scanner snapshot refresh (a long-lived subscription died silently on a reconnect, 2026-11-02)
 log =logging.getLogger("spike_logger")

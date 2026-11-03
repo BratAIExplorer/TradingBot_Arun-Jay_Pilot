@@ -26,5 +26,6 @@ def test_max_lines_from_heartbeat_notes_is_reported_and_flags_a_full_cap():
     hb = lambda n: {"ts_et": "2026-11-03T10:00:00", "kind": "hb", "symbol": "", "note": f"scan=50 lines={n}"}
     assert max_lines([hb(3), hb(17), {"ts_et": "x", "kind": "tick", "symbol": ""}]) == 17
     assert max_lines([{"ts_et": "x", "kind": "hb", "symbol": ""}]) == 0       # old rows without a note
-    msg = summarize(rows("2026-11-03", hb=70) + [hb(40)], "2026-11-03")
-    assert "lines 40/40" in msg and "CAP" in msg
+    from research.spike_logger import MAX_LINES
+    msg = summarize(rows("2026-11-03", hb=70) + [hb(MAX_LINES)], "2026-11-03")
+    assert f"lines {MAX_LINES}/{MAX_LINES}" in msg and "CAP" in msg

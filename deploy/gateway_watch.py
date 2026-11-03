@@ -30,13 +30,15 @@ SKIP_LIMIT = 8  # consecutive failed engine cycles (15 min each = 2 h) before al
 ENGINE_STATE = os.environ.get("ENGINE_STATE", os.path.join(ROOT, "voyager_engine_state.json"))
 
 
-def decide(in_sess: bool, port_open: bool, gate_failing: bool, state: dict, now: float, today: str, silent: bool = False):
-    """Pure: returns (messages, new_state). Alerts only during the US session so weekends stay quiet."""
+def decide(in_sess: bool, port_open: bool, gate_failing: bool, state: dict, now: float, today: str, silent: bool = False,
+           weekday_ok: bool = False):
+    """Pure: returns (messages, new_state). Data alerts only during the US session so weekends stay quiet.
+    Gateway-DOWN also fires once per outage on a weekday after hours (weekday_ok): it died at 18:45 ET on 2026-11-02 unseen."""
     msgs, s = [], dict(state)
     if port_open and s.get("down_alert"):
         msgs.append("Voyager Gateway is back up.")
         s["down_alert"] = 0
-    if not port_open and in_sess and now - s.get("down_alert", 0) >= REPEAT_SECS:
+    if not port_open and (in_sess or weekday_ok) and (not s.get("down_alert") or (in_sess and now - s["down_alert"] >= REPEAT_SECS)):
         msgs.append("Voyager Gateway is DOWN (port 4001 closed): the spike logger is blind. "
                     "Likely logged out - approve the IBKR phone 2FA / tell Claude.")
         s["down_alert"] = now
@@ -132,7 +134,8 @@ def main() -> None:
     except (OSError, ValueError):
         state = {}
     msgs, new = decide(in_session(now) and not os.path.exists(GATEWAY_PARK), port_open(PORT), gate_failing(LOG_CSV, now), state, time.time(),
-                       now.date().isoformat(), logger_silent(LOG_CSV, now) and not os.path.exists(PARK_FLAG))
+                       now.date().isoformat(), logger_silent(LOG_CSV, now) and not os.path.exists(PARK_FLAG),
+                       weekday_ok=now.weekday() < 5 and not os.path.exists(GATEWAY_PARK))
     try:
         eng = json.load(open(ENGINE_STATE))
     except (OSError, ValueError):

@@ -19,6 +19,14 @@ def test_down_outside_session_is_quiet():
     assert decide(False, False, False, {}, T, "d")[0] == []
 
 
+def test_down_after_hours_on_a_weekday_alerts_once_per_outage_not_every_two_hours():
+    msgs, s = decide(False, False, False, {}, T, "d", weekday_ok=True)
+    assert len(msgs) == 1 and "DOWN" in msgs[0]
+    assert decide(False, False, False, s, T + 3 * REPEAT_SECS, "d", weekday_ok=True)[0] == []   # no overnight nagging
+    assert len(decide(True, False, False, s, T + REPEAT_SECS, "d", weekday_ok=True)[0]) == 1    # reminder once the session opens
+    assert decide(False, False, False, {}, T, "d", weekday_ok=False)[0] == []                   # weekend / parked: quiet
+
+
 def test_recovery_message_only_after_an_alert():
     assert decide(True, True, False, {}, T, "d")[0] == []
     msgs, s = decide(True, True, False, {"down_alert": T}, T + 5, "d")

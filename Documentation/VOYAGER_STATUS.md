@@ -302,7 +302,10 @@ logic and limits: `Documentation/SPIKE_TEST_RULES.md`. Files: `research/spike_lo
 ## 10. If something breaks - how to revive (added 2026-11-03)
 
 Each service restarts itself after a crash (`Restart=on-failure`). The one thing that cannot self-heal is the **Gateway
-login (needs your phone 2FA)**. Telegram tells you, only during the US session.
+login (needs your phone 2FA)**. Telegram tells you: during the US session every 2 h while it is down, and (added 2026-11-03,
+deployed) once per outage on any weekday after hours too, because the Gateway exited at 18:45 ET on 2026-11-02 and no alert
+fired. Weekends and the `gateway_parked` flag stay quiet. The Gateway's exit cause (fixed clock vs ~8 h after start) and whether
+each restart needs phone 2FA are still being measured (checks scheduled 2026-11-03 17:10 and 23:10 MYT).
 
 | Symptom | Fix (on the VPS: `ssh root@76.13.179.32`) |
 |---|---|

@@ -307,6 +307,16 @@ deployed) once per outage on any weekday after hours too, because the Gateway ex
 fired. Weekends and the `gateway_parked` flag stay quiet. The Gateway's exit cause (fixed clock vs ~8 h after start) and whether
 each restart needs phone 2FA are still being measured (checks scheduled 2026-11-03 17:10 and 23:10 MYT).
 
+**How code reaches the VPS (decided 2026-11-03): by hand, never `git pull`.** `/opt/voyager` is a clone stuck at `189baab` with
+copied-in files on top, on purpose. The Voyager branch contains a merge of `main` (desktop-tool code: `backend/`, `zepp-*.service`,
+`brokers/factory.py` changes, `.encryption_key_new_test`, ...) that must not land on the shared VPS. Deploy = back up the old file
+(`cp x x.bak-DATE`), `scp` the file, restart the one affected service, then run `bash deploy/verify_sync.sh` from the repo root
+(hashes the 11 files Voyager actually runs/tests, ignoring CRLF; exit 0 = VPS matches the committed branch). Known, accepted
+differences: VPS `brokers/factory.py` is the older version (works; the newer one needs `ibkr_stub.py`, not deployed); the engine's
+client ID 12 comes from the systemd drop-in `/etc/systemd/system/voyager-engine.service.d/clientid.conf`, not the repo unit;
+`*.bak-*` files and `alert.env`/`spike_log.csv` live only on the VPS. VPS tests (46) pass with `SPIKE_LOG`/`ALERT_STATE` pointed
+at /tmp so they cannot touch the live log.
+
 | Symptom | Fix (on the VPS: `ssh root@76.13.179.32`) |
 |---|---|
 | Telegram "Gateway is DOWN" | `systemctl restart voyager-gateway`, approve IBKR phone 2FA, close the IBKR website/app first (one live login only). Port 4001 opens when it works: `ss -ltn \| grep 4001` |

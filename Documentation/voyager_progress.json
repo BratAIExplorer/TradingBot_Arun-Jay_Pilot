@@ -1,0 +1,4 @@
+[
+  {"date":"2026-11-02","day":"Pre-start","status":"Excluded","heartbeats":32,"hb_target":71,"gate_fail":2,"down":70,"events":22,"ticks":35446,"note":"Final Telegram scorecard: GAPS, 22 events on 14 stocks. Gateway was down earlier, feeds bought, logger resumed 23:38 MYT. Partial day, not scored."},
+  {"date":"2026-11-03","day":"Day 1","status":"Scheduled","heartbeats":null,"hb_target":71,"gate_fail":null,"down":null,"events":null,"ticks":null,"note":"First scored day. Scorecard arrives on Telegram after 16:10 ET."}
+]

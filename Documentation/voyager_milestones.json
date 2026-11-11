@@ -1,0 +1,11 @@
+[
+  {"date":"2026-09-21","track":"Voyager","title":"IB Gateway live on VPS","state":"done","detail":"Headless Gateway + dashboard on 76.13.179.32, read-only API."},
+  {"date":"2026-09-21","track":"Voyager","title":"Dip-rules engine (dry-run)","state":"done","detail":"Backtest lost to buy-and-hold after costs, so stop-loss pass dropped. Stays dry-run."},
+  {"date":"2026-10-31","track":"Spike test","title":"Spike shadow test built","state":"done","detail":"Log-only logger, scorer and frozen rules. No orders possible."},
+  {"date":"2026-11-02","track":"Spike test","title":"Gateway login fixed, alerts live","state":"done","detail":"Telegram alerts for Gateway down and silent logger."},
+  {"date":"2026-11-02","track":"Spike test","title":"Real-time US feeds bought","state":"done","detail":"NASDAQ, NYSE, Network B Level 1, USD 4.50 a month. SPY now returns real bid/ask."},
+  {"date":"2026-11-02","track":"Spike test","title":"Daily Telegram scorecard","state":"done","detail":"Cron 21:10 UTC Mon-Fri. FULL DAY if 60+ heartbeats and no gate_fail."},
+  {"date":"2026-11-03","track":"Spike test","title":"Day 1 of 21","state":"next","detail":"Three-week clock starts. Needs 100 stock-days across 10+ distinct days."},
+  {"date":"2026-11-23","track":"Spike test","title":"3-week verdict","state":"next","detail":"Scorer runs at 5% slippage. Decide whether to keep paying for the feeds."},
+  {"date":"2027-03-15","track":"Maintenance","title":"Move scorecard cron to 20:10 UTC","state":"next","detail":"US daylight time starts mid-March."}
+]

@@ -1,0 +1,23 @@
+[Unit]
+Description=Voyager dip engine (IBKR buy-the-dip rules) — DRY RUN unless VOYAGER_ORDERS_ENABLED=1 is set below
+After=network.target voyager-gateway.service
+# No Wants= on the gateway on purpose: starting it needs a phone 2FA approval and kicks other Gateway sessions.
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/voyager
+EnvironmentFile=-/opt/voyager/.env
+# Gateway on the VPS is read-only (ReadOnlyApi=yes) and voyager-web already runs with IBKR_READONLY=1. Remove this line to go live.
+Environment=IBKR_READONLY=1
+Environment=VOYAGER_CLIENT_ID=12
+# Keep this line commented until you have decided to go live (also requires a NON-read-only Gateway login):
+# Environment=VOYAGER_ORDERS_ENABLED=1
+ExecStart=/opt/voyager/venv/bin/python -m brokers.dip_engine
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/voyager/logs/dip_engine.log
+StandardError=append:/opt/voyager/logs/dip_engine.log
+
+[Install]
+WantedBy=multi-user.target

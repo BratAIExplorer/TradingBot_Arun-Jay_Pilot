@@ -1,0 +1,18 @@
+[Unit]
+Description=TradingBot Trading Engine — kickstart.py
+After=network.target tradingbot-web.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tradingbot
+EnvironmentFile=/opt/tradingbot/.env
+ExecStart=/opt/tradingbot/venv/bin/python kickstart.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/opt/tradingbot/logs/trading.log
+StandardError=append:/opt/tradingbot/logs/trading.log
+
+[Install]
+WantedBy=multi-user.target

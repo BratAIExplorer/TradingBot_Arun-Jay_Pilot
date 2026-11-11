@@ -1,0 +1,8 @@
+[
+  {"part":"Broker connection (IB Gateway)","state":"bad","plain":"Waiting for your phone. IBKR asked for approval at 16:07 MYT on 11 Nov and nobody answered, so the port is closed. Approve the IBKR prompt on your phone. The US market opens at 22:30 MYT.","checked":"11 Nov 2026, 16:20 MYT"},
+  {"part":"Spike logger (the test)","state":"ok","plain":"Running since 2 Nov with no restarts. All 6 scored days (3 to 10 Nov) came back FULL DAY. It records 'down' rows whenever the Gateway is closed.","checked":"11 Nov 2026, 16:20 MYT"},
+  {"part":"Real-time US prices","state":"ok","plain":"No feed failures on any scored day.","checked":"11 Nov 2026, 16:20 MYT"},
+  {"part":"Dip engine (practice mode)","state":"ok","plain":"Running, but no stock rules are switched on, so it does nothing. It skips cycles while the Gateway is closed. That is expected.","checked":"11 Nov 2026, 16:20 MYT"},
+  {"part":"Telegram alerts","state":"ok","plain":"Working. Real alerts were sent on 6, 9 and 10 Nov (Gateway down, Gateway back up, engine skipping).","checked":"11 Nov 2026, 16:20 MYT"},
+  {"part":"Real orders sent by Voyager","state":"ok","plain":"0. Practice and read-only modes are both on.","checked":"11 Nov 2026, 16:20 MYT"}
+]

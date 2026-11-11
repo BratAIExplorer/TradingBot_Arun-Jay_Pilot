@@ -1,46 +1,40 @@
-"""Broker factory - routes market code to concrete broker implementation."""
+"""Broker factory — routes a market code to a concrete broker implementation.
+
+Two callers share this on the merged branch, told apart by whether credentials are passed:
+  - main's kickstart.py engine passes credentials:  get_broker("IN", **mstock_cfg) / get_broker("US", **ibkr_cfg)
+        IN -> broker_api.BrokerAPI (what that engine expects)
+        US -> ibkr_stub.IBKRBroker (raises NotImplementedError — the engine path can never send a real IBKR order)
+  - Voyager's dashboard/tests pass none:             get_broker("IN") / get_broker("US")
+        IN -> MStockBroker adapter,  US -> the real ib_insync IBKRBroker (never auto-connects)
+"""
+from __future__ import annotations
 
 from typing import Any
 
 from .interface import BrokerInterface
 
 
-def get_broker(market: str, **creds: Any) -> BrokerInterface | None:
-    """
-    Get a broker instance for a given market.
-
-    Phase 0: Routes 'IN' (India) to mStock, 'US' (US) to stub.
-    Phase 2+: Both are fully implemented.
-
-    Args:
-        market: Market code ('IN' for India/mStock, 'US' for USA/IBKR)
-        **creds: Broker-specific credentials
-            For mStock: api_key, access_token, client_code, login_callback
-            For IBKR: (phase 2 - not yet defined)
-
-    Returns:
-        BrokerInterface instance or None if broker creation fails.
-
-    Raises:
-        ValueError: If market code is unknown.
-    """
+def get_broker(market: str = "IN", **creds: Any) -> BrokerInterface:
+    """market: "IN" (India/mStock, default) or "US" (Interactive Brokers). Raises ValueError for anything else."""
     market = (market or "IN").upper()
 
     if market == "IN":
-        # Lazy import preserves existing import timing in kickstart.py
-        from broker_api import BrokerAPI
-
-        return BrokerAPI(
-            api_key=creds.get("api_key"),
-            access_token=creds.get("access_token"),
-            client_code=creds.get("client_code"),
-            login_callback=creds.get("login_callback"),
-        )
+        if creds:
+            from broker_api import BrokerAPI
+            return BrokerAPI(
+                api_key=creds.get("api_key"),
+                access_token=creds.get("access_token"),
+                client_code=creds.get("client_code"),
+                login_callback=creds.get("login_callback"),
+            )
+        from .mstock_adapter import MStockBroker
+        return MStockBroker()
 
     if market == "US":
-        # Phase 0: stub. Phase 2: replaced with real IBKRBroker.
-        from .ibkr_stub import IBKRBroker
-
-        return IBKRBroker(**creds)
+        if creds:
+            from .ibkr_stub import IBKRBroker as IBKRStub
+            return IBKRStub(**creds)
+        from .ibkr_broker import IBKRBroker
+        return IBKRBroker()
 
     raise ValueError(f"Unknown market: {market!r} (expected 'IN' or 'US')")
